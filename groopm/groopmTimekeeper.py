@@ -58,25 +58,62 @@ import time
 class TimeKeeper:
     def __init__(self):
         self.startTime = time.time()
-        self.lastLogTime = self.startTime 
-    
+        self.lastLogTime = self.startTime
+
     def startTimer(self):
         """Restart the timer"""
         self.startTime = time.time()
-        self.lastLogTime = self.startTime 
+        self.lastLogTime = self.startTime
 
     def getTimeStamp(self):
         """Make a time stamp"""
         now = time.time()
         ret_str = "{ THIS: %s || TOTAL: %s }" % (self.secondsToStr(now - self.lastLogTime), self.secondsToStr(now - self.startTime))
         self.lastLogTime = now
-        return ret_str  
-        
+        return ret_str
+
     def secondsToStr(self, t):
         rediv = lambda ll,b : list(divmod(ll[0],b)) + ll[1:]
         return "%d:%02d:%02d.%03d" % tuple(reduce(rediv,[[t*1000,],1000,60,60]))
-    
+
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
+class FunctionTimer:
+    def __init__(self):
+        self.fns = {}
+        self.timer = TimeKeeper()
+
+    def watch(self, class_, name):
+        key = "%s.%s" % (class_, name)
+        wrapped = WrappedFunction(getattr(class_, name))
+        self.fns[key] = wrapped
+        proxy = lambda *args, **kwargs: wrapped(*args, **kwargs)
+        setattr(class_, name, proxy)
+
+    def report(self):
+        for k, fn in self.fns.iteritems():
+            s = self.timer.secondsToStr(fn.time)
+            print "    %s: %s" % (k, s)
+
+
+class WrappedFunction:
+    def __init__(self, fn):
+        self.fn = fn
+        self.time = 0
+        self.recursive = False
+
+    def __call__(self, *args, **kwargs):
+        if self.recursive:
+            # Don't time recursive function calls
+            return self.fn(*args, **kwargs)
+
+        self.recursive = True
+        start = time.time()
+        ret = self.fn(*args, **kwargs)
+        self.time += time.time() - start
+        self.recursive = False
+        return ret

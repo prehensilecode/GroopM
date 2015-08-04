@@ -100,6 +100,7 @@ from binManager import BinManager
 from refine import GrubbsTester, RefineEngine
 from PCA import PCA, Center
 from groopmExceptions import BinNotFoundException
+from groopmTimekeeper import FunctionTimer
 
 np_seterr(all='raise')
 
@@ -235,6 +236,7 @@ class ClusterEngine:
         new_line_counter = 0
         num_bins = 0
 
+
         while(num_below_cutoff < breakout_point):
             stdout.flush()
 
@@ -318,6 +320,7 @@ class ClusterEngine:
                     except BinNotFoundException: pass
 
         print "\n     .... .... .... .... .... .... .... .... .... ...."
+        profiler.report()
 
     def findNewClusterCenters(self, kmerThreshold, coverageThreshold):
         """Find a putative cluster"""
@@ -1542,7 +1545,7 @@ class HoughPartitioner:
             accumulator /= np_max(accumulator)
             accumulator *= 255
 
-            imsave("%d_%s_%s_%d.png" % (self.hc, imgTag, side, level), np_concatenate([accumulator,fff]))
+            #imsave("%d_%s_%s_%d.png" % (self.hc, imgTag, side, level), np_concatenate([accumulator,fff]))
 
         # see which points lie on the line
         # we need to protect against the data line crossing
@@ -1804,3 +1807,9 @@ class HoughPartitioner:
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
+profiler = FunctionTimer()
+profiler.watch(ClusterEngine, 'findNewClusterCenters')
+profiler.watch(ClusterEngine, 'twoWayContraction')
+profiler.watch(HoughPartitioner, 'houghPartition')
+profiler.watch(HoughPartitioner, 'recursiveSelect')

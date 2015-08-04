@@ -1384,7 +1384,14 @@ class BinManager:
                                               self.PM.contigLengths, self.PM.colorMapGC, self.PM.isLikelyChimeric,
                                               fileName=FNPrefix+"_"+str(bid), ignoreContigLengths=ignoreContigLengths, ET=ET)
 
-    def plotBinCoverage(self, plotEllipses=False, plotContigLengs=False, printID=False):
+    def plotBinCoverage(self,
+                        plotEllipses=False,
+                        plotContigLengs=False,
+                        printID=False,
+                        plot1='kmer',
+                        dim1=range(3),
+                        plot2='coverage',
+                        dim2=range(3)):
         """Make plots of all the bins"""
 
         print "Plotting first 3 stoits in untransformed coverage space"
@@ -1397,37 +1404,45 @@ class BinManager:
         else:
             disp_lens = 30
 
-        # plot contigs in kmer space
-        ax = fig.add_subplot(121, projection='3d')
-        ax.set_xlabel('kmer PC1')
-        ax.set_ylabel('kmer PC2')
-        ax.set_zlabel('kmer PC3')
-        ax.set_title('kmer space')
+        plots = [plot1, plot2]
+        dims = [dim1, dim2]
+        for i in range(2):
+            name = plots[i]
+            dim = dims[i]
 
-        sc = ax.scatter(self.PM.kmerPCs[:,0], self.PM.kmerPCs[:,1], self.PM.kmerPCs[:,2], edgecolors='k', c=self.PM.contigGCs, cmap=self.PM.colorMapGC, vmin=0.0, vmax=1.0, s=disp_lens)
-        sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
+            if name == 'kmer':
+                data = self.PM.kmerPCs
+                label = 'kmer PC'
+            elif name == 'coverage':
+                data = self.PM.covProfiles
+                label = 'coverage '
+            elif name == 'normCoverage':
+                data = np_array([self.PM.covProfiles[j] / sum(self.PM.covProfiles[j]) for j in range(len(self.PM.indices))])
+                label = 'norm coverage '
+            else:
+                raise "Unrecognised plot type %s" % name
 
-        if plotEllipses:
-            ET = EllipsoidTool()
-            for bid in self.getBids():
-                row_indices = self.bins[bid].rowIndices
-                (center, radii, rotation) = self.bins[bid].getBoundingEllipsoid(self.PM.kmerPCs[:, 0:3], ET=ET)
-                centroid_gc = np_mean(self.PM.contigGCs[row_indices])
-                centroid_color = self.PM.colorMapGC(centroid_gc)
-                if printID:
-                    ET.plotEllipsoid(center, radii, rotation, ax=ax, plotAxes=False, cageColor=centroid_color, label=self.id)
-                else:
-                    ET.plotEllipsoid(center, radii, rotation, ax=ax, plotAxes=False, cageColor=centroid_color)
+            # plot contigs in kmer/coverage space
+            ax = fig.add_subplot(121+i, projection='3d')
+            ax.set_xlabel('%s%d' % (label,dim[0]+1))
+            ax.set_ylabel('%s%d' % (label,dim[1]+1))
+            ax.set_zlabel('%s%d' % (label,dim[2]+1))
+            ax.set_title('%s space' % (name,))
 
-        # plot contigs in untransformed coverage space
-        ax = fig.add_subplot(122, projection='3d')
-        ax.set_xlabel('coverage 1')
-        ax.set_ylabel('coverage 2')
-        ax.set_zlabel('coverage 3')
-        ax.set_title('coverage space')
+            sc = ax.scatter(data[:,dim[0]], data[:,dim[1]], data[:,dim[2]], edgecolors='k', c=self.PM.contigGCs, cmap=self.PM.colorMapGC, vmin=0.0, vmax=1.0, s=disp_lens)
+            sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
 
-        sc = ax.scatter(self.PM.covProfiles[:,0], self.PM.covProfiles[:,1], self.PM.covProfiles[:,2], edgecolors='k', c=self.PM.contigGCs, cmap=self.PM.colorMapGC, vmin=0.0, vmax=1.0, s=disp_lens)
-        sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
+            if plotEllipses:
+                ET = EllipsoidTool()
+                for bid in self.getBids():
+                    row_indices = self.bins[bid].rowIndices
+                    (center, radii, rotation) = self.bins[bid].getBoundingEllipsoid(data[:, dim], ET=ET)
+                    centroid_gc = np_mean(self.PM.contigGCs[row_indices])
+                    centroid_color = self.PM.colorMapGC(centroid_gc)
+                    if printID:
+                        ET.plotEllipsoid(center, radii, rotation, ax=ax, plotAxes=False, cageColor=centroid_color, label=self.id)
+                    else:
+                        ET.plotEllipsoid(center, radii, rotation, ax=ax, plotAxes=False, cageColor=centroid_color)
 
         cbar = plt.colorbar(sc, shrink=0.5)
         cbar.ax.tick_params()
@@ -1435,18 +1450,6 @@ class BinManager:
         cbar.set_ticks([0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8])
         cbar.ax.set_ylim([0.15, 0.85])
         mungeCbar(cbar)
-
-        if plotEllipses:
-            ET = EllipsoidTool()
-            for bid in self.getBids():
-                row_indices = self.bins[bid].rowIndices
-                (center, radii, rotation) = self.bins[bid].getBoundingEllipsoid(self.PM.covProfiles[:, 0:3], ET=ET)
-                centroid_gc = np_mean(self.PM.contigGCs[row_indices])
-                centroid_color = self.PM.colorMapGC(centroid_gc)
-                if printID:
-                    ET.plotEllipsoid(center, radii, rotation, ax=ax, plotAxes=False, cageColor=centroid_color, label=self.id)
-                else:
-                    ET.plotEllipsoid(center, radii, rotation, ax=ax, plotAxes=False, cageColor=centroid_color)
 
         try:
             plt.show()
