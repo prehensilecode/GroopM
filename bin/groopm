@@ -67,16 +67,33 @@ class GMHelp(argparse.Action):
     def __call__(self, parser, *_args):
         print '''\
 
-                                 ...::: GroopM :::...
+                             ...::: GroopM :::...
 
-                         Automagical metagenomic binning FTW!
+                     Automagical metagenomic binning FTW!
 
-       -------------------------------------------------------------------------
-                                      version: %s
-       -------------------------------------------------------------------------
+   -------------------------------------------------------------------------
+                                  version: %s
+   -------------------------------------------------------------------------
+
+    Typical workflow:
+
+    groopm parse        -> Load the raw data and save to disk
+    groopm core         -> Create core bins
+    groopm extract      -> Extract binned contigs or reads
+
+    Extra features:
+
+        Utilities:
+
+    groopm merge        -> Merge two or more bins
+    groopm delete       -> Delete a bin
+
+        Import, export:
+
+    groopm dump         -> Write database fields to csv
 
 
-       USE: groopm OPTION -h to see detailed options
+    USE: groopm OPTION -h to see detailed options
  ''' % __version__
 
         parser.exit(1)
