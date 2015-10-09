@@ -93,10 +93,10 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
 class ParseSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("parse",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="parse raw data and save to disk",
-                                          description="Parse raw data and save to disk")
+        parser = subparsers.add_parser("parse",
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                       help="parse raw data and save to disk",
+                                       description="Parse raw data and save to disk")
         self.add_arguments_to(parser)
         parser.set_defaults(parse=self.parse_options)
         return parser
@@ -132,7 +132,7 @@ class ParseSubcommand:
 
 class CoreSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("core",
+        parser = subparsers.add_parser("core",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                           help="load saved data and make bin cores",
                                           description="Load saved data and make bin cores")
@@ -202,7 +202,7 @@ class ExtractSubcommand:
         contig_extraction_options=parser.add_argument_group('Contig extraction options')
         contig_extraction_options.add_argument('-c', '--cutoff', type=int, default=0, help="cutoff contig size (0 for no cutoff)")
 
-        read_extraction_options=bin_extractor.add_argument_group('Read extraction options')
+        read_extraction_options=parser.add_argument_group('Read extraction options')
         read_extraction_options.add_argument('--mix_bams', action="store_true", default=False, help="use the same file for multiple bam files")
         read_extraction_options.add_argument('--mix_groups', action="store_true", default=False, help="use the same files for multiple group groups")
         read_extraction_options.add_argument('--mix_reads', action="store_true", default=False, help="use the same files for paired/unpaired reads")
@@ -265,7 +265,7 @@ class ExtractSubcommand:
 
 class MergeSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("merge",
+        parser = subparsers.add_parser("merge",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                           help="combine two or more bins into one",
                                           description="Combine two or more bins into one")
@@ -292,7 +292,7 @@ class MergeSubcommand:
 
 class DeleteSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("delete",
+        parser = subparsers.add_parser("delete",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                           help="delete bins",
                                           description="Delete bins")
@@ -319,7 +319,7 @@ class DeleteSubcommand:
 
 class PrintSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("print",
+        parser = subparsers.add_parser("print",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                           help="print bin information",
                                           description="Print bin information")
@@ -352,7 +352,7 @@ class PrintSubcommand:
 
 class DumpSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("dump",
+        parser = subparsers.add_parser("dump",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                           help="write database to text file",
                                           description="Write database to text file")
@@ -369,11 +369,35 @@ class DumpSubcommand:
 
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data dumping mode..." % options.GMVersion
+        print "*******************************************************************************"
+
+        # prep fields. Do this first cause users are mot likely to
+        # mess this part up!
+        allowable_fields = ['names', 'mers', 'gc', 'coverage', 'tcoverage', 'ncoverage', 'lengths', 'bins', 'all']
+        fields = options.fields.split(',')
+        for field in fields:
+            if field not in allowable_fields:
+                print "ERROR: field '%s' not recognised. Allowable fields are:" % field
+                print '\t',",".join(allowable_fields)
+                return
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        DM = groopm.GMDataManager()
+        DM.dumpData(options.dbname,
+                    fields,
+                    options.outfile,
+                    separator,
+                    not options.no_headers)
 
 
 class ImportSubcommand:
     def add_subparser_to(self, subparsers):
-        parser = subparsers.add_subparser("import",
+        parser = subparsers.add_parser("import",
                                           formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                           help="import information from text file",
                                           description="Import information from text file")

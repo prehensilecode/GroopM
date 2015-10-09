@@ -51,7 +51,7 @@ __status__ = "Development"
 
 import argparse
 import sys
-import subcommands
+from groopm import subcommands
 
 ###############################################################################
 ###############################################################################
@@ -62,15 +62,10 @@ class GMOptions:
     def __init__(self):
         self.GMVersion = __version__
 
-if __name__ == '__main__':
 
-    ##################################################
-    # intialise the options parser
-    ##################################################
-
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description='''\
+class GMHelp(argparse.Action):
+    def __call__(self, parser, *_args):
+        print '''\
 
                                  ...::: GroopM :::...
 
@@ -79,9 +74,22 @@ if __name__ == '__main__':
        -------------------------------------------------------------------------
                                       version: %s
        -------------------------------------------------------------------------
-       ''' % __version__,
-        epilog="USE: groopm OPTION -h to see detailed options"
-        )
+
+
+       USE: groopm OPTION -h to see detailed options
+ ''' % __version__
+
+        parser.exit(1)
+
+
+if __name__ == '__main__':
+
+    ##################################################
+    # intialise the options parser
+    ##################################################
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-h', '--help', action=GMHelp, nargs=0)
     parser.add_argument('-v', '--version', action="version",
             version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
 
@@ -89,7 +97,9 @@ if __name__ == '__main__':
     # workflow subcommands
     ##################################################
 
-    workflow_subparsers = parser.add_subparsers(title="Typical workflow")
+    subparsers = parser.add_subparsers(title="Subcommands")
+    workflow_subparsers = subparsers
+
 
     parse = subcommands.ParseSubcommand()
     parse.add_subparser_to(workflow_subparsers)
@@ -104,7 +114,8 @@ if __name__ == '__main__':
     # utilities subcommands
     ##################################################
 
-    utilities_subparsers = parser.add_subparsers(title="Utilities")
+    #utilities_subparsers = parser.add_subparsers(title="Utilities")
+    utilities_subparsers = subparsers
 
     merge = subcommands.MergeSubcommand()
     merge.add_subparser_to(utilities_subparsers)
@@ -116,7 +127,8 @@ if __name__ == '__main__':
     # import/export subcommands
     ##################################################
 
-    import_export_subparsers = parser.add_subparsers(title="Import, Export")
+    #import_export_subparsers = parser.add_subparsers(title="Import, Export")
+    import_export_subparsers = subparsers
 
     dump = subcommands.DumpSubcommand()
     dump.add_subparser_to(import_export_subparsers)
