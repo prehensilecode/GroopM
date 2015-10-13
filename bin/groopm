@@ -57,42 +57,10 @@ from groopm import subcommands, __version__
 ###############################################################################
 ###############################################################################
 
-class GMHelp(argparse.Action):
-    def __init__(self, option_strings, dest, nargs=0, format=None, **kwargs):
+class PrintAction(argparse.Action):
+    def __init__(self, option_strings, dest, nargs=None, format=None, **kwargs):
         self.format = format
-        argparse.Action.__init__(self, option_strings, dest, nargs=nargs, **kwargs)
-
-    def print_help():
-        print '''\
-
-                             ...::: GroopM :::...
-
-                     Automagical metagenomic binning FTW!
-
-   -------------------------------------------------------------------------
-                                  version: %s
-   -------------------------------------------------------------------------
-
-    Typical workflow:
-
-    groopm parse        -> Load the raw data and save to disk
-    groopm core         -> Create core bins
-    groopm extract      -> Extract binned contigs or reads
-
-    Extra features:
-
-        Utilities:
-
-    groopm merge        -> Merge two or more bins
-    groopm delete       -> Delete a bin
-
-        Import, export:
-
-    groopm dump         -> Write database fields to csv
-
-
-    USE: groopm OPTION -h to see detailed options
- ''' % __version__
+        argparse.Action.__init__(self, option_strings, dest, nargs=0, **kwargs)
 
     def __call__(self, parser, *_args):
         print self.format()
@@ -125,7 +93,7 @@ class GMSubparsersGroup:
 class GMArgumentParser:
     def __init__(self):
         self._parser = argparse.ArgumentParser(add_help=False)
-        self._parser.add_argument('-h', '--help', action=GMHelp, format=self.format_help)
+        self._parser.add_argument('-h', '--help', action=PrintAction, format=self.format_help)
         self._parser.add_argument('-v', '--version', action="version",
             version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
 
