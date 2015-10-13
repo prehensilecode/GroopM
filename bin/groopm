@@ -42,7 +42,6 @@ __author__ = "Michael Imelfort"
 __copyright__ = "Copyright 2012-2014"
 __credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
-__version__ = "2.0.0"
 __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
 __status__ = "Development"
@@ -51,20 +50,19 @@ __status__ = "Development"
 
 import argparse
 import sys
-from groopm import subcommands
+from groopm import subcommands, __version__
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-class GMOptions:
-    def __init__(self):
-        self.GMVersion = __version__
-
 
 class GMHelp(argparse.Action):
-    def __call__(self, parser, *_args):
+    def __init__(self, option_strings, dest, nargs=0, format=None, **kwargs):
+        self.format = format
+        argparse.Action.__init__(self, option_strings, dest, nargs=nargs, **kwargs)
+
+    def print_help():
         print '''\
 
                              ...::: GroopM :::...
@@ -96,7 +94,84 @@ class GMHelp(argparse.Action):
     USE: groopm OPTION -h to see detailed options
  ''' % __version__
 
+    def __call__(self, parser, *_args):
+        print self.format()
+
         parser.exit(1)
+
+
+class GMSubparsersGroup:
+    def __init__(self, title, subparsers):
+        self._subparsers = subparsers
+        self._subcommands = []
+        self._title = title
+
+    def add_parser(self, name, description="", **kwargs):
+        parser = self._subparsers.add_parser(name,
+                                            description=description,
+                                            **kwargs)
+        self._subcommands.append((name, description))
+
+        return parser
+
+    def format_help(self):
+        lines = ["    {0}:\n".format(self._title)]
+        for (name, description) in self._subcommands:
+            lines.append("    groopm {0:<13}-> {1}".format(name, description))
+
+        return "\n".join(lines)
+
+
+class GMArgumentParser:
+    def __init__(self):
+        self._parser = argparse.ArgumentParser(add_help=False)
+        self._parser.add_argument('-h', '--help', action=GMHelp, format=self.format_help)
+        self._parser.add_argument('-v', '--version', action="version",
+            version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
+
+        self._subparsers = self._parser.add_subparsers()
+        self._main_subparsers_group = GMSubparsersGroup("Typical workflow", self._subparsers)
+        self._subparsers_groups = []
+
+    def parse_args(self, *args, **kwargs):
+        return self._parser.parse_args(*args, **kwargs)
+
+    def add_parser(self, *args, **kwargs):
+        return self._main_subparsers_group.add_parser(*args, **kwargs)
+
+    def add_subparsers_group(self, title):
+        subparsers_group = GMSubparsersGroup(title, self._subparsers)
+        self._subparsers_groups.append(subparsers_group)
+        return subparsers_group
+
+    def format_help(self):
+        lines = ['''\
+
+                             ...::: GroopM :::...
+
+                     Automagical metagenomic binning FTW!
+
+   -------------------------------------------------------------------------
+                                  version: %s
+   -------------------------------------------------------------------------
+''' % __version__,
+                self._main_subparsers_group.format_help()]
+        if len(self._subparsers_groups) > 0:
+            lines.append('''\
+
+    Extra features:
+''')
+            for grp in self._subparsers_groups:
+                lines.append('''\
+        %s
+''' % grp.format_help())
+
+            lines.append('''\
+    USE: groopm OPTION -h to see detailed options
+''')
+
+        return "\n".join(lines)
+
 
 
 if __name__ == '__main__':
@@ -105,34 +180,26 @@ if __name__ == '__main__':
     # intialise the options parser
     ##################################################
 
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('-h', '--help', action=GMHelp, nargs=0)
-    parser.add_argument('-v', '--version', action="version",
-            version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
+    parser = GMArgumentParser()
 
     ##################################################
     # workflow subcommands
     ##################################################
 
-    subparsers = parser.add_subparsers(title="Subcommands")
-    workflow_subparsers = subparsers
-
-
     parse = subcommands.ParseSubcommand()
-    parse.add_subparser_to(workflow_subparsers)
+    parse.add_subparser_to(parser)
 
     core = subcommands.CoreSubcommand()
-    core.add_subparser_to(workflow_subparsers)
+    core.add_subparser_to(parser)
 
     extract = subcommands.ExtractSubcommand()
-    extract.add_subparser_to(workflow_subparsers)
+    extract.add_subparser_to(parser)
 
     ##################################################
     # utilities subcommands
     ##################################################
 
-    #utilities_subparsers = parser.add_subparsers(title="Utilities")
-    utilities_subparsers = subparsers
+    utilities_subparsers = parser.add_subparsers_group(title="Utilities")
 
     merge = subcommands.MergeSubcommand()
     merge.add_subparser_to(utilities_subparsers)
@@ -144,8 +211,8 @@ if __name__ == '__main__':
     # import/export subcommands
     ##################################################
 
-    #import_export_subparsers = parser.add_subparsers(title="Import, Export")
-    import_export_subparsers = subparsers
+    import_export_subparsers = parser.add_subparsers_group(title="Import, Export")
+    #import_export_subparsers = subparsers
 
     dump = subcommands.DumpSubcommand()
     dump.add_subparser_to(import_export_subparsers)
@@ -154,7 +221,7 @@ if __name__ == '__main__':
     # System
     ##################################################
 
-    args = parser.parse_args(namespace=GMOptions())
+    args = parser.parse_args()
 
     #-------------------------------------------------
     # do what we came here to do

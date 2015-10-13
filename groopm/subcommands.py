@@ -38,20 +38,19 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
+__author__ = "Michael Imelfort, Tim Lamberton"
 __copyright__ = "Copyright 2012-2015"
 __credits__ = ["Tim Lamberton", "Michael Imelfort"]
 __license__ = "GPL3"
-__version__ = "1.0.0"
 __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
-__status__ = "Development"
 
 ###############################################################################
 
 import argparse
 import groopm
 from groopmExceptions import ExtractModeNotAppropriateException
+from .version import __version__
 
 ###############################################################################
 ###############################################################################
@@ -112,14 +111,14 @@ class ParseSubcommand:
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
-        print " [[GroopM %s]] Running in data parsing mode..." % options.GMVersion
+        print " [[GroopM %s]] Running in data parsing mode..." % __version__
         print "*******************************************************************************"
         # check this here:
         if len(options.bamfiles) < 3:
             print "Sorry, You must supply at least 3 bamFiles to use GroopM. (You supplied %d)\n Exiting..." % len(options.bamfiles)
             return
-        GMdata = groopm.GMDataManager()
-        success = GMdata.createDB(options.bamfiles,
+        DM = groopm.DataManager()
+        success = DM.createDB(options.bamfiles,
                                   options.reference,
                                   options.dbname,
                                   options.cutoff,
@@ -153,7 +152,7 @@ class CoreSubcommand:
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
-        print " [[GroopM %s]] Running in core creation mode..." % options.GMVersion
+        print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
         CE = groopm.ClusterEngine(options.dbname,
                                    timer,
@@ -223,12 +222,12 @@ class ExtractSubcommand:
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
-        print " [[GroopM %s]] Running in '%s' extraction mode..." % (options.GMVersion, options.mode)
+        print " [[GroopM %s]] Running in '%s' extraction mode..." % (__version__, options.mode)
         print "*******************************************************************************"
         bids = []
         if options.bids is not None:
             bids = options.bids
-        BX = groopm.GMExtractor(options.dbname,
+        BX = groopm.BinExtractor(options.dbname,
                                       bids=bids,
                                       folder=options.out_folder
                                       )
@@ -283,7 +282,7 @@ class MergeSubcommand:
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
-        print " [[GroopM %s]] Running in bin merging mode..." % options.GMVersion
+        print " [[GroopM %s]] Running in bin merging mode..." % __version__
         print "*******************************************************************************"
         BM = groopm.BinManager(dbFileName=options.dbname)
         BM.loadBins(timer, makeBins=True, silent=False)
@@ -310,7 +309,7 @@ class DeleteSubcommand:
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
-        print " [[GroopM %s]] Running in bin deleting mode..." % options.GMVersion
+        print " [[GroopM %s]] Running in bin deleting mode..." % __version__
         print "*******************************************************************************"
         BM = groopm.BinManager(dbFileName=options.dbname)
         BM.loadBins(timer, makeBins=True, silent=True)#, bids=options.bids)
@@ -370,7 +369,7 @@ class DumpSubcommand:
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
-        print " [[GroopM %s]] Running in data dumping mode..." % options.GMVersion
+        print " [[GroopM %s]] Running in data dumping mode..." % __version__
         print "*******************************************************************************"
 
         # prep fields. Do this first cause users are mot likely to
@@ -387,7 +386,7 @@ class DumpSubcommand:
         else:
             separator = options.separator
 
-        DM = groopm.GMDataManager()
+        DM = groopm.DataManager()
         DM.dumpData(options.dbname,
                     fields,
                     options.outfile,

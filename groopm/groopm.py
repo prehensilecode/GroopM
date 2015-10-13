@@ -38,10 +38,19 @@
 #                                                                             #
 ###############################################################################
 
+__author__ = "Michael Imelfort, Tim Lamberton"
+__copyright__ = "Copyright 2012-2015"
+__credits__ = ["Tim Lamberton", "Michael Imelfort"]
+__license__ = "GPL3"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
+
+###############################################################################
+
 # GroopM imports
-from mstore import GMDataManager
+from mstore import GMDataManager as DataManager
 from cluster import ClusterEngine
 from binManager import BinManager
-from groopmUtils import GMExtractor
+from groopmUtils import GMExtractor as BinExtractor
 from groopmTimekeeper import TimeKeeper
 

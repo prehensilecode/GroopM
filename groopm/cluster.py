@@ -5,7 +5,7 @@
 #                                                                             #
 #    A collection of classes / methods used when clustering contigs           #
 #                                                                             #
-#    Copyright (C) Michael Imelfort                                           #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -38,12 +38,12 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
+__author__ = "Michael Imelfort, Tim Lamberton"
 __copyright__ = "Copyright 2012/2013"
-__credits__ = ["Michael Imelfort"]
+__credits__ = ["Tim Lamberton", "Michael Imelfort"]
 __license__ = "GPL3"
-__maintainer__ = "Michael Imelfort"
-__email__ = "mike@mikeimelfort.com"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
 
@@ -102,19 +102,203 @@ from groopmExceptions import BinNotFoundException
 np_seterr(all='raise')
 
 ###############################################################################
+#Utility functions
+###############################################################################
+
+def rank_with_ties(array):
+    """Return sorted of array indices with tied values averaged"""
+    ranks = numpy.argsort(numpy.argsort(array))
+    for val in set(array):
+        g = array == val
+        ranks[g] = numpy.mean(ranks[g])
+    return ranks
+
+
+def argrank(array, axis=0):
+    """Return the positions of elements of a when sorted along the specified axis"""
+    return numpy.apply_along_axis(rank_with_ties, axis, array)
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
+###############################################################################
+
+class HybridMeasure:
+    """"""
+    def __init__(self, PM):
+        self.PM = PM
+
+    def get_mediod(self, members):
+        """Get member index that minimises the sum rank euclidean distance to other members.
+
+        The sum rank euclidean distance is the sum of the euclidean distances of distance ranks for the following metric:
+            cov  = euclidean distance in log coverage space,
+            kmer = euclidean distance in kmer sig space. """
+
+        cov = distance.pdist(numpy.log10(self.PM.covProfiles[members]+1), metric="euclidean")
+        kmer = distance.pdist(self.PM.kmerSigs[members], metric="euclidean")
+
+        # for each member, sum of distances to other members
+        scores = [numpy.sum(distance.squareform(d), axis=1) for d in [cov, kmer]]
+        ranks = argrank(scores, axis=1)
+
+        # combine using euclidean distance between ranks
+        combined = numpy.linalg.norm(ranks, axis=0)
+        index = numpy.argmin(combined)
+
+        return index
+
+    def get_distances(self, a_members, b_members):
+        """Get distances between two sets of points for the following metrics:
+            cov  = euclidean distance in log coverage space,
+            kmer = euclidean distance in kmer sig space. """
+
+        cov = distance.cdist(numpy.log10(self.PM.covProfiles[a_members]+1), numpy.log10(self.PM.covProfiles[b_members]+1), metric="euclidean")
+        kmer = distance.cdist(self.PM.kmerSigs[a_members], self.PM.kmerSigs[b_members], metric="euclidean")
+
+        return numpy.array([cov, kmer])
+
+    def associate_with(self, a_members, b_members):
+        """Associate b points with closest a point"""
+
+        distances = self.get_distances(self, a_members, b_members)
+        (_dims, a_num, b_num) = distances.shape
+
+        # rank distances to a points
+        ranks = argrank(distances, axis=1)
+
+        # combine using euclidean distance between ranks
+        combined = numpy.linalg.norm(ranks, axis=0)
+        b_to_a = numpy.argmin(combined, axis=0)
+
+        return b_to_a
+
+    def get_dim_names(self):
+        return ("log coverage euclidean", "kmer euclidean")
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+class Recruiter:
+    """"""
+    def __init__(self, PM):
+        self.measure = HybridMeasure(PM)
+
+    def recruit(self, index, members=None):
+        """Recruit contigs close to a mediod"""
+
+        distances = self.measure.get_distances([index], members)[:, 0, :]
+        ranks = argrank(distances, axis=1)
+
+        return self.get_mergers(ranks, threshold=0.5)
+
+    def get_mergers(ranks, threshold):
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+class Excluder:
+    """Exclude data points by criteria"""
+    def __init__(self, data, threshold=0.5):
+        self.threshold = threshold
+        self.tester = RankCorrelationTester(data)
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+class RankCorrelationTester:
+    """Test probability of rank correlation under assumption of uncorrelated data"""
+    def __init__(self, data):
+        self.ranks = argrank(data, axis=1)
+
+    def get_inside_count(self, points=None):
+        """For each data point return the number of data points that have lower value in all dimensions"""
+        ranks = numpy.asarray(self.ranks)
+        if points is None:
+            points = ranks
+        (_num_dims, num_points) = points.shape
+        counts = numpy.empty(num_points, dtype=int)
+        for i in range(num_points):
+            is_inside = numpy.all([d <= c for (c, d) in zip(points[:, i], ranks)], axis=0)
+            counts[i] = numpy.count_nonzero(is_inside) - 1 # discount origin
+
+        return counts
+
+    def get_inside_p_null(self):
+        """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
+        ranks = numpy.asarray(self.ranks, dtype=float)
+        (_num_dims, num_points) = ranks.shape
+        counts = self.get_count_inside()
+
+        # For a point with ranks r, the probability of another point having a
+        # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
+        # maximum rank, equal to the total number of points.
+        p_inside = numpy.prod(ranks / num_points, axis=0)
+
+        # Statistical test counts
+        return binomial_one_tailed_test(counts, num_points - 1, p_inside)
+
+    def get_bounding_ranks(self, inners, points=None):
+        """Return a bounding region that contains both a data point and a corresponding internal point."""
+        if points is None:
+            points = numpy.asarray(self.ranks)
+        (_num_dims, num_points) = points.shape
+        (_num_dims, num_inners) = inners.shape
+
+        bounds = numpy.empty_like(points)
+        for (i, j) in numpy.broadcast(range(num_points), range(num_inners)):
+            bounds[:, i] = numpy.maximum(points[:, i], inners[:, j])
+
+        return bounds
+
+    def get_outside_count(self, inners, points=None):
+        """Return the number of data points that have values in a region between each data point and an internal point."""
+        outer_counts = self.get_inside_count(points)
+        inner_counts = self.get_inside_count(inners)
+
+        return outer_counts - inner_counts
+
+    def get_outside_p_null(self, inners):
+        """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
+        ranks = numpy.asarray(self.ranks, dtype=float)
+        (_num_dims, num_points) = ranks.shape
+        outers = self.get_bounding_ranks(ranks[:, inners])
+        counts = self.get_outside_count(inners, outers)
+
+        # For a pair of points r, s the probability of a point with all ranks
+        # at least as low as r and higher s is
+        # `prod(r / r_max) - prod(s / r_max)` where r_max is the highest rank,
+        # equal to the total number of points
+        p_outside = numpy.prod(outers / num_points, axis=0) - numpy.prod(ranks[:, inners] / num_points, axis=0)
+
+        # Statistical test counts
+        return binomial_one_tailed_test(counts, num_points - 1, p_outside)
+
+
+def binomial_one_tailed_test(counts, ns, ps):
+    """Test counts against one-tailed binomial distribution"""
+    return numpy.array([stats.binom.sf(c-1, n, p) for (c, n, p) in numpy.broadcast(counts, ns, ps)])
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+
 
 class ClusterEngine:
     """Top level interface for clustering contigs"""
     def __init__(self,
                  dbFileName,
                  timer,
-                 plot=0,
-                 finalPlot=False,
                  force=False,
-                 numImgMaps=1,
                  minSize=5,
                  minVol=1000000):
 
@@ -122,32 +306,11 @@ class ClusterEngine:
         self.PM = ProfileManager(dbFileName) # store our data
         self.BM = BinManager(pm=self.PM, minSize=minSize, minVol=minVol)
 
-        # heat maps
-        self.numImgMaps = numImgMaps
-        self.imageMaps = np_zeros((self.numImgMaps,self.PM.scaleFactor,self.PM.scaleFactor))
-        self.blurredMaps = np_zeros((self.numImgMaps,self.PM.scaleFactor,self.PM.scaleFactor))
-
-        # we need a way to reference from the imageMaps back onto the transformed data
-        self.im2RowIndices = {}
-
-        # When blurring the raw image maps I chose a radius to suit my data, you can vary this as you like
-        self.blurRadius = 2
-        self.span = 45                  # amount we can travel about when determining "hot spots"
-
         # Misc tools we'll need
         self.timer = timer
-        self.RE = RefineEngine(self.timer, BM=self.BM)   # Basic refinement techniques
-        self.HP = HoughPartitioner()                     # Finding cluster centers for unknown K
-        self.GT = GrubbsTester()                         # Test length conformity
 
         # misc
         self.forceWriting = force
-        self.debugPlots = plot
-        self.finalPlot = finalPlot
-        self.imageCounter = 1           # when we print many images
-        self.roundNumber = 0            # how many times have we tried to make a bin?
-        self.subRoundNumber = 0         # measure sub rounds too!
-        self.TSpan = 0.                 # dist from centre to the corner
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""
