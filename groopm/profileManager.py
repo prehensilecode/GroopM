@@ -1088,3 +1088,34 @@ class ProfileManager:
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
+    def promptOnOverwrite(self, minimal=False):
+        """Check that the user is ok with possibly overwriting the DB"""
+        if(self.isClustered()):
+            input_not_ok = True
+            valid_responses = ['Y','N']
+            vrs = ",".join([str.lower(str(x)) for x in valid_responses])
+            while(input_not_ok):
+                if(minimal):
+                    option = raw_input(" Overwrite? ("+vrs+") : ")
+                else:
+                    option = raw_input(" ****WARNING**** Database: '"+self.dbFileName+"' has already been clustered.\n" \
+                                       " If you continue you *MAY* overwrite existing bins!\n" \
+                                       " Overwrite? ("+vrs+") : ")
+                if(option.upper() in valid_responses):
+                    print "****************************************************************"
+                    if(option.upper() == "N"):
+                        print "Operation cancelled"
+                        return False
+                    else:
+                        break
+                else:
+                    print "Error, unrecognised choice '"+option.upper()+"'"
+                    minimal = True
+            print "Will Overwrite database",self.dbFileName
+        return True
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################

@@ -50,6 +50,11 @@ __status__ = "Released"
 ###############################################################################
 
 #------------------------------------------------------------------------------
+# CLUSTER ENGINE
+class GMClusterException(BaseException): pass
+class StopClusterException(GMClusterException): pass
+
+#------------------------------------------------------------------------------
 # BIN MANAGER
 class GMBinException(BaseException): pass
 class BinNotFoundException(GMBinException): pass
@@ -79,14 +84,14 @@ class Tracer:
         self.oldstream = oldstream
         self.count = 0
         self.lastStack = None
-   
+
     def write(self, s):
         newStack = traceback.format_stack()
         if newStack != self.lastStack:
             self.oldstream.write("".join(newStack))
             self.lastStack = newStack
         self.oldstream.write(s)
-    
+
     def flush(self):
         self.oldstream.flush()
 
