@@ -48,317 +48,19 @@ __email__ = "t.lamberton@uq.edu.au"
 ###############################################################################
 
 import numpy
-import scipy.spatial.distance as distance
+import scipy.stats as stats
 
 # GroopM imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from groopmExceptions import StopClusterException
+from hybridMeasure import HybridMeasure
 
-np_seterr(all='raise')
-
-###############################################################################
-#Utility functions
-###############################################################################
-
-#------------------------------------------------------------------------------
-#Ranking
-
-def rank_with_ties(array):
-    """Return sorted of array indices with tied values averaged"""
-    ranks = numpy.argsort(numpy.argsort(array))
-    for val in set(array):
-        g = array == val
-        ranks[g] = numpy.mean(ranks[g])
-    return ranks
-
-
-def argrank(array, axis=0):
-    """Return the positions of elements of a when sorted along the specified axis"""
-    return numpy.apply_along_axis(rank_with_ties, axis, array)
-
-#------------------------------------------------------------------------------
-#Point counting
-
-def get_inside_count(data, points=data):
-    """For each data point return the number of data points that have lower value in all dimensions"""
-    data = numpy.asarray(data)
-    points = numpy.asarray(points)
-    (_num_dims, num_points) = points.shape
-    counts = numpy.empty(num_points, dtype=int)
-    for i in range(num_points):
-        is_inside = numpy.all([d <= c for (c, d) in zip(points[:, i], data)], axis=0)
-        counts[i] = numpy.count_nonzero(is_inside) - 1 # discount origin
-
-    return counts
-
-def get_outside_count(data, inner_points, outer_points=get_bounding_points(inner_points, data)):
-    """Return the number of data points that have values in a region between each data point and an internal point."""
-
-    outer_counts = get_inside_count(data, outer_points)
-    inner_counts = get_inside_count(data, inner_points)
-
-    return outer_counts - inner_counts
-
-def get_bounding_points(a_points, b_points):
-    """Return a bounding region that contains both of a pair of points."""
-    (_num_a_dims, num_a_points) = a_points.shape
-    (_num_b_dims, num_b_points) = b_points.shape
-
-    bounds = numpy.empty(max(num_a_points, num_b_points))
-    for (i, j) in numpy.broadcast(range(num_a_points), range(num_b_points)):
-        bounds[:, i] = numpy.maximum(a_points[:, i], b_points[:, j])
-
-    return bounds
-
-
-#------------------------------------------------------------------------------
-#Rank correlation testing
-
-def get_inside_p_null(ranks):
-    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
-    ranks = numpy.asarray(ranks, dtype=float)
-    (_num_dims, num_points) = ranks.shape
-    counts = get_count_inside(ranks)
-
-    # For a point with ranks r, the probability of another point having a
-    # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
-    # maximum rank, equal to the total number of points.
-    p_inside = numpy.prod(ranks / num_points, axis=0)
-
-    # Statistical test counts
-    return binom_one_tailed_test(counts, num_points - 1, p_inside)
-
-def get_outside_p_null(ranks, inners):
-    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
-    ranks = numpy.asarray(ranks, dtype=float)
-    (_num_dims, num_points) = ranks.shape
-    counts = get_outside_count(ranks, ranks[:, inners])
-
-    # For a pair of points r, s the probability of a point with all ranks
-    # at least as low as r and higher s is
-    # `prod(r / r_max) - prod(s / r_max)` where r_max is the highest rank,
-    # equal to the total number of points
-    p_outside = numpy.prod(outer_points / num_points, axis=0) - numpy.prod(ranks[:, inners] / num_points, axis=0)
-
-    # Statistical test counts
-    return binom_one_tailed_test(counts, num_points - 1, p_outside)
-
-def binom_one_tailed_test(counts, ns, ps):
-    """Test counts against one-tailed binomial distribution"""
-    return numpy.array([stats.binom.sf(c-1, n, p) for (c, n, p) in numpy.broadcast(counts, ns, ps)])
-
-
-###############################################################################
-#Extrema masking
-###############################################################################
-
-class PartitionSet:
-    def __init__(self, size):
-        self.ids = numpy.zeros(size, dtype=int)
-
-    def unify(self, members):
-        ids = set(self.ids[members])
-        current_max = max(ids)
-
-        if current_max==0:
-            # No members have been grouped previously, so start a new group
-            self.ids[members] = max(self.ids) + 1
-        else:
-            # Merge partitions of all members
-            self.ids[members] = current_max
-            for j in ids:
-                if j > 0:
-                    self.ids[self.ids == j] = current_max
-
-
-def is_extrema_mask(points, scores, inners=None, threshold=0.5):
-    """Find data points with scores higher than the inner minimum score or threshold value"""
-    points = numpy.asarray(points)
-    scores = self.get_scores(points)
-
-    if inners is None:
-        origin = numpy.flatnonzero(numpy.all(points == 0, axis=0))
-        inners = [origin]
-
-    (_num_dims, num_points) = points.shape
-
-    is_mask = numpy.empty(num_points)
-    is_inside_any_inner = numpy.zeros(num_points, dtype=True)
-    for (i, j) in numpy.broadcast(range(num_points), inners):
-
-        inner_point = points[:, j]
-        outer_point = numpy.maximum(points[:, i], inner_point)
-
-        is_inside = numpy.all([d <= c for (c, d) in zip(outer_point, points)], axis=0)
-        is_inside[i] = False
-        is_inside_inner = numpy.all([d <= c for (c, d) in zip(inner_point, points)], axis=0)
-        is_inside_any_inner[is_inside_inner] = True
-        is_inside[is_inside] = numpy.logical_not(is_inside_inner[is_inside])
-
-        # Return the lower of the lowest internal score and the threshold
-        # argument supplied.
-        cutoff = threshold if not numpy.any(is_inside) else min(numpy.min(scores[is_inside]), threshold)
-
-        # A `mask` point has a higher score than the lowest internal score.
-        is_mask = scores[i] > cutoff
-
-    is_mask[inners] = False
-
-    return is_mask
-
-def flood_partition_with_mask(points, is_mask):
-    """Find partitions of unmasked points by joining a point to any outside point closer than an outside mask point"""
-    points = numpy.asarray(points)
-    (_num_dims, num_points) = points.shape
-
-    partitions = PartitionSet(num_points)
-    unmask = numpy.flatnonzero(numpy.logical_not(is_mask))
-    for i in unmask:
-        is_outside = numpy.any([d >= d[i] for d in points], axis=0)
-        is_outside_mask = is_mask[is_outside]
-
-        dist_outside = numpy.linalg.norm([c - d for (c, d) in zip(points[:, i], points[:, is_outside])], axis=0)
-        if numpy.any(is_outside_mask):
-            dist_cutoff = numpy.min(dist_outside[is_outside_mask])
-        else:
-            dist_cutoff = numpy.linalg.norm(points[:, i], axis=0)
-
-        outside = numpy.flatnonzero(is_outside)
-        members = outside[dist_outside < dist_cutoff]
-
-        partitions.unify(members)
-
-    return partitions.ids
-
-def get_origin_partition(ranks, scores, threshold):
-    """Return points in origin partition"""
-    ranks = numpy.asarray(ranks)
-    is_origin = numpy.all(ranks == 0, axis=0)
-
-    is_mask = is_extrema_mask(ranks, scores, threshold=threshold)
-    partitions = flood_partition_with_mask(ranks, is_mask)
-
-    return numpy.flatnonzero(partitions == partitions[is_origin])
-
-
-###############################################################################
-#Mergers
-###############################################################################
-
-def get_mergers(ranks, threshold):
-    """Recruit points with a significant rank correlation"""
-
-    scores = get_inside_p_null(ranks)
-    origin_partition = get_origin_partition(ranks, scores, threshold)
-    index = origin_partition[numpy.argmin(scores[origin_partition])]
-
-    scores = get_outside_p_null(ranks, index)
-    origin_partition = get_origin_partition(ranks, scores, threshold)
-
-    is_merger = numpy.zeros(samps, dtype=bool)
-    for i in origin_partition:
-        is_inside = numpy.all([d <= d[i] for d in ranks], axis=0)
-        is_merger = numpy.logical_or(is_merger, is_inside)
-
-    return numpy.flatnonzero(is_merger)
+numpy.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-###############################################################################
-#Hybrid measure
-###############################################################################
-
-class HybridMeasure:
-    """Computes the following metric pair:
-        cov  = euclidean distance in log coverage space,
-        kmer = euclidean distance in kmer sig space. """
-    def __init__(self, PM):
-        self.PM = PM
-
-    def get_distances(self, a_members, b_members=None):
-        """Get distances between two sets of points for the metrics"""
-
-        if b_members is None:
-            cov = distance.squareform(distance.pdist(numpy.log10(self.PM.covProfiles[a_members]+1), metric="euclidean"))
-            kmer = distance.squareform(distance.pdist(self.PM.kmerSigs[a_members], metric="euclidean"))
-        else:
-            cov = distance.cdist(numpy.log10(self.PM.covProfiles[a_members]+1), numpy.log10(self.PM.covProfiles[b_members]+1), metric="euclidean")
-            kmer = distance.cdist(self.PM.kmerSigs[a_members], self.PM.kmerSigs[b_members], metric="euclidean")
-
-        return numpy.array([cov, kmer])
-
-    def get_mediod(self, members):
-        """Get member index that minimises the sum rank euclidean distance to other members.
-
-        The sum rank euclidean distance is the sum of the euclidean distances of distance ranks for the metrics"""
-
-        # for each member, sum of distances to other members
-        scores = [numpy.sum(d, axis=1) for d in self.get_distances(members)]
-        ranks = argrank(scores, axis=1)
-
-        # combine using euclidean distance between ranks
-        combined = numpy.linalg.norm(ranks, axis=0)
-        index = numpy.argmin(combined)
-
-        return index
-
-    def associate_with(self, a_members, b_members):
-        """Associate b points with closest a point"""
-
-        distances = self.get_distances(self, a_members, b_members)
-        (_dims, a_num, b_num) = distances.shape
-
-        # rank distances to a points
-        ranks = argrank(distances, axis=1)
-
-        # combine using euclidean distance between ranks
-        combined = numpy.linalg.norm(ranks, axis=0)
-        b_to_a = numpy.argmin(combined, axis=0)
-
-        return b_to_a
-
-    def get_dim_names(self):
-        """Labels for distances returned by get_distances"""
-        return ("log coverage euclidean", "kmer euclidean")
-
-
-class MediodClusterUpdater:
-    """Update cluster labels based on current mediod"""
-    def __init__(self, PM, threshold):
-        self.measure = HybridMeasure(PM)
-        self.threshold = threshold
-
-    def __call__(self, labels, mediod):
-        is_unbinned = labels==-1
-        num_unbinned = numpy.count_nonzero(is_unbinned)
-        if num_unbinned==0:
-            return (labels, mediod)
-
-        current_label = labels[mediod]
-        putative_members = numpy.flatnonzero(numpy.logical_and(labels==current_label, is_unbinned))
-
-        distances = self.measure.get_distances([mediod], putative_members)[:, 0, :]
-        ranks = argrank(distances, axis=0)
-        recruited = get_mergers(ranks, threshold=self.threshold)
-        labels[recruited] = current_labels
-        members = numpy.flatnonzero(labels == current_label)
-        if len(members)==1:
-            mediod = members
-        else:
-            index = self.measure.get_mediod(members)
-            mediod = members[index]
-
-        return (labels, mediod)
-
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-
 
 class ClusterEngine:
     """Top level interface for clustering contigs"""
@@ -371,7 +73,7 @@ class ClusterEngine:
         # Worker classes
         self.PM = ProfileManager(dbFileName) # store our data
         self.BM = BinManager(pm=self.PM, minSize=minSize, minVol=minVol)
-        self.update = MediodClusterUpdater(self.PM, init=numpy.argsort(self.PM.contigLengths), threshold=0.5)
+        self.update = MediodClusterMaker(self.PM, init=numpy.argsort(self.PM.contigLengths), threshold=0.5)
 
         # Misc tools we'll need
         self.timer = timer
@@ -485,6 +187,231 @@ class ClusterEngine:
             bids_made.append(bin.id)
 
         print " %d bins made." % len(bids_made)
+
+class MediodClusterMaker:
+    """Update cluster labels based on current mediod"""
+    def __init__(self, PM, threshold):
+        self.measure = HybridMeasure(PM)
+        self.threshold = threshold
+
+    def __call__(self, labels, mediod):
+        is_unbinned = labels==-1
+        num_unbinned = numpy.count_nonzero(is_unbinned)
+        if num_unbinned==0:
+            return (labels, mediod)
+
+        current_label = labels[mediod]
+        putative_members = numpy.flatnonzero(numpy.logical_and(labels==current_label, is_unbinned))
+
+        distances = self.measure.get_distances([mediod], putative_members)[:, 0, :]
+        ranks = argrank(distances, axis=0)
+        recruited = get_mergers(ranks, threshold=self.threshold)
+        labels[recruited] = current_labels
+        members = numpy.flatnonzero(labels == current_label)
+        if len(members)==1:
+            mediod = members
+        else:
+            index = self.measure.get_mediod(members)
+            mediod = members[index]
+
+        return (labels, mediod)
+
+###############################################################################
+#Utility functions
+###############################################################################
+
+#------------------------------------------------------------------------------
+#Point counting
+
+def get_inside_count(data, points=None):
+    """For each data point return the number of data points that have lower value in all dimensions"""
+    data = numpy.asarray(data)
+    if points is None:
+        points = data
+    points = numpy.asarray(points)
+    (_num_dims, num_points) = points.shape
+    counts = numpy.empty(num_points, dtype=int)
+    for i in range(num_points):
+        is_inside = numpy.all([d <= c for (c, d) in zip(points[:, i], data)], axis=0)
+        counts[i] = numpy.count_nonzero(is_inside) - 1 # discount origin
+
+    return counts
+
+def get_outside_count(data, inner_points, outer_points=None):
+    """Return the number of data points that have values in a region between each data point and an internal point."""
+
+    if outer_points is None:
+        outer_points = get_bounding_points(inner_points, data)
+
+    outer_counts = get_inside_count(data, outer_points)
+    inner_counts = get_inside_count(data, inner_points)
+
+    return outer_counts - inner_counts
+
+def get_bounding_points(a_points, b_points):
+    """Return a bounding region that contains both of a pair of points."""
+    (num_a_dims, num_a_points) = a_points.shape
+    (_num_b_dims, num_b_points) = b_points.shape
+
+    swap = num_b_points > num_a_points
+    (first, second, num_first, num_second) = (b_points, a_points, num_b_points, num_a_points) if num_b_points > num_a_points else (a_points, b_points, num_a_points, num_b_points)
+
+    bounds = numpy.empty_like(first)
+    for (i, j) in numpy.broadcast(range(num_first), range(num_second)):
+        bounds[:, i] = numpy.maximum(first[:, i], second[:, j])
+
+    return bounds
+
+#------------------------------------------------------------------------------
+#Rank correlation testing
+
+def get_inside_p_null(ranks):
+    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
+    ranks = numpy.asarray(ranks, dtype=float)
+    (_num_dims, num_points) = ranks.shape
+    counts = get_inside_count(ranks)
+
+    # For a point with ranks r, the probability of another point having a
+    # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
+    # maximum rank, equal to the total number of points.
+    r_max = num_points - 1
+    p_inside = numpy.prod(ranks / r_max, axis=0)
+
+    # Statistical test counts
+    return binom_one_tailed_test(counts, r_max, p_inside)
+
+def get_outside_p_null(ranks, inners):
+    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
+    ranks = numpy.asarray(ranks, dtype=float)
+    (_num_dims, num_points) = ranks.shape
+    outer_points = get_bounding_points(ranks[:, inners], ranks)
+    counts = get_outside_count(ranks, ranks[:, inners], outer_points=outer_points)
+
+    # For a pair of points r, s the probability of a point with all ranks
+    # at least as low as r and higher s is
+    # `prod(r / r_max) - prod(s / r_max)` where r_max is the highest rank,
+    # equal to the total number of points
+    r_max = num_points - 1
+    p_outside = numpy.prod(outer_points / r_max, axis=0) - numpy.prod(ranks[:, inners] / r_max, axis=0)
+
+    # Statistical test counts
+    return binom_one_tailed_test(counts, r_max, p_outside)
+
+def binom_one_tailed_test(counts, ns, ps):
+    """Test counts against one-tailed binomial distribution"""
+    return numpy.array([stats.binom.sf(c-1, n, p) for (c, n, p) in numpy.broadcast(counts, ns, ps)])
+
+#------------------------------------------------------------------------------
+#Extrema masking
+
+class PartitionSet:
+    def __init__(self, size):
+        self.ids = numpy.zeros(size, dtype=int)
+
+    def group(self, members):
+        ids = set(self.ids[members])
+        current_max = max(ids)
+
+        if current_max==0:
+            # No members have been grouped previously, so start a new group
+            self.ids[members] = max(self.ids) + 1
+        else:
+            # Merge partitions of all members
+            self.ids[members] = current_max
+            for j in ids:
+                if j > 0:
+                    self.ids[self.ids == j] = current_max
+
+
+def is_extrema_mask(points, scores, inners=None, threshold=0.5):
+    """Find data points with scores higher than the inner minimum score or threshold value"""
+    points = numpy.asarray(points)
+    scores = self.get_scores(points)
+
+    if inners is None:
+        origin = numpy.flatnonzero(numpy.all(points == 0, axis=0))
+        inners = [origin]
+
+    (_num_dims, num_points) = points.shape
+
+    is_mask = numpy.empty(num_points)
+    is_inside_any_inner = numpy.zeros(num_points, dtype=True)
+    for (i, j) in numpy.broadcast(range(num_points), inners):
+
+        inner_point = points[:, j]
+        outer_point = numpy.maximum(points[:, i], inner_point)
+
+        is_inside = numpy.all([d <= c for (c, d) in zip(outer_point, points)], axis=0)
+        is_inside[i] = False
+        is_inside_inner = numpy.all([d <= c for (c, d) in zip(inner_point, points)], axis=0)
+        is_inside_any_inner[is_inside_inner] = True
+        is_inside[is_inside] = numpy.logical_not(is_inside_inner[is_inside])
+
+        # Return the lower of the lowest internal score and the threshold
+        # argument supplied.
+        cutoff = threshold if not numpy.any(is_inside) else min(numpy.min(scores[is_inside]), threshold)
+
+        # A `mask` point has a higher score than the lowest internal score.
+        is_mask = scores[i] > cutoff
+
+    is_mask[inners] = False
+
+    return is_mask
+
+def flood_partition_with_mask(points, is_mask):
+    """Find partitions of unmasked points by joining a point to any outside point closer than an outside mask point"""
+    points = numpy.asarray(points)
+    (_num_dims, num_points) = points.shape
+
+    partitions = PartitionSet(num_points)
+    unmask = numpy.flatnonzero(numpy.logical_not(is_mask))
+    for i in unmask:
+        is_outside = numpy.any([d >= d[i] for d in points], axis=0)
+        is_outside_mask = is_mask[is_outside]
+
+        dist_outside = numpy.linalg.norm([c - d for (c, d) in zip(points[:, i], points[:, is_outside])], axis=0)
+        if numpy.any(is_outside_mask):
+            dist_cutoff = numpy.min(dist_outside[is_outside_mask])
+        else:
+            dist_cutoff = numpy.linalg.norm(points[:, i], axis=0)
+
+        outside = numpy.flatnonzero(is_outside)
+        members = outside[dist_outside < dist_cutoff]
+
+        partitions.group(members)
+
+    return partitions.ids
+
+def get_origin_partition(ranks, scores, threshold):
+    """Return points in origin partition"""
+    ranks = numpy.asarray(ranks)
+    is_origin = numpy.all(ranks == 0, axis=0)
+
+    is_mask = is_extrema_mask(ranks, scores, threshold=threshold)
+    partitions = flood_partition_with_mask(ranks, is_mask)
+
+    return numpy.flatnonzero(partitions == partitions[is_origin])
+
+
+#------------------------------------------------------------------------------
+#Mergers
+
+def get_mergers(ranks, threshold):
+    """Recruit points with a significant rank correlation"""
+
+    scores = get_inside_p_null(ranks)
+    origin_partition = get_origin_partition(ranks, scores, threshold)
+    index = origin_partition[numpy.argmin(scores[origin_partition])]
+
+    scores = get_outside_p_null(ranks, index)
+    origin_partition = get_origin_partition(ranks, scores, threshold)
+
+    is_merger = numpy.zeros(samps, dtype=bool)
+    for i in origin_partition:
+        is_inside = numpy.all([d <= d[i] for d in ranks], axis=0)
+        is_merger = numpy.logical_or(is_merger, is_inside)
+
+    return numpy.flatnonzero(is_merger)
 
 
 ###############################################################################

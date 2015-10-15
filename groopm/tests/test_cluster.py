@@ -25,57 +25,39 @@ __email__ = "tim.lamberton@gmail.com"
 ###############################################################################
 
 # system imports
-from nose.tools import assert_equals, assert_true
+from tools import assert_equal_arrays, assert_almost_equal_arrays
 import numpy
-import cluster
+from groopm import cluster
 
 ###############################################################################
 #Utility functions
 ###############################################################################
 
 #------------------------------------------------------------------------------
-#Ranking
-
-def test_argrank():
-    assert_equals(cluster.argrank([5, 3, 4, 8]),
-                  numpy.array([2, 0, 1, 3]),
-                  "`argrank` returns integer rank of values in one-dimensional array")
-
-    assert_equals(cluster.argrank([5, 3, 8, 8]),
-                  numpy.array([1, 0, 2.5, 2.5]),
-                  "`argrank` returns mean of tied ranks")
-
-    arr2d = numpy.array([[1, 10, 5, 2], [1, 4, 6, 2], [5, 5, 3, 10]])
-    ranks2d = numpy.array([[0, 3, 2, 1], [0, 2, 3, 1], [1.5, 1.5, 0, 2]])
-    assert_equals(cluster.argrank(arr2d, axis=1),
-                  ranks2d,
-                  "`argrank(..,axis=1)` returns ranks along rows of 2-d array")
-    assert_equals(cluster.argrank(arr2d.T, axis=0),
-                  ranks2d.T,
-                  "`argrank(..,axis=0)` returns ranks along columns of 2-d array")
-
-
-#------------------------------------------------------------------------------
 #Point counting
 
 def test_get_count():
     # Four point configuration
-    points = numpy.array([[1, 0, 3, 2], [3, 0, 1, 2]])
-    assert_equals(cluster.get_inside_count(points),
-                  [1, 0, 2, 1],
-                  "`get_inside_count` counts number of points inside each point bounds")
+    points = numpy.array([[1, 0, 3, 2], [3, 0, 2, 1]])
+    assert_equal_arrays(cluster.get_inside_count(points),
+                        [1, 0, 2, 1],
+                        "`get_inside_count` counts number of points inside each point bounds")
 
-    assert_equals(cluster.get_inside_count(points, points=numpy.array([[2], [2]])),
-                  [2],
-                  "`get_inside_count(...,points)` returns counts of points inside `points` bounds")
+    assert_equal_arrays(cluster.get_inside_count(points, points=numpy.array([[2], [3]])),
+                        [2],
+                        "`get_inside_count(...,points)` returns counts of points inside `points` bounds")
 
-    assert_equals(cluster.get_outside_count(points, inner_points=points[[0]]),
-                  [0, 0, 2, 1],
-                  "`get_outside_count(...,points)` returns counts of points between each point and corresponding `points` bounds")
+    assert_equal_arrays(cluster.get_bounding_points(points, points[:, :1]),
+                        [[1, 1, 3, 2], [3, 3, 3, 3]],
+                        "`get_bounding_points` returns a minimum bounding point for each of pairs of passed points")
 
-    assert_equals(cluster.get_bounding_points(points, points[[0]]),
-                  [[1, 1, 3, 2], [3, 3, 3, 3]],
-                  "`get_bounding_points` returns a minimum bounding point for each of pairs of passed points")
+    assert_equal_arrays(cluster.get_bounding_points(points[:, :1], points),
+                        [[1, 1, 3, 2], [3, 3, 3, 3]],
+                        "`get_bounding_points` returns same bounds when arguments are swapped")
+
+    assert_equal_arrays(cluster.get_outside_count(points, inner_points=points[:, :1]),
+                        [0, 0, 2, 1],
+                        "`get_outside_count(...,points)` returns counts of points between each point and corresponding `points` bounds")
 
 #------------------------------------------------------------------------------
 #Rank correlation testing
@@ -83,20 +65,45 @@ def test_get_count():
 def test_binom_one_tailed_test():
 
     outcomes = (3, 2)
-    p = tuple([o / sum(outcomes) for o in outcomes])
-    pnot0 = 1 - p[0]
-    p0_of_four = [pnot0*pnot0*pnot0*pnot0,
-                     4*p[0]*pnot0*pnot0*pnot0,
-                     6*p[0]*p[0]*pnot0*pnot0,
-                     4*p[0]*p[0]*p[0]*pnot0,
-                     p[0]*p[0]*p[0]*p[0]]
+    p0 = float(outcomes[0]) / sum(outcomes)
+    pnot0 = 1 - p0
+    p0_n_of_four = [pnot0*pnot0*pnot0*pnot0, # 0 of 4
+                    4*p0*pnot0*pnot0*pnot0,  # 1 of 4
+                    6*p0*p0*pnot0*pnot0,     # 2 of 4
+                    4*p0*p0*p0*pnot0,        # 3 of 4
+                    p0*p0*p0*p0]             # 4 of 4
 
-    assert_equals(cluster.binom_one_tailed_test(2, 4, p[0]),
-                  sum(p0_of_four[2:]),
-                  "`binom_one_tailed_test(2, 4, p)` returns probability of at least a count of two given four trials for an outcome with probability p")
-    assert_equals(cluster.binom_one_tailed_test(3, 4, p[0]),
-                  sum(p0_of_four[3:]),
-                  "`binom_one_tailed_test(3, 4, p)` returns probability of at least a count of three given four trials for an outcome with probability p")
+    assert_almost_equal_arrays(cluster.binom_one_tailed_test([2, 3], 4, p0),
+                               [sum(p0_n_of_four[2:]), sum(p0_n_of_four[3:])],
+                               "`binom_one_tailed_test` returns binomial probabilities for an array of trial successes")
+
+    # inisde
+    points = numpy.array([[1, 0, 3, 2], [3, 0, 2, 1]])
+    p_in = numpy.array([3, 0, 6, 2], dtype=float) / 9
+    p_out = 1 - p_in
+    p_in_n_of_three = numpy.array([p_out*p_out*p_out,  # 0 of 3
+                                   3*p_in*p_out*p_out, # 1 of 3
+                                   3*p_in*p_in*p_out,  # 2 of 3
+                                   p_in*p_in*p_in])    # 3 of 3
+
+    counts = numpy.array([1, 0, 2, 1])
+    assert_almost_equal_arrays(cluster.binom_one_tailed_test(counts, 3, p_in),
+                               [sum(p_in_n_of_three[c:, i]) for (i, c) in enumerate(counts)],
+                               "`binom_one_tailed_test` returns binomial probabilities for an array of trial probabilties")
+
+    assert_almost_equal_arrays(cluster.get_inside_p_null(points),
+                               cluster.binom_one_tailed_test(counts, 3, p_in),
+                               "`get_inside_p_null` returns binomial test probabilities of correlations of a set of ranks")
+
+    # outside
+    points = numpy.array([[1, 0, 3, 2], [3, 0, 2, 1]])
+    bouding_points = numpy.array([[1, 1, 3, 2], [3, 3, 3, 3]])
+    p_between_0 = numpy.array([0, 0, 6, 3], dtype=float) / 9
+    counts = numpy.array([0, 0, 2, 1])
+    assert_almost_equal_arrays(cluster.get_outside_p_null(points, [0]),
+                               cluster.binom_one_tailed_test(counts, 3, p_between_0),
+                               "`get_outside_p_null` returns binomial test probabilities of correlations of a rank subrange")
+
 
 
 ###############################################################################
