@@ -164,18 +164,6 @@ if __name__ == '__main__':
     extract.add_subparser_to(parser)
 
     ##################################################
-    # utilities subcommands
-    ##################################################
-
-    utilities_subparsers = parser.add_subparsers_group(title="Utilities")
-
-    merge = subcommands.MergeSubcommand()
-    merge.add_subparser_to(utilities_subparsers)
-
-    delete = subcommands.DeleteSubcommand()
-    delete.add_subparser_to(utilities_subparsers)
-
-    ##################################################
     # import/export subcommands
     ##################################################
 

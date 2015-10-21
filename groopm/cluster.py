@@ -65,36 +65,28 @@ numpy.seterr(all='raise')
 class ClusterEngine:
     """Top level interface for clustering contigs"""
     def __init__(self,
-                 dbFileName,
+                 PM,
                  timer,
                  minSize=5,
-                 minVol=1000000):
+                 minVol=1000000,
+                 threshold=0.5):
 
         # Worker classes
-        self.PM = ProfileManager(dbFileName) # store our data
-        self.BM = BinManager(pm=self.PM, minSize=minSize, minVol=minVol)
-        self.update = MediodClusterMaker(self.PM, init=numpy.argsort(self.PM.contigLengths), threshold=0.5)
+        self._PM = PM
+        self._BM = BinManager(self._PM, minSize=minSize, minVol=minVol)
+        self.update_bin = MediodClusterMaker(self._PM, init=numpy.argsort(self._PM.contigLengths), threshold=threshold)
 
         # Misc tools we'll need
         self.timer = timer
 
-        # Configuration
-        self.minSize = minSize
-        self.minVol = minVol
-
-    def run(self, coreCut):
+    def run(self):
         """Cluster the contigs to make bin cores"""
         # check that the user is OK with nuking stuff...
         if(not self.PM.promptOnOverwrite()):
             return False
 
         # get some data
-        self.PM.loadData(self.timer, "length >= "+str(coreCut))
-        print "    %s" % self.timer.getTimeStamp()
-
-        # transform the data
-        print "    Loading transformed data"
-        self.PM.transformCP(self.timer)
+        self._PM.loadData(self.timer, "length >= "+str(coreCut))
         print "    %s" % self.timer.getTimeStamp()
 
         # cluster and bin!
@@ -104,34 +96,31 @@ class ClusterEngine:
 
         # Now save all the stuff to disk!
         print "Saving bins"
-        self.BM.saveBins(nuke=True)
+        self._BM.saveBins(nuke=True)
         print "    %s" % self.timer.getTimeStamp()
 
     def make_bins(self, init):
         """Make the bins"""
 
-        label_counter = -1
-        labels = numpy.full(self.PM.numContigs, label_counter)
         round_counter = 0
         mediod = None
 
         while(True):
             if mediod is None:
-                unbinned = init[labels[init] == -1]
-                if len(unbinned) == 0:
+                to_bin = numpy.intersect1d(init, self._BM.get_unbinned())
+                if len(to_bin) == 0:
                     break
-                mediod = unbinned[0]
-                label_counter += 1
-                labels[mediod] = label_counter
+                mediod = to_bin[0]
+                self._BM.assign_bin([mediod])
 
             round_counter += 1
-            print "Recruiting bin %d, round %d." % (label_counter, round_counter)
-            print "Found %d unbinned." % numpy.count_nonzero(labels == -1)
+            print "Recruiting bin %d, round %d." % (self._BM.current_bid, round_counter)
+            print "Found %d unbinned." % self._BM.get_unbinned().size
 
-            old_labels = labels
-            (labels, new_mediod) = self.update(old_labels, mediod)
+            old_size = self._BM.get_bin_indices([self._BM.current_bid]).size
+            new_mediod = self.update_bin(self._BM, mediod)
 
-            print "Recruited %d members." % numpy.count_nonzero(labels - old_labels)
+            print "Recruited %d members." % self._BM.get_bin_indices([self._BM.current_bid]).size - old_size
 
             if new_mediod == mediod:
                 print "Mediod is stable after %d rounds." % count
@@ -140,81 +129,32 @@ class ClusterEngine:
             else:
                 mediod = new_mediod
 
-        self.unbin_low_quality_assignments(labels)
-        self.assign_bins(labels)
+        print " %d bins made." % self._BM.current_bid
+        self._BM.unbin_low_quality_assignments()
 
-    def unbin_low_quality_assignments(bin_assignments):
-        """Check bin assignment quality using Bin Manager"""
-        low_quality = []
-        for label in set(bin_assignments):
-            # -1 == unbinned
-            if label == -1:
-                continue
-
-            members = numpy.flatnonzero(numpy.asarray(bin_assignments) == label)
-            total_BP = numpy.sum(self.PM.contigLengths[members])
-            bin_size = len(members)
-
-            if not self.BM.isGoodBin(total_BP, bin_size, ms=self.minSize, mv=self.minVol):
-                # This partition is too small, ignore
-                low_quality.append(label)
-
-        print " Found %d low quality bins." % len(low_quality)
-        bin_assignments[numpy.in1d(bin_assignments, low_quality)] = -1
-
-
-    def assign_bins(self, bin_assignments):
-        """Make bins from grouping list"""
-
-        # number of clusters
-        n_clusters = len(set(bin_assignments)) - (1 if -1 in bin_assignments else 0)
-
-        bids_made = []
-        for label in set(bin_assignments):
-            # -1 == unbinned
-            if label == -1:
-                continue
-
-            members = numpy.where(numpy.asarray(bin_assignments) == label)[0]
-            # time to make a bin
-            bin = self.BM.makeNewBin(rowIndices=members)
-
-            # work out the distribution in points in this bin
-            bin.makeBinDist(self.PM.transformedCP, self.PM.averageCoverages, self.PM.kmerNormPC1, self.PM.kmerPCs,
-                self.PM.contigGCs, self.PM.contigLengths)
-
-            # append this bins list of mapped rowIndices to the main list
-            bids_made.append(bin.id)
-
-        print " %d bins made." % len(bids_made)
 
 class MediodClusterMaker:
     """Update cluster labels based on current mediod"""
     def __init__(self, PM, threshold):
-        self.measure = HybridMeasure(PM)
+        self._HM = HybridMeasure(PM)
         self.threshold = threshold
 
-    def __call__(self, labels, mediod):
-        is_unbinned = labels==-1
-        num_unbinned = numpy.count_nonzero(is_unbinned)
-        if num_unbinned==0:
-            return (labels, mediod)
+    def __call__(self, BM, mediod):
+        current_bid = BM.bids[mediod]
+        putative_members = BM.get_bin_indices([0, current_bid])
 
-        current_label = labels[mediod]
-        putative_members = numpy.flatnonzero(numpy.logical_and(labels==current_label, is_unbinned))
-
-        distances = self.measure.get_distances([mediod], putative_members)[:, 0, :]
+        distances = self._HM.get_distances([mediod])[:, 0, :]
         ranks = argrank(distances, axis=0)
-        recruited = get_mergers(ranks, threshold=self.threshold)
-        labels[recruited] = current_labels
-        members = numpy.flatnonzero(labels == current_label)
+        recruited = get_mergers(ranks, threshold=self.threshold, unmerged=putative_members)
+        BM.assign_bin(recruited, bid=current_bid)
+        members = BM.get_bin_indices([current_bid])
         if len(members)==1:
             mediod = members
         else:
-            index = self.measure.get_mediod(members)
+            index = self._HM.get_mediod(members)
             mediod = members[index]
 
-        return (labels, mediod)
+        return mediod
 
 ###############################################################################
 #Utility functions
@@ -382,12 +322,14 @@ def flood_partition_with_mask(points, is_mask):
 
     return partitions.ids
 
-def get_origin_partition(ranks, scores, threshold):
+def get_origin_partition(ranks, scores, threshold, unmerged=None):
     """Return points in origin partition"""
     ranks = numpy.asarray(ranks)
     is_origin = numpy.all(ranks == 0, axis=0)
 
     is_mask = is_extrema_mask(ranks, scores, threshold=threshold)
+    if unmerged is not None:
+        is_mask[numpy.setdiff1d(numpy.arange(is_mask.size), unmerged)] = True
     partitions = flood_partition_with_mask(ranks, is_mask)
 
     return numpy.flatnonzero(partitions == partitions[is_origin])
@@ -396,15 +338,15 @@ def get_origin_partition(ranks, scores, threshold):
 #------------------------------------------------------------------------------
 #Mergers
 
-def get_mergers(ranks, threshold):
+def get_mergers(ranks, threshold, unmerged=None):
     """Recruit points with a significant rank correlation"""
 
     scores = get_inside_p_null(ranks)
-    origin_partition = get_origin_partition(ranks, scores, threshold)
+    origin_partition = get_origin_partition(ranks, scores, threshold, unmerged=unmerged)
     index = origin_partition[numpy.argmin(scores[origin_partition])]
 
     scores = get_outside_p_null(ranks, index)
-    origin_partition = get_origin_partition(ranks, scores, threshold)
+    origin_partition = get_origin_partition(ranks, scores, threshold, unmerged=unmerged)
 
     is_merger = numpy.zeros(samps, dtype=bool)
     for i in origin_partition:

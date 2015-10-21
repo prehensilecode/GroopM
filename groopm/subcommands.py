@@ -57,6 +57,9 @@ from .version import __version__
 ###############################################################################
 ###############################################################################
 
+#------------------------------------------------------------------------------
+# Helpers
+
 class CustomHelpFormatter(argparse.HelpFormatter):
     def _split_lines(self, text, width):
         return text.splitlines()
@@ -87,8 +90,11 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 
 
 ###############################################################################
-# Workflows
+# Workflow
 ###############################################################################
+
+#------------------------------------------------------------------------------
+# Parse
 
 class ParseSubcommand:
     def add_subparser_to(self, subparsers):
@@ -128,6 +134,8 @@ class ParseSubcommand:
         if not success:
             print options.dbname,"not updated"
 
+#------------------------------------------------------------------------------
+# Core
 
 class CoreSubcommand:
     def add_subparser_to(self, subparsers):
@@ -168,6 +176,9 @@ class CoreSubcommand:
         CE.makeCores(coreCut=options.cutoff,
                      gf=gf)
 
+
+#------------------------------------------------------------------------------
+# Extract
 
 class ExtractSubcommand:
     def add_subparser_to(self, subparsers):
@@ -257,97 +268,12 @@ class ExtractSubcommand:
         else:
             raise ExtractModeNotAppropriateException("mode: "+ options.mode + " is unknown")
 
-
-###############################################################################
-# Utilities
-###############################################################################
-
-class MergeSubcommand:
-    def add_subparser_to(self, subparsers):
-        parser = subparsers.add_parser("merge",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="combine two or more bins into one",
-                                          description="Combine two or more bins into one")
-        self.add_arguments_to(parser)
-        parser.set_defaults(parse=self.parse_options)
-        return parser
-
-    def add_arguments_to(self, parser):
-        parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('bids', nargs='+', type=int, help="bin ids to merge.")
-        parser.add_argument('-f', '--force', action="store_true", default=False, help="merge without prompting")
-
-        return parser
-
-    def parse_options(self, options):
-        timer = groopm.TimeKeeper()
-        print "*******************************************************************************"
-        print " [[GroopM %s]] Running in bin merging mode..." % __version__
-        print "*******************************************************************************"
-        BM = groopm.BinManager(dbFileName=options.dbname)
-        BM.loadBins(timer, makeBins=True, silent=False)
-        BM.merge(options.bids, options.force, saveBins=True)
-
-
-class DeleteSubcommand:
-    def add_subparser_to(self, subparsers):
-        parser = subparsers.add_parser("delete",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="delete bins",
-                                          description="Delete bins")
-        self.add_arguments_to(parser)
-        parser.set_defaults(parse=self.parse_options)
-        return parser
-
-    def add_arguments_to(self, parser):
-        parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('bids', nargs='+', type=int, help="bin ids to delete")
-        parser.add_argument('-f', '--force', action="store_true", default=False, help="delete without prompting")
-
-        return parser
-
-    def parse_options(self, options):
-        timer = groopm.TimeKeeper()
-        print "*******************************************************************************"
-        print " [[GroopM %s]] Running in bin deleting mode..." % __version__
-        print "*******************************************************************************"
-        BM = groopm.BinManager(dbFileName=options.dbname)
-        BM.loadBins(timer, makeBins=True, silent=True)#, bids=options.bids)
-        BM.deleteBins(options.bids, force=options.force, saveBins=True, freeBinnedRowIndices=True)
-
-
-class PrintSubcommand:
-    def add_subparser_to(self, subparsers):
-        parser = subparsers.add_parser("print",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="print bin information",
-                                          description="Print bin information")
-        self.add_arguments_to(parser)
-        parser.set_defaults(parse=self.parse_options)
-        return parser
-
-    def add_arguments_to(self, parser):
-        parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to print (None for all)")
-        parser.add_argument('-o', '--outfile', default="", help="print to file not STDOUT")
-        parser.add_argument('-f', '--format', default='bins', help="output format [bins, contigs]")
-        parser.add_argument('-u', '--unbinned', action="store_true", default=False, help="print unbinned contig IDs too")
-
-        return parser
-
-    def parse_options(self, options):
-        timer = groopm.TimeKeeper()
-        BM = groopm.BinManager(dbFileName=options.dbname)
-        bids = []
-        if options.bids is not None:
-            bids = options.bids
-        BM.loadBins(timer, getUnbinned=options.unbinned, makeBins=True, silent=True, bids=bids)
-        BM.printBins(options.format, fileName=options.outfile)
-
-
 ###############################################################################
 # Import Export
 ###############################################################################
+
+#------------------------------------------------------------------------------
+# Dump
 
 class DumpSubcommand:
     def add_subparser_to(self, subparsers):
@@ -393,6 +319,9 @@ class DumpSubcommand:
                     separator,
                     not options.no_headers)
 
+
+#------------------------------------------------------------------------------
+# Import
 
 class ImportSubcommand:
     def add_subparser_to(self, subparsers):
