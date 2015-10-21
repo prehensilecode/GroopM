@@ -50,10 +50,6 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy
 import scipy.spatial.distance as distance
 
-# GroopM imports
-from profileManager import ProfileManager
-from binManager import BinManager
-
 numpy.seterr(all='raise')
 
 ###############################################################################
