@@ -153,28 +153,15 @@ class CoreSubcommand:
         parser.add_argument('-s', '--size', type=int, default=10, help="minimum number of contigs which define a core")
         parser.add_argument('-b', '--bp', type=int, default=1000000, help="cumulative size of contigs which define a core regardless of number of contigs")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
-        parser.add_argument('-g', '--graphfile', help="output graph of micro bin mergers")
-        parser.add_argument('-p', '--plot', action="store_true", default=False, help="create plots of bins after basic refinement")
-        parser.add_argument('-m', '--multiplot', default=0, help="create plots during core creation - (0-3) MAKES MANY IMAGES!")
 
     def parse_options(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
-        CE = groopm.ClusterEngine(options.dbname,
-                                   timer,
-                                   force=options.force,
-                                   finalPlot=options.plot,
-                                   plot=options.multiplot,
-                                   minSize=options.size,
-                                   minVol=options.bp)
-        if options.graphfile is None:
-            gf = ""
-        else:
-            gf=options.graphfile
-        CE.makeCores(coreCut=options.cutoff,
-                     gf=gf)
+
+        CE = groopm.ClusterEngine(options.dbname, minSize=options.size, minBP=options.bp)
+        CE.run(timer, minLength=options.cutoff, force=options.force)
 
 
 #------------------------------------------------------------------------------

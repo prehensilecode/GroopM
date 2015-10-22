@@ -50,6 +50,9 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy
 import scipy.spatial.distance as distance
 
+import sys
+import matplotlib.pyplot as plt
+
 numpy.seterr(all='raise')
 
 ###############################################################################
@@ -64,7 +67,7 @@ class HybridMeasure:
     def __init__(self, PM):
         self._PM = PM
 
-    def get_distances(self, a_members, b_members=None):
+    def getDistances(self, a_members, b_members=None):
         """Get distances between two sets of points for the metrics"""
 
         if b_members is None:
@@ -76,13 +79,13 @@ class HybridMeasure:
 
         return numpy.array([cov, kmer])
 
-    def get_mediod(self, members):
+    def getMediod(self, members):
         """Get member index that minimises the sum rank euclidean distance to other members.
 
         The sum rank euclidean distance is the sum of the euclidean distances of distance ranks for the metrics"""
 
         # for each member, sum of distances to other members
-        scores = [numpy.sum(d, axis=1) for d in self.get_distances(members)]
+        scores = [numpy.sum(d, axis=1) for d in self.getDistances(members)]
         ranks = argrank(scores, axis=1)
 
         # combine using euclidean distance between ranks
@@ -91,10 +94,10 @@ class HybridMeasure:
 
         return index
 
-    def associate_with(self, a_members, b_members):
+    def associateWith(self, a_members, b_members):
         """Associate b points with closest a point"""
 
-        distances = self.get_distances(self, a_members, b_members)
+        distances = self.getDistances(self, a_members, b_members)
         (_dims, a_num, b_num) = distances.shape
 
         # rank distances to a points
@@ -106,7 +109,7 @@ class HybridMeasure:
 
         return b_to_a
 
-    def get_dim_names(self):
+    def getDimNames(self):
         """Labels for distances returned by get_distances"""
         return ("log coverage euclidean", "kmer euclidean")
 
@@ -118,7 +121,7 @@ class HybridMeasure:
 #------------------------------------------------------------------------------
 #Ranking
 
-def rank_with_ties(array):
+def rankWithTies(array):
     """Return sorted of array indices with tied values averaged"""
     ranks = numpy.asarray(numpy.argsort(numpy.argsort(array)), dtype=float)
     for val in set(array):
@@ -129,19 +132,22 @@ def rank_with_ties(array):
 
 def argrank(array, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
-    return numpy.apply_along_axis(rank_with_ties, axis, array)
+    return numpy.apply_along_axis(rankWithTies, axis, array)
 
 #------------------------------------------------------------------------------
 #Plotting
 
 class HybridMeasurePlotter:
+    """Plot contigs in hybrid measure space"""
+    COLOURS = 'rbgcmyk'
+
     def __init__(self, PM):
         self._PM = PM
-        self._HM = HybridMeasure(PM)
+        self._HM = HybridMeasure(self._PM)
 
-    def get_origin(self, members, mode="mediod"):
+    def getOrigin(self, members, mode="mediod"):
         if mode=="mediod":
-            index = self._HM.get_mediod(members)
+            index = self._HM.getMediod(members)
         elif mode=="max_coverage":
             index = numpy.argmax(self._PM.normCoverages[members])
         elif mode=="max_length":
@@ -150,16 +156,14 @@ class HybridMeasurePlotter:
             raise ValueError("Invalid mode: %s" % mode)
         return members[index]
 
-    def plot(self, origin, ranks=False, labels=None, keep=None,
-             highlight=None, divide=None, plotContigLengs=False, fileName=""):
-        """Make plots of all the bins"""
-
-        # plot contigs in coverage space
+    def plot(self, origin, plotRanks=False, keep=None,
+             highlight=None, divide=None, plotContigLengths=False, fileName=""):
+        """Plot contigs in measure space"""
         fig = plt.figure()
 
         ax = fig.add_subplot(111)
-        self.plotOnAx(ax, origin, ranks=ranks, labels=labels, keep=keep,
-                      highlight=highlight, plotContigLengs=plotContigLengs)
+        self.plotOnAx(ax, origin, plotRanks=plotRanks, keep=keep,
+                      highlight=highlight, plotContigLengths=plotContigLengths)
 
         if divide is not None:
             for (clr, coords) in zip(COLOURS, divide):
@@ -186,14 +190,47 @@ class HybridMeasurePlotter:
         plt.close(fig)
         del fig
 
+    def plotSurface(self, origin, f, label, plotRanks=False, keep=None,
+            highlight=None, plotContigLengths=False, elev=None, azim=None,
+            fileName="")
+        """Plot a surface computed from coordinates in measure space"""
+        fig = plt.figure()
 
-    def plotOnAx(self, ax, origin, z=None, ranks=False, keep=None, extents=None,
-            highlight=None, plotContigLengs=False, elev=None, azim=None):
+        ax = fig.add_subplot(111, projection='3d')
+        self.plotOnAx(ax, origin, z=f, z_label=label, plotRanks=plotRanks,
+            keep=keep, highlight=highlight, plotContigLengths=plotContigLengths,
+            elev=elev, azim=azim)
 
-        distances = self._HM.get_distances([origin])[:, 0, :]
+        if(fileName != ""):
+            try:
+                fig.set_size_inches(6,6)
+                plt.savefig(fileName,dpi=300)
+            except:
+                print "Error saving image:", fileName, sys.exc_info()[0]
+                raise
+        else:
+            print "Plotting contig features"
+            try:
+                plt.show()
+            except:
+                print "Error showing image", sys.exc_info()[0]
+                raise
+
+        plt.close(fig)
+        del fig
+
+    def plotOnAx(self, ax, origin, z=None, z_label=None, keep=None, extents=None,
+            highlight=None, plotRanks=False, plotContigLengths=False, elev=None,
+            azim=None):
+
+        # display values
+        distances = self._HM.getDistances([origin])[:, 0, :]
         data = argrank(distances, axis=1) if ranks else distances
         (x, y) = (data[0], data[1])
         disp_vals = (x, y, z(x, y)) if z is not None else (x, y)
+
+        # display labels
+        labels = self._HM.getDimNames()
         disp_cols = self._PM.contigGCs
 
         if highlight is not None:
@@ -205,7 +242,7 @@ class HybridMeasurePlotter:
         else:
             edgecolors = 'k'
 
-        if plotContigLengs:
+        if plotContigLengths:
             disp_lens = numpy.sqrt(self._PM.contigLengths)
             if keep is not None:
                 disp_lens = disp_lens[keep]
@@ -224,11 +261,10 @@ class HybridMeasurePlotter:
         sc.set_edgecolors(edgecolors)
         sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
 
-        if labels is not None:
-            ax.set_xlabel(labels[0])
-            ax.set_ylabel(labels[1])
-            if z is not None:
-                ax.set_zlabel(labels[2])
+        ax.set_xlabel(labels[0])
+        ax.set_ylabel(labels[1])
+        if z_label is not None and z is not None:
+            ax.set_zlabel(z_label)
 
         if extents is not None:
             ax.set_xlim([extents[0], extents[1]])

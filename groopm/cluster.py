@@ -53,7 +53,8 @@ import scipy.stats as stats
 # GroopM imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from hybridMeasure import HybridMeasure
+import hybridMeasure
+from hybridMeasure import HybridMeasure, HybridMeasurePlotter
 
 numpy.seterr(all='raise')
 
@@ -65,41 +66,35 @@ numpy.seterr(all='raise')
 class ClusterEngine:
     """Top level interface for clustering contigs"""
     def __init__(self,
-                 PM,
-                 timer,
-                 minSize=5,
-                 minVol=1000000,
+                 dbFileName,
+                 minSize,
+                 minBP,
                  threshold=0.5):
 
         # Worker classes
-        self._PM = PM
-        self._BM = BinManager(self._PM, minSize=minSize, minVol=minVol)
-        self.update_bin = MediodClusterMaker(self._PM, init=numpy.argsort(self._PM.contigLengths), threshold=threshold)
+        self._PM = ProfileManager(options.dbFileName)
+        self._BM = BinManager(self._PM, minSize=minSize, minBP=minBP)
+        self.updateBin = MediodClusterMaker(self._PM, threshold=threshold)
 
-        # Misc tools we'll need
-        self.timer = timer
 
-    def run(self):
+    def run(self, timer, minLength=None, force=False):
         """Cluster the contigs to make bin cores"""
         # check that the user is OK with nuking stuff...
-        if(not self.PM.promptOnOverwrite()):
-            return False
-
-        # get some data
-        self._PM.loadData(self.timer, "length >= "+str(coreCut))
-        print "    %s" % self.timer.getTimeStamp()
+        if not force and not self._PM.promptOnOverwrite():
+            return
+        self._PM.loadData(timer, minLength=minLength)
 
         # cluster and bin!
         print "Create cores"
-        self.makeBins(init=numpy.argsort(self.PM.contigLengths))
-        print "    %s" % self.timer.getTimeStamp()
+        self.makeBins(init=numpy.argsort(self._PM.contigLengths))
+        print "    %s" % timer.getTimeStamp()
 
         # Now save all the stuff to disk!
         print "Saving bins"
         self._BM.saveBins(nuke=True)
-        print "    %s" % self.timer.getTimeStamp()
+        print "    %s" % timer.getTimeStamp()
 
-    def make_bins(self, init):
+    def makeBins(self, init):
         """Make the bins"""
 
         round_counter = 0
@@ -107,20 +102,21 @@ class ClusterEngine:
 
         while(True):
             if mediod is None:
-                to_bin = numpy.intersect1d(init, self._BM.get_unbinned())
+                to_bin = numpy.intersect1d(init, self._BM.getUnbinned())
                 if len(to_bin) == 0:
                     break
                 mediod = to_bin[0]
-                self._BM.assign_bin([mediod])
+                self._BM.assignBin([mediod])
 
             round_counter += 1
-            print "Recruiting bin %d, round %d." % (self._BM.current_bid, round_counter)
-            print "Found %d unbinned." % self._BM.get_unbinned().size
+            bid = self._BM.getCurrentBid()
+            print "Recruiting bin %d, round %d." % (bid, round_counter)
+            print "Found %d unbinned." % self._BM.getUnbinned().size
 
-            old_size = self._BM.get_bin_indices([self._BM.current_bid]).size
-            new_mediod = self.update_bin(self._BM, mediod)
+            old_size = self._BM.getBinIndices([bid]).size
+            new_mediod = self.updateBin(self._BM, mediod)
 
-            print "Recruited %d members." % self._BM.get_bin_indices([self._BM.current_bid]).size - old_size
+            print "Recruited %d members." % self._BM.getBinIndices([bid]).size - old_size
 
             if new_mediod == mediod:
                 print "Mediod is stable after %d rounds." % count
@@ -129,8 +125,8 @@ class ClusterEngine:
             else:
                 mediod = new_mediod
 
-        print " %d bins made." % self._BM.current_bid
-        self._BM.unbin_low_quality_assignments()
+        print " %d bins made." % self._BM.currentBid
+        self._BM.unbinLowQualityAssignments()
 
 
 class MediodClusterMaker:
@@ -140,18 +136,18 @@ class MediodClusterMaker:
         self.threshold = threshold
 
     def __call__(self, BM, mediod):
-        current_bid = BM.bids[mediod]
-        putative_members = BM.get_bin_indices([0, current_bid])
+        bid = BM.getBidsByIndex(mediod)
+        putative_members = BM.getBinIndices([0, bid])
 
-        distances = self._HM.get_distances([mediod])[:, 0, :]
-        ranks = argrank(distances, axis=0)
-        recruited = get_mergers(ranks, threshold=self.threshold, unmerged=putative_members)
-        BM.assign_bin(recruited, bid=current_bid)
-        members = BM.get_bin_indices([current_bid])
+        distances = self._HM.getDistances([mediod])[:, 0, :]
+        ranks = hybridMeasure.argrank(distances, axis=0)
+        recruited = getMergers(ranks, threshold=self.threshold, unmerged=putative_members)
+        BM.assignBin(recruited, bid=bid)
+        members = BM.getBinIndices(bid)
         if len(members)==1:
             mediod = members
         else:
-            index = self._HM.get_mediod(members)
+            index = self._HM.getMediod(members)
             mediod = members[index]
 
         return mediod
@@ -163,7 +159,7 @@ class MediodClusterMaker:
 #------------------------------------------------------------------------------
 #Point counting
 
-def get_inside_count(data, points=None):
+def getInsideCount(data, points=None):
     """For each data point return the number of data points that have lower value in all dimensions"""
     data = numpy.asarray(data)
     if points is None:
@@ -177,18 +173,18 @@ def get_inside_count(data, points=None):
 
     return counts
 
-def get_outside_count(data, inner_points, outer_points=None):
+def getOutsideCount(data, inner_points, outer_points=None):
     """Return the number of data points that have values in a region between each data point and an internal point."""
 
     if outer_points is None:
-        outer_points = get_bounding_points(inner_points, data)
+        outer_points = getBoundingPoints(inner_points, data)
 
-    outer_counts = get_inside_count(data, outer_points)
-    inner_counts = get_inside_count(data, inner_points)
+    outer_counts = getInsideCount(data, outer_points)
+    inner_counts = getInsideCount(data, inner_points)
 
     return outer_counts - inner_counts
 
-def get_bounding_points(a_points, b_points):
+def getBoundingPoints(a_points, b_points):
     """Return a bounding region that contains both of a pair of points."""
     (num_a_dims, num_a_points) = a_points.shape
     (_num_b_dims, num_b_points) = b_points.shape
@@ -205,11 +201,11 @@ def get_bounding_points(a_points, b_points):
 #------------------------------------------------------------------------------
 #Rank correlation testing
 
-def get_inside_p_null(ranks):
+def getInsidePNull(ranks):
     """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
     ranks = numpy.asarray(ranks, dtype=float)
     (_num_dims, num_points) = ranks.shape
-    counts = get_inside_count(ranks)
+    counts = getInsideCount(ranks)
 
     # For a point with ranks r, the probability of another point having a
     # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
@@ -218,14 +214,14 @@ def get_inside_p_null(ranks):
     p_inside = numpy.prod(ranks / r_max, axis=0)
 
     # Statistical test counts
-    return binom_one_tailed_test(counts, r_max, p_inside)
+    return binomOneTailedTest(counts, r_max, p_inside)
 
-def get_outside_p_null(ranks, inners):
+def getOutsidePNull(ranks, inners):
     """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
     ranks = numpy.asarray(ranks, dtype=float)
     (_num_dims, num_points) = ranks.shape
-    outer_points = get_bounding_points(ranks[:, inners], ranks)
-    counts = get_outside_count(ranks, ranks[:, inners], outer_points=outer_points)
+    outer_points = getBoundingPoints(ranks[:, inners], ranks)
+    counts = getOutsideCount(ranks, ranks[:, inners], outer_points=outer_points)
 
     # For a pair of points r, s the probability of a point with all ranks
     # at least as low as r and higher s is
@@ -235,9 +231,9 @@ def get_outside_p_null(ranks, inners):
     p_outside = numpy.prod(outer_points / r_max, axis=0) - numpy.prod(ranks[:, inners] / r_max, axis=0)
 
     # Statistical test counts
-    return binom_one_tailed_test(counts, r_max, p_outside)
+    return binomOneTailedTest(counts, r_max, p_outside)
 
-def binom_one_tailed_test(counts, ns, ps):
+def binomOneTailedTest(counts, ns, ps):
     """Test counts against one-tailed binomial distribution"""
     return numpy.array([stats.binom.sf(c-1, n, p) for (c, n, p) in numpy.broadcast(counts, ns, ps)])
 
@@ -263,7 +259,7 @@ class PartitionSet:
                     self.ids[self.ids == j] = current_max
 
 
-def is_extrema_mask(points, scores, inners=None, threshold=0.5):
+def isExtremaMask(points, scores, inners=None, threshold=0.5):
     """Find data points with scores higher than the inner minimum score or threshold value"""
     points = numpy.asarray(points)
     scores = self.get_scores(points)
@@ -298,7 +294,7 @@ def is_extrema_mask(points, scores, inners=None, threshold=0.5):
 
     return is_mask
 
-def flood_partition_with_mask(points, is_mask):
+def floodPartitionWithMask(points, is_mask):
     """Find partitions of unmasked points by joining a point to any outside point closer than an outside mask point"""
     points = numpy.asarray(points)
     (_num_dims, num_points) = points.shape
@@ -322,15 +318,15 @@ def flood_partition_with_mask(points, is_mask):
 
     return partitions.ids
 
-def get_origin_partition(ranks, scores, threshold, unmerged=None):
+def getOriginPartition(ranks, scores, threshold, unmerged=None):
     """Return points in origin partition"""
     ranks = numpy.asarray(ranks)
     is_origin = numpy.all(ranks == 0, axis=0)
 
-    is_mask = is_extrema_mask(ranks, scores, threshold=threshold)
+    is_mask = isExtremaMask(ranks, scores, threshold=threshold)
     if unmerged is not None:
         is_mask[numpy.setdiff1d(numpy.arange(is_mask.size), unmerged)] = True
-    partitions = flood_partition_with_mask(ranks, is_mask)
+    partitions = floodPartitionWithMask(ranks, is_mask)
 
     return numpy.flatnonzero(partitions == partitions[is_origin])
 
@@ -338,15 +334,15 @@ def get_origin_partition(ranks, scores, threshold, unmerged=None):
 #------------------------------------------------------------------------------
 #Mergers
 
-def get_mergers(ranks, threshold, unmerged=None):
+def getMergers(ranks, threshold, unmerged=None):
     """Recruit points with a significant rank correlation"""
 
-    scores = get_inside_p_null(ranks)
-    origin_partition = get_origin_partition(ranks, scores, threshold, unmerged=unmerged)
+    scores = getInsidePNull(ranks)
+    origin_partition = getOriginPartition(ranks, scores, threshold, unmerged=unmerged)
     index = origin_partition[numpy.argmin(scores[origin_partition])]
 
-    scores = get_outside_p_null(ranks, index)
-    origin_partition = get_origin_partition(ranks, scores, threshold, unmerged=unmerged)
+    scores = getOutsidePNull(ranks, index)
+    origin_partition = getOriginPartition(ranks, scores, threshold, unmerged=unmerged)
 
     is_merger = numpy.zeros(samps, dtype=bool)
     for i in origin_partition:
@@ -355,6 +351,51 @@ def get_mergers(ranks, threshold, unmerged=None):
 
     return numpy.flatnonzero(is_merger)
 
+
+
+#------------------------------------------------------------------------------
+# Plotting
+
+class CorrelationPlotter(HybridMeasurePlotter):
+    """"""
+    def plotMaskFlat(self, origin,
+                     mask
+                     plotRanks=plotRanks,
+                     fileName=""
+                    ):
+        pass
+
+    def plotSurface(self, origin,
+                    surface="inside",
+                    highlight=None,
+                    plotRanks=False,
+                    fileName=""
+                   ):
+
+        if surface=="inside":
+            fn = surfacePNullInside()
+            label = "Inside correlation"
+        elif surface=="outside":
+            fn = surfacePNullOutside()
+            label = "Outside correlation"
+        else:
+            raise ValueError("Invaild surface mode: %s" % surface)
+
+        fn = SurfaceFormatter(fn)
+        self.plotSurface(origin, fn, label=label, plotRanks=plotRanks,
+                         highlight=highlight, fileName=fileName)
+
+
+def surfacePNullInside(x, y):
+    return getInsidePNull(hybridMeasure.argrank([x, y], axis=1))
+
+def surfacePNullOutside(x, y):
+    ranks = hybridMeasure.argrank([x, y], axis=1)
+    scores = getInsidePNull(ranks)
+    origin_partition = getOriginPartition(ranks, scores, threshold, unmerged=unmerged)
+    index = origin_partition[numpy.argmin(scores[origin_partition])]
+
+    return getOutsidePNull(ranks, index)
 
 ###############################################################################
 ###############################################################################

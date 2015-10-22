@@ -49,7 +49,9 @@ __email__ = "mike@mikeimelfort.com"
 import numpy
 
 # GroopM imports
+from profileManager import ProfileManager
 from groopmExceptions import BinNotFoundException
+from hybridMeasure import HybridMeasurePlotter
 
 numpy.seterr(all='raise')
 
@@ -62,87 +64,71 @@ class BinManager:
     """Class used for manipulating bins"""
     def __init__(self,
                  PM,
-                 minSize=5,
-                 minVol=1000000):
+                 minSize=0,
+                 minBP=0):
 
         self._PM = PM
-        self.minSize = minSize
-        self.minBP = minBP
+        self._minSize = minSize
+        self._minBP = minBP
 
-        self.bids = self._PM.binIds[self._PM.indices] # bid -> bin
-        self.current_bid = numpy.max(self.bids)
+    def getBidsByIndex(self, row_indices):
+        """Return corresponding bin ids"""
+        return self._PM.binIds[row_indices]
 
-    def get_bin_indices(self, bids):
+    def getBinIndices(self, bids):
         """Return array of binned contig indices"""
 
-        if not numpy.all(numpy.in1d(bids, self.get_bids())):
-            raise BinNotFoundException("Cannot find: "+str(bid)+" in bins dicts")
-        return numpy.flatnonzero(numpy.any([self.bids==bid for bid in bids], axis=0))
+        is_not_bid = numpy.logical_not(numpy.in1d(bids, self.get_bids()))
+        if numpy.any(is_not_bid):
+            raise BinNotFoundException("Cannot find: "+",".join([str(bid) for bid in bids[is_not_bid]])+" in bins dicts")
+        return numpy.flatnonzero(numpy.in1d(self._PM.bidIds, bids))
 
-    def get_unbinned(self):
-        return self.get_bin_indices([0])
+    def getUnbinned(self):
+        return self.getBinIndices([0])
 
-    def unbin_low_quality_assignments(self):
+    def unbinLowQualityAssignments(self):
         """Check bin assignment quality"""
         low_quality = []
-        for label in self.get_bids():
-            # -1 == unbinned
-            if label == -1:
+        for bid in self.getBids():
+            # 0 == unbinned
+            if bid == 0:
                 continue
 
-            members = numpy.flatnonzero(self.bids == label)
+            members = self.getBinIndices([bid])
             total_BP = numpy.sum(self._PM.contigLengths[members])
             bin_size = len(members)
 
-            if not isGoodBin(total_BP, bin_size, minBP=self.minBP, minSize=self.minSize):
+            if not isGoodBin(total_BP, bin_size, minBP=self._minBP, minSize=self._minSize):
                 # This partition is too small, ignore
                 low_quality.append(label)
 
         print " Found %d low quality bins." % len(low_quality)
-        self.bids[numpy.in1d(self.bids, low_quality)] = 0
+        self._PM.bidIds[self.getBinIndices(low_quality)] = 0
 
-    def assign_bin(self, row_indices, bid=None):
+    def assignBin(self, row_indices, bid=None):
         """Make a new bin and add to the list of existing bins"""
         if bid is None:
-            self.current_bid +=1
-            bid = self.current_bid
+            bid = max(self._PM.binIds) + 1
 
-        self.PM.isLikelyChimeric[bid] = False
-        self.bids[row_indices] = bid
+        self._PM.bidIds[row_indices] = bid
 
-    def save_bins(self, nuke=False):
+    def saveBins(self, nuke=False):
         """Save binning results
 
         binAssignments is a hash of LOCAL row indices Vs bin ids
         { row_index : bid }
         PM.setBinAssignments needs GLOBAL row indices
-
-        We always overwrite the bins table (It is smallish)
         """
         # save the bin assignments
-        self._PM.setBinAssignments(
-                                  self._get_global_bin_assignments(), # convert to global indices
-                                  nuke=nuke
+        self._PM.setBinAssignments(self._getGlobalBinAssignments(), # convert to global indices
+                                   nuke=nuke
                                   )
-        # overwrite the bins table
-        self._PM.setBinStats(self._get_bin_stats())
 
-    def get_bids(self):
+    def getBids(self):
         """Return a sorted list of bin ids"""
-        return sorted(set(self.bids))
+        return sorted(set(self._PM.bidIds))
 
-    def _get_bin_stats(self):
-        """Update / overwrite the table holding the bin stats
-
-        Note that this call effectively nukes the existing table
-        """
-
-        # create and array of tuples:
-        # [(bid, size, likelyChimeric)]
-        bin_stats = [(bid, numpy.count_nonzero(self.bids == bid), self._PM.isLikelyChimeric[bid]) for bid in self.get_bids()]
-        return bin_stats
-
-    def _get_global_bin_assignments(self):
+    def _getGlobalBinAssignments(self):
         """Merge the bids, raw DB indexes and core information so we can save to disk
 
         returns a hash of type:
@@ -150,7 +136,7 @@ class BinManager:
         { global_index : bid }
         """
         # we need a mapping from cid (or local index) to to global index to binID
-        return dict(zip(self._PM.indices, self.bids))
+        return dict(zip(self._PM.indices, self._PM.bidIds))
 
 
 ###############################################################################
@@ -163,9 +149,29 @@ class BinManager:
 def isGoodBin(totalBP, binSize, minBP, minSize):
     """Does this bin meet my exacting requirements?"""
 
-    # contains enough bp to pass regardless of number of contigs
-    # or has enough contigs
+    # contains enough bp or enough contigs
     return totalBP >= minBP or binSize >= minSize
+
+#------------------------------------------------------------------------------
+# Plotting
+
+class BinPlotter(HybridMeasurePlotter):
+
+    def __init__(self, PM):
+        super.__init__(self, PM)
+        self._BM = BinManager(PM)
+
+    def plotBinFlat(self, bid,
+                    origin="mediod",
+                    plotRanks=False,
+                    fileName=""
+                   )
+
+        row_indices = self._BM.getBinIndices(bid)
+        mediod = self.getOrigin(row_indices, mode=origin)
+        self.plot(mediod, plotRanks=plotRanks, highlight=row_indices,
+                  fileName=fileName)
+
 
 ###############################################################################
 ###############################################################################
