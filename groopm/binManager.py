@@ -51,7 +51,7 @@ import numpy
 # GroopM imports
 from profileManager import ProfileManager
 from groopmExceptions import BinNotFoundException
-from hybridMeasure import HybridMeasurePlotter
+from hybridMeasure import HybridMeasurePlotter, PlotOriginAPI
 
 numpy.seterr(all='raise')
 
@@ -63,17 +63,17 @@ numpy.seterr(all='raise')
 class BinManager:
     """Class used for manipulating bins"""
     def __init__(self,
-                 PM,
+                 pm,
                  minSize=0,
                  minBP=0):
 
-        self._PM = PM
+        self._pm = pm
         self._minSize = minSize
         self._minBP = minBP
 
     def getBidsByIndex(self, row_indices):
         """Return corresponding bin ids"""
-        return self._PM.binIds[row_indices]
+        return self._pm.binIds[row_indices]
 
     def getBinIndices(self, bids):
         """Return array of binned contig indices"""
@@ -81,7 +81,7 @@ class BinManager:
         is_not_bid = numpy.logical_not(numpy.in1d(bids, self.get_bids()))
         if numpy.any(is_not_bid):
             raise BinNotFoundException("Cannot find: "+",".join([str(bid) for bid in bids[is_not_bid]])+" in bins dicts")
-        return numpy.flatnonzero(numpy.in1d(self._PM.bidIds, bids))
+        return numpy.flatnonzero(numpy.in1d(self._pm.bidIds, bids))
 
     def getUnbinned(self):
         return self.getBinIndices([0])
@@ -95,7 +95,7 @@ class BinManager:
                 continue
 
             members = self.getBinIndices([bid])
-            total_BP = numpy.sum(self._PM.contigLengths[members])
+            total_BP = numpy.sum(self._pm.contigLengths[members])
             bin_size = len(members)
 
             if not isGoodBin(total_BP, bin_size, minBP=self._minBP, minSize=self._minSize):
@@ -108,7 +108,7 @@ class BinManager:
     def assignBin(self, row_indices, bid=None):
         """Make a new bin and add to the list of existing bins"""
         if bid is None:
-            bid = max(self._PM.binIds) + 1
+            bid = max(self._pm.binIds) + 1
 
         self._PM.bidIds[row_indices] = bid
 
@@ -120,13 +120,13 @@ class BinManager:
         PM.setBinAssignments needs GLOBAL row indices
         """
         # save the bin assignments
-        self._PM.setBinAssignments(self._getGlobalBinAssignments(), # convert to global indices
+        self._pm.setBinAssignments(self._getGlobalBinAssignments(), # convert to global indices
                                    nuke=nuke
                                   )
 
     def getBids(self):
         """Return a sorted list of bin ids"""
-        return sorted(set(self._PM.bidIds))
+        return sorted(set(self._pm.bidIds))
 
     def _getGlobalBinAssignments(self):
         """Merge the bids, raw DB indexes and core information so we can save to disk
@@ -136,7 +136,7 @@ class BinManager:
         { global_index : bid }
         """
         # we need a mapping from cid (or local index) to to global index to binID
-        return dict(zip(self._PM.indices, self._PM.bidIds))
+        return dict(zip(self._pm.indices, self._pm.bidIds))
 
 
 ###############################################################################
@@ -155,28 +155,34 @@ def isGoodBin(totalBP, binSize, minBP, minSize):
 #------------------------------------------------------------------------------
 # Plotting
 
-class BinPlotter:
+class BinOriginAPI:
+    """Get origin point from bin members.
 
-    def __init__(self, PM):
-        self._HMPlot = HybridMeasurePlotter(PM)
-        self._BM = BinManager(PM)
+    Requires / replaces argument dict values:
+        {bid, origin_mode} -> {origin}
+    """
+    def __init__(self, pm):
+        self._plotOriginApi = PlotOriginAPI(pm)
+        self._bm = BinManager(pm)
+
+    def __call__(self, bid, **kwargs):
+        row_indices = self._bm.getBinIndices(bid)
+        return self._plotOriginApi(members=row_indices, **kwargs)
+
+class BinPlotter:
+    def __init__(self, pm):
+        self._binOriginApi = BinOriginAPI(pm)
+        self._hmPlot = HybridMeasurePlotter(pm)
 
     def plot(self, bid,
-             origin="mediod",
+             origin_mode="mediod",
              plotRanks=False,
-             highlight=None,
              fileName=""
             ):
-
-        to_origin = self.getOrigin(bid, mode=origin)
-        self._HMPlot.plot(origin,
-                          plotRanks=plotRanks,
-                          highlight=highlight,
-                          fileName=fileName)
-
-    def getOrigin(self, bid, mode):
-        row_indices = self._BM.getBinIndices(bid)
-        return self._HMPlot.getOrigin(row_indices, mode)
+        self._hmPlot.plot(**self._binOriginApi(bid=bid,
+                                               origin_mode=origin_mode,
+                                               plotRanks=plotRanks,
+                                               fileName=fileName))
 
 
 ###############################################################################

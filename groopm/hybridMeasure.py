@@ -53,6 +53,9 @@ import scipy.spatial.distance as distance
 import sys
 import matplotlib.pyplot as plt
 
+# groopm imports
+from profileManager import getColorMap
+
 numpy.seterr(all='raise')
 
 ###############################################################################
@@ -141,6 +144,28 @@ def argrank(array, axis=0):
 #------------------------------------------------------------------------------
 #Plotting
 
+class PlotOriginAPI:
+    """Compute origin point for hybrid measure.
+
+    Requires / replaces argument dict values:
+        {members, origin_mode} -> {origin}
+    """
+    def __init__(self, PM):
+        self._PM = PM
+
+    def __call__(self, members, origin_mode, **kwargs):
+        if origin_mode=="mediod":
+            index = self._HM.getMediod(members)
+        elif origin_mode=="max_coverage":
+            index = numpy.argmax(self._PM.normCoverages[members])
+        elif origin_mode=="max_length":
+            index = numpy.argmax(self._PM.contigLengths[members])
+        else:
+            raise ValueError("Invalid mode: %s" % origin_mode)
+
+        kwargs["origin"] = members[index]
+        return kwargs
+
 class HybridMeasurePlotter:
     """Plot contigs in hybrid measure space"""
     COLOURS = 'rbgcmyk'
@@ -148,17 +173,6 @@ class HybridMeasurePlotter:
     def __init__(self, PM):
         self._PM = PM
         self._HM = HybridMeasure(self._PM)
-
-    def getOrigin(self, members, mode="mediod"):
-        if mode=="mediod":
-            index = self._HM.getMediod(members)
-        elif mode=="max_coverage":
-            index = numpy.argmax(self._PM.normCoverages[members])
-        elif mode=="max_length":
-            index = numpy.argmax(self._PM.contigLengths[members])
-        else:
-            raise ValueError("Invalid mode: %s" % mode)
-        return members[index]
 
     def plot(self, origin, plotRanks=False, keep=None,
              highlight=None, divide=None, plotContigLengths=False, fileName=""):
@@ -225,7 +239,7 @@ class HybridMeasurePlotter:
 
     def plotOnAx(self, ax, origin, z=None, z_label=None, keep=None, extents=None,
             highlight=None, plotRanks=False, plotContigLengths=False, elev=None,
-            azim=None):
+            colorMap="HSV", azim=None):
 
         # display values
         distances = self._HM.getDistancesToPoint(origin)
@@ -259,7 +273,7 @@ class HybridMeasurePlotter:
 
         sc = ax.scatter(*disp_vals,
                         c=disp_cols, s=disp_lens,
-                        cmap=self._PM.colorMapGC,
+                        cmap=getColorMap(colorMap),
                         vmin=0.0, vmax=1.0,
                         marker='.')
         sc.set_edgecolors(edgecolors)
