@@ -79,6 +79,10 @@ class HybridMeasure:
 
         return numpy.array([cov, kmer])
 
+    def getDistancesToPoint(self, point, others=slice(None)):
+        """Get distances from an individual point"""
+        return self.getDistances([point], others)[:, 0, :]
+
     def getMediod(self, members):
         """Get member index that minimises the sum rank euclidean distance to other members.
 
@@ -190,14 +194,14 @@ class HybridMeasurePlotter:
         plt.close(fig)
         del fig
 
-    def plotSurface(self, origin, f, label, plotRanks=False, keep=None,
+    def plotSurface(self, origin, z, label, plotRanks=False, keep=None,
             highlight=None, plotContigLengths=False, elev=None, azim=None,
             fileName="")
         """Plot a surface computed from coordinates in measure space"""
         fig = plt.figure()
 
         ax = fig.add_subplot(111, projection='3d')
-        self.plotOnAx(ax, origin, z=f, z_label=label, plotRanks=plotRanks,
+        self.plotOnAx(ax, origin, z=z, z_label=label, plotRanks=plotRanks,
             keep=keep, highlight=highlight, plotContigLengths=plotContigLengths,
             elev=elev, azim=azim)
 
@@ -224,10 +228,10 @@ class HybridMeasurePlotter:
             azim=None):
 
         # display values
-        distances = self._HM.getDistances([origin])[:, 0, :]
+        distances = self._HM.getDistancesToPoint(origin)
         data = argrank(distances, axis=1) if ranks else distances
         (x, y) = (data[0], data[1])
-        disp_vals = (x, y, z(x, y)) if z is not None else (x, y)
+        disp_vals = (x, y, z) if z is not None else (x, y)
 
         # display labels
         labels = self._HM.getDimNames()

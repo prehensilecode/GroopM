@@ -53,8 +53,7 @@ import scipy.stats as stats
 # GroopM imports
 from profileManager import ProfileManager
 from binManager import BinManager
-import hybridMeasure
-from hybridMeasure import HybridMeasure, HybridMeasurePlotter
+from hybridMeasure import HybridMeasure, HybridMeasurePlotter, argrank
 
 numpy.seterr(all='raise')
 
@@ -139,8 +138,8 @@ class MediodClusterMaker:
         bid = BM.getBidsByIndex(mediod)
         putative_members = BM.getBinIndices([0, bid])
 
-        distances = self._HM.getDistances([mediod])[:, 0, :]
-        ranks = hybridMeasure.argrank(distances, axis=0)
+        distances = self._HM.getDistancesToPoint(mediod)
+        ranks = argrank(distances, axis=0)
         recruited = getMergers(ranks, threshold=self.threshold, unmerged=putative_members)
         BM.assignBin(recruited, bid=bid)
         members = BM.getBinIndices(bid)
@@ -259,7 +258,7 @@ class PartitionSet:
                     self.ids[self.ids == j] = current_max
 
 
-def isExtremaMask(points, scores, inners=None, threshold=0.5):
+def isExtremaMask(points, scores, threshold, inners=None):
     """Find data points with scores higher than the inner minimum score or threshold value"""
     points = numpy.asarray(points)
     scores = self.get_scores(points)
@@ -318,34 +317,40 @@ def floodPartitionWithMask(points, is_mask):
 
     return partitions.ids
 
-def getOriginPartition(ranks, scores, threshold, unmerged=None):
+#------------------------------------------------------------------------------
+# Merger workflow
+
+def partitionByExtrema(ranks, scores, threshold, unmerged=None):
+    """Return points in origin partition"""
+    ranks = numpy.asarray(ranks)
+    is_mask = isExtremaMask(ranks, scores, threshold)
+    if unmerged is not None:
+        is_mask[numpy.setdiff1d(numpy.arange(is_mask.size), unmerged)] = True
+    return floodPartitionWithMask(ranks, is_mask)
+
+def getOriginPartition(ranks, partitions):
     """Return points in origin partition"""
     ranks = numpy.asarray(ranks)
     is_origin = numpy.all(ranks == 0, axis=0)
-
-    is_mask = isExtremaMask(ranks, scores, threshold=threshold)
-    if unmerged is not None:
-        is_mask[numpy.setdiff1d(numpy.arange(is_mask.size), unmerged)] = True
-    partitions = floodPartitionWithMask(ranks, is_mask)
-
     return numpy.flatnonzero(partitions == partitions[is_origin])
 
+def getNearPNull(ranks, threshold, unmerged=None):
+    """Get probability scores of points being near inner most partition"""
 
-#------------------------------------------------------------------------------
-#Mergers
+    scores = getInsidePNull(ranks)
+    inside_partition = getOriginPartition(ranks, partitionByExtrema(ranks, scores, threshold, unmerged))
+    inside_cutoff = inside_partition[numpy.argmin(scores[inside_partition])]
+
+    return getOutsidePNull(ranks, inside_cutoff)
 
 def getMergers(ranks, threshold, unmerged=None):
     """Recruit points with a significant rank correlation"""
 
-    scores = getInsidePNull(ranks)
-    origin_partition = getOriginPartition(ranks, scores, threshold, unmerged=unmerged)
-    index = origin_partition[numpy.argmin(scores[origin_partition])]
-
-    scores = getOutsidePNull(ranks, index)
-    origin_partition = getOriginPartition(ranks, scores, threshold, unmerged=unmerged)
+    scores = getNearPNull(ranks, index)
+    near_partition = getOriginPartition(ranks, partitionByExtrema(ranks, scores, threshold, unmerged))
 
     is_merger = numpy.zeros(samps, dtype=bool)
-    for i in origin_partition:
+    for i in near_partition:
         is_inside = numpy.all([d <= d[i] for d in ranks], axis=0)
         is_merger = numpy.logical_or(is_merger, is_inside)
 
@@ -356,46 +361,65 @@ def getMergers(ranks, threshold, unmerged=None):
 #------------------------------------------------------------------------------
 # Plotting
 
-class CorrelationPlotter(HybridMeasurePlotter):
+class HighlightPlotter(HybridMeasurePlotter):
     """"""
-    def plotMaskFlat(self, origin,
-                     mask
-                     plotRanks=plotRanks,
-                     fileName=""
-                    ):
-        pass
+    def __init__(self, PM):
+        super.__init__(self, PM)
+        self._HM = HybridMeasure(PM)
 
-    def plotSurface(self, origin,
-                    surface="inside",
-                    highlight=None,
-                    plotRanks=False,
-                    fileName=""
-                   ):
+    def plotHighlightsFlat(self, origin,
+                        mode="mergers",
+                        threshold=0.5,
+                        plotRanks=False,
+                        fileName=""
+                       ):
+        """Plot contigs with mergers highlighted"""
 
+        distances = self._HM.getDistancesFromPoint(origin)
+        ranks = argrank(distances, axis=1)
+        if mode=="mergers":
+            highlight = (getMergers(ranks, threshold),)
+        elif mode=="partitions":
+            highlight = tuple(getPartitionMembers(partitionByExtrema(ranks, getInsidePNull(ranks), threshold)))
+        elif mode=="mask_inside":
+            highlight = (numpy.flatnonzero(isExtremaMask(ranks, getInsidePNull(ranks), threshold)),)
+        elif mode=="mask_near":
+            highlight = (numpy.flatnonzero(isExtremaMask(ranks, getNearPNull(ranks), threshold)),)
+        else
+            raise ValueError("Invalide mode: %s" % mode)
+
+        self.plot(origin, plotRanks=plotRanks, highlight=highlight, fileName=fileName)
+
+def getPartitionMembers(partitions):
+    return [numpy.flatnonzero(partitions == i) for i in set(partitions)]
+
+class SurfacePlotter(HybridMeasurePlotter):
+    """Plot a derived surface in hybrid measure space"""
+    def __init__(self, PM):
+        super.__init__(self, PM)
+        self._HM = HybridMeasure(PM)
+
+    def plotCorrelationSurface(self, origin,
+                                surface="inside",
+                                highlight=None,
+                                plotRanks=False,
+                                fileName=""
+                               ):
+
+        distances = self._HM.getDistancesToPoint(origin)
+        ranks = argrank(data, axis=1)
         if surface=="inside":
-            fn = surfacePNullInside()
+            z = numpy.log10(getInsidePNull(ranks))
             label = "Inside correlation"
         elif surface=="outside":
-            fn = surfacePNullOutside()
+            z = numpy.log10(getNearPNull(ranks))
             label = "Outside correlation"
         else:
             raise ValueError("Invaild surface mode: %s" % surface)
 
-        fn = SurfaceFormatter(fn)
-        self.plotSurface(origin, fn, label=label, plotRanks=plotRanks,
+        self.plotSurface(origin, z, label=label, plotRanks=plotRanks,
                          highlight=highlight, fileName=fileName)
 
-
-def surfacePNullInside(x, y):
-    return getInsidePNull(hybridMeasure.argrank([x, y], axis=1))
-
-def surfacePNullOutside(x, y):
-    ranks = hybridMeasure.argrank([x, y], axis=1)
-    scores = getInsidePNull(ranks)
-    origin_partition = getOriginPartition(ranks, scores, threshold, unmerged=unmerged)
-    index = origin_partition[numpy.argmin(scores[origin_partition])]
-
-    return getOutsidePNull(ranks, index)
 
 ###############################################################################
 ###############################################################################
