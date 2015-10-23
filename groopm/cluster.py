@@ -52,7 +52,7 @@ import scipy.stats as stats
 
 # GroopM imports
 from profileManager import ProfileManager
-from binManager import BinManager
+from binManager import BinManager, BinPlotter
 from hybridMeasure import HybridMeasure, HybridMeasurePlotter, argrank
 
 numpy.seterr(all='raise')
@@ -356,26 +356,87 @@ def getMergers(ranks, threshold, unmerged=None):
 
     return numpy.flatnonzero(is_merger)
 
-
-
 #------------------------------------------------------------------------------
 # Plotting
 
-class HighlightPlotter(HybridMeasurePlotter):
-    """"""
+class SurfacePlotter:
+    """Plot a derived surface in hybrid measure space"""
     def __init__(self, PM):
-        super.__init__(self, PM)
+        self._HMPlot = HybridMeasurePlotter(PM)
         self._HM = HybridMeasure(PM)
 
-    def plotHighlightsFlat(self, origin,
-                        mode="mergers",
-                        threshold=0.5,
-                        plotRanks=False,
-                        fileName=""
-                       ):
-        """Plot contigs with mergers highlighted"""
+    def plotSurface(self, origin,
+                    surface="inside",
+                    highlight=None,
+                    plotRanks=False,
+                    fileName=""
+                   ):
+        (z, label) = self.getSurface(origin, mode=surface)
+        self._HMPlot.plotSurface(origin, z, label=label, plotRanks=plotRanks,
+                                 highlight=highlight, fileName=fileName)
 
-        distances = self._HM.getDistancesFromPoint(origin)
+    def getSurface(self, origin, mode):
+        """Derive surface values"""
+
+        distances = self._HM.getDistancesToPoint(origin)
+        ranks = argrank(distances, axis=1)
+        if mode=="corr_inside":
+            z = numpy.log10(getInsidePNull(ranks))
+            label = "Inside correlation"
+        elif mode=="corr_near":
+            z = numpy.log10(getNearPNull(ranks))
+            label = "Outside correlation"
+        else:
+            raise ValueError("Invaild surface mode: %s" % surface)
+
+        return (z, label)
+
+class BinSurfacePlotter:
+    """Plot a derived surface for contigs from a bin"""
+    def __init__(self, PM):
+        self._SPlot = SurfacePlotter(PM)
+        self._BPlot = BinPlotter(PM)
+
+    def plotSurface(self, bid,
+                    origin="mediod",
+                    surface="inside",
+                    highlight=None,
+                    plotRanks=False,
+                    fileName=""
+                   ):
+
+        to_origin = self._BPlot.getOrigin(bid, mode=origin)
+        self. _SPlot.plotSurface(to_origin, highlight=highlight,
+                                 plotRanks=plotRanks,
+                                 fileName=fileName)
+
+
+class HighlightPlotter:
+    """Plot contigs with highlighted selection"""
+    def __init__(self, PM):
+        self._HMPlot = HybridMeasurePlottter(PM)
+        self._HM = HybridMeasure(PM)
+
+    def plot(self, origin,
+             highlight="mergers",
+             threshold=None,
+             plotRanks=False,
+             fileName=""
+            ):
+
+        to_highlight = self.getHighlight(origin, threshold, mode=highlight)
+        self._HMPlot.plot(origin,
+                          plotRanks=plotRanks,
+                          highlight=to_highlight,
+                          fileName=fileName)
+
+    def getHighlight(self, origin, threshold, mode):
+        """"Get a tuple of sets of contigs to highlight"""
+
+        if mode is None:
+            return None
+
+        distances = self._HM.getDistancesToPoint(origin)
         ranks = argrank(distances, axis=1)
         if mode=="mergers":
             highlight = (getMergers(ranks, threshold),)
@@ -388,37 +449,89 @@ class HighlightPlotter(HybridMeasurePlotter):
         else
             raise ValueError("Invalide mode: %s" % mode)
 
-        self.plot(origin, plotRanks=plotRanks, highlight=highlight, fileName=fileName)
+        return highlight
 
 def getPartitionMembers(partitions):
     return [numpy.flatnonzero(partitions == i) for i in set(partitions)]
 
-class SurfacePlotter(HybridMeasurePlotter):
-    """Plot a derived surface in hybrid measure space"""
+
+class BinHighlightPlotter:
+    """Plot and highlight contigs from a bin"""
     def __init__(self, PM):
-        super.__init__(self, PM)
-        self._HM = HybridMeasure(PM)
+        self._BPlot = BinPlotter(PM)
+        self._HLPlot = HighlightPlotter(PM)
+        self._BM = BinManager(PM)
 
-    def plotCorrelationSurface(self, origin,
-                                surface="inside",
-                                highlight=None,
-                                plotRanks=False,
-                                fileName=""
-                               ):
+    def plot(self, bid,
+             origin="mediod",
+             highlight="mergers",
+             threshold=None,
+             plotRanks=False,
+             fileName=""
+            ):
+        to_origin = self._BPlot.getOrigin(bid, mode=origin)
+        to_highlight = self.getHighlight(bid, origin, threshold, mode=highlight)
+        self._BPlot.plot(bid, origin=origin,
+                         plotRanks=plotRanks,
+                         highlight=to_highlight,
+                         fileName=fileName)
 
-        distances = self._HM.getDistancesToPoint(origin)
-        ranks = argrank(data, axis=1)
-        if surface=="inside":
-            z = numpy.log10(getInsidePNull(ranks))
-            label = "Inside correlation"
-        elif surface=="outside":
-            z = numpy.log10(getNearPNull(ranks))
-            label = "Outside correlation"
+    def getHighlight(self, bid, origin, threshold, mode):
+        """"""
+        if mode is None:
+            return None
+
+        if mode=="bin":
+            highlight = (self._BM.getBinIndices(bid),)
         else:
-            raise ValueError("Invaild surface mode: %s" % surface)
+            to_origin = self._BPlot.getOrigin(bid, mode=origin)
+            highlight = self._HLPlot.getHighlight(to_origin, threshold, mode=mode)
+        except:
+            raise
 
-        self.plotSurface(origin, z, label=label, plotRanks=plotRanks,
-                         highlight=highlight, fileName=fileName)
+        return highlight
+
+class SurfaceHighlightPlotter:
+    """Plot a derived surface for contigs from a bin"""
+    def __init__(self, PM):
+        self._SPlot = SurfacePlotter(PM)
+        self._HLPlot = HighlightPlotter(PM)
+
+    def plotSurface(self, origin,
+                    surface="inside",
+                    highlight="mergers",
+                    threshold=None,
+                    plotRanks=False,
+                    fileName=""
+                   ):
+
+        to_highlight = self._HLPlot.getHighlight(origin, threshold, mode=highlight)
+        self._SPlot.plotSurface(to_origin, surface=surface,
+                                highlight=to_highlight,
+                                plotRanks=plotRanks,
+                                fileName=fileName)
+
+class BinSurfaceHighlightPlotter:
+    """Plot a derived surface for contigs from a bin"""
+    def __init__(self, PM):
+        self._BSPlot = BinSurfacePlotter(PM)
+        self._BHPlot = BinHighlightPlotter(PM)
+
+    def plotSurface(self, bid,
+                    origin="mediod",
+                    surface="inside",
+                    highlight="mergers",
+                    threshold=None,
+                    plotRanks=False,
+                    fileName=""
+                   ):
+
+        to_highlight = self._BHPlot.getHighlight(bid, origin, threshold, mode=highlight)
+        self._BSPlot.plotSurface(bid, origin=origin,
+                                 surface=surface,
+                                 highlight=to_highlight,
+                                 plotRanks=plotRanks,
+                                 fileName=fileName)
 
 
 ###############################################################################

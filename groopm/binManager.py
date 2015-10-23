@@ -155,22 +155,28 @@ def isGoodBin(totalBP, binSize, minBP, minSize):
 #------------------------------------------------------------------------------
 # Plotting
 
-class BinPlotter(HybridMeasurePlotter):
+class BinPlotter:
 
     def __init__(self, PM):
-        super.__init__(self, PM)
+        self._HMPlot = HybridMeasurePlotter(PM)
         self._BM = BinManager(PM)
 
-    def plotBinFlat(self, bid,
-                    origin="mediod",
-                    plotRanks=False,
-                    fileName=""
-                   )
+    def plot(self, bid,
+             origin="mediod",
+             plotRanks=False,
+             highlight=None,
+             fileName=""
+            ):
 
+        to_origin = self.getOrigin(bid, mode=origin)
+        self._HMPlot.plot(origin,
+                          plotRanks=plotRanks,
+                          highlight=highlight,
+                          fileName=fileName)
+
+    def getOrigin(self, bid, mode):
         row_indices = self._BM.getBinIndices(bid)
-        mediod = self.getOrigin(row_indices, mode=origin)
-        self.plot(mediod, plotRanks=plotRanks, highlight=row_indices,
-                  fileName=fileName)
+        return self._HMPlot.getOrigin(row_indices, mode)
 
 
 ###############################################################################
