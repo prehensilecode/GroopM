@@ -54,6 +54,7 @@ import scipy.stats as stats
 from profileManager import ProfileManager
 from binManager import BinManager, BinOriginAPI
 from hybridMeasure import HybridMeasure, HybridMeasurePlotter, argrank, PlotOriginAPI
+from groopmUtils import makeSurePathExists
 
 numpy.seterr(all='raise')
 
@@ -71,26 +72,26 @@ class ClusterEngine:
                  threshold=0.5):
 
         # Worker classes
-        self._PM = ProfileManager(options.dbFileName)
-        self._BM = BinManager(self._PM, minSize=minSize, minBP=minBP)
-        self.updateBin = MediodClusterMaker(self._PM, threshold=threshold)
+        self._pm = ProfileManager(dbFileName)
+        self._bm = BinManager(self._pm, minSize=minSize, minBP=minBP)
+        self.updateBin = MediodClusterMaker(self._pm, threshold=threshold)
 
 
     def run(self, timer, minLength=None, force=False):
         """Cluster the contigs to make bin cores"""
         # check that the user is OK with nuking stuff...
-        if not force and not self._PM.promptOnOverwrite():
+        if not force and not self._pm.promptOnOverwrite():
             return
-        self._PM.loadData(timer, minLength=minLength)
+        self._pm.loadData(timer, minLength=minLength)
 
         # cluster and bin!
         print "Create cores"
-        self.makeBins(init=numpy.argsort(self._PM.contigLengths))
+        self.makeBins(init=numpy.argsort(self._pm.contigLengths))
         print "    %s" % timer.getTimeStamp()
 
         # Now save all the stuff to disk!
         print "Saving bins"
-        self._BM.saveBins(nuke=True)
+        self._bm.saveBins(nuke=True)
         print "    %s" % timer.getTimeStamp()
 
     def makeBins(self, init):
@@ -101,21 +102,21 @@ class ClusterEngine:
 
         while(True):
             if mediod is None:
-                to_bin = numpy.intersect1d(init, self._BM.getUnbinned())
+                to_bin = numpy.intersect1d(init, self._bm.getUnbinned())
                 if len(to_bin) == 0:
                     break
                 mediod = to_bin[0]
-                self._BM.assignBin([mediod])
+                self._bm.assignBin([mediod])
 
             round_counter += 1
-            bid = self._BM.getCurrentBid()
+            bid = self._bm.getCurrentBid()
             print "Recruiting bin %d, round %d." % (bid, round_counter)
-            print "Found %d unbinned." % self._BM.getUnbinned().size
+            print "Found %d unbinned." % self._bm.getUnbinned().size
 
-            old_size = self._BM.getBinIndices([bid]).size
-            new_mediod = self.updateBin(self._BM, mediod)
+            old_size = self._bm.getBinIndices([bid]).size
+            new_mediod = self.updateBin(self._bm, mediod)
 
-            print "Recruited %d members." % self._BM.getBinIndices([bid]).size - old_size
+            print "Recruited %d members." % self._bm.getBinIndices([bid]).size - old_size
 
             if new_mediod == mediod:
                 print "Mediod is stable after %d rounds." % count
@@ -124,29 +125,29 @@ class ClusterEngine:
             else:
                 mediod = new_mediod
 
-        print " %d bins made." % self._BM.currentBid
-        self._BM.unbinLowQualityAssignments()
+        print " %d bins made." % self._bm.currentBid
+        self._bm.unbinLowQualityAssignments()
 
 
 class MediodClusterMaker:
     """Update cluster labels based on current mediod"""
-    def __init__(self, PM, threshold):
-        self._HM = HybridMeasure(PM)
+    def __init__(self, pm, threshold):
+        self._hm = HybridMeasure(pm)
         self.threshold = threshold
 
-    def __call__(self, BM, mediod):
-        bid = BM.getBidsByIndex(mediod)
-        putative_members = BM.getBinIndices([0, bid])
+    def __call__(self, bm, mediod):
+        bid = bm.getBidsByIndex(mediod)
+        putative_members = bm.getBinIndices([0, bid])
 
-        distances = self._HM.getDistancesToPoint(mediod)
+        distances = self._hm.getDistancesToPoint(mediod)
         ranks = argrank(distances, axis=0)
         recruited = getMergers(ranks, threshold=self.threshold, unmerged=putative_members)
-        BM.assignBin(recruited, bid=bid)
-        members = BM.getBinIndices(bid)
+        bm.assignBin(recruited, bid=bid)
+        members = bm.getBinIndices(bid)
         if len(members)==1:
             mediod = members
         else:
-            index = self._HM.getMediod(members)
+            index = self._hm.getMediod(members)
             mediod = members[index]
 
         return mediod
@@ -321,7 +322,7 @@ def getPartitionMembers(partitions):
     return [numpy.flatnonzero(partitions == i) for i in set(partitions)]
 
 #------------------------------------------------------------------------------
-# Merger workflow
+#Merger workflow
 
 def partitionByExtrema(ranks, scores, threshold, unmerged=None):
     """Return points in origin partition"""
@@ -360,7 +361,7 @@ def getMergers(ranks, threshold, unmerged=None):
     return numpy.flatnonzero(is_merger)
 
 #------------------------------------------------------------------------------
-# Plotting
+#Plotting tools
 
 class PlotSurfaceAPI:
     """Computes derived surface in hybrid measure space.
@@ -368,14 +369,14 @@ class PlotSurfaceAPI:
     Requires / replaces argument dict values:
         {origin, surface_mode} -> {origin, z, label}
     """
-    def __init__(self, PM):
-        self._HM = HybridMeasure(PM)
+    def __init__(self, pm):
+        self._hm = HybridMeasure(pm)
 
     def __call__(self, surface_mode, **kwargs):
         """Derive surface values"""
 
         origin = kwargs["origin"]
-        distances = self._HM.getDistancesToPoint(origin)
+        distances = self._hm.getDistancesToPoint(origin)
         ranks = argrank(distances, axis=1)
         if surface_mode=="corr_inside":
             z = numpy.log10(getInsidePNull(ranks))
@@ -401,11 +402,11 @@ class PlotHighlightAPI:
 
     def __call__(self, threshold, highlight_mode, **kwargs):
 
-        if mode is None:
+        if highlight_mode is None:
             return kwargs
 
         origin = kwargs["origin"]
-        distances = self._HM.getDistancesToPoint(origin)
+        distances = self._hm.getDistancesToPoint(origin)
         ranks = argrank(distances, axis=1)
         if highlight_mode=="mergers":
             highlight = (getMergers(ranks, threshold),)
@@ -415,7 +416,7 @@ class PlotHighlightAPI:
             highlight = (numpy.flatnonzero(isExtremaMask(ranks, getInsidePNull(ranks), threshold)),)
         elif highlight_mode=="mask_near":
             highlight = (numpy.flatnonzero(isExtremaMask(ranks, getNearPNull(ranks), threshold)),)
-        else
+        else:
             raise ValueError("Invalide mode: %s" % highlight_mode)
 
         kwargs["highlight"] = highlight
@@ -446,20 +447,20 @@ class BinHighlightAPI:
             except:
                 raise
 
-class SurfaceHighlightApi:
+class SurfaceHighlightAPI:
     """Combined surface + highlight api.
 
     Requires / replaces argument dict values:
         {origin, threshold, highlight_mode, surface_mode} -> {origin, highlight, z, label}
     """
-    def __init__(self, PM):
-        self._plotSurfaceApi = PlotSurfaceApi(PM)
-        self._plotHighlightApi = PlotHighlightApi(PM)
+    def __init__(self, pm):
+        self._plotSurfaceApi = PlotSurfaceApi(pm)
+        self._plotHighlightApi = PlotHighlightApi(pm)
 
     def __call__(self, **kwargs):
         return self._plotSurfaceApi(**self._plotHighlightApi(**kwargs))
 
-class BinSurfaceHighlightApi:
+class BinSurfaceHighlightAPI:
     """Combined surface + highlight + bin api.
 
     Requires / replaces argument dict values:
@@ -473,85 +474,49 @@ class BinSurfaceHighlightApi:
         return self._surfaceHighlightApi(**self._binOriginApi(**kwargs))
 
 
-class HighlightPlotter:
-    """Plot contigs with highlighted selection"""
-    def __init__(self, pm):
-        self._hmPlot = HybridMeasurePlottter(pm)
-        self._plotHighlightApi = PlotHighlightAPI(pm)
-
-    def plot(self, origin,
-             highlight_mode="mergers",
-             threshold=0.5,
-             plotRanks=False,
-             fileName=""):
-        self._hmPlot.plot(**self._plotHighlightApi(origin=origin,
-                                                   highlight_mode=highlight_mode,
-                                                   threshold=threshold,
-                                                   plotRanks=plotRanks,
-                                                   fileName=fileName))
+#------------------------------------------------------------------------------
+#Plotting
 
 class BinHighlightPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, pm):
-        self._hmPlot = HybridMeasurePlotter(pm)
-        self._binHighlightApi = BinHighlightAPI(pm)
+    def __init__(self, dbFileName, bids=[], folder=None):
+        self._pm = ProfileManager(dbFileName)
+        self.bids = [] if bids is None else bids
+        self.outDir = os.getcwd() if folder == "" else folder
+        # make the dir if need be
+        if self.outDir is not None:
+            makeSurePathExists(self.outDir)
 
-    def plot(self, bid,
+    def loadData(self, timer, cutoff=0):
+        self._pm.loadData(timer, loadBins=True, bids=self.bids, minLength=cutoff)
+
+    def plot(self,
+             timer,
              origin_mode="mediod",
              highlight_mode="mergers",
              threshold=None,
              plotRanks=False,
-             fileName=""):
-        self._hmPlot.plot(**self._binHighlightApi(bid=bid,
-                                                  origin_mode=origin_mode,
-                                                  highlight_mode=highlight_mode,
-                                                  threshold=threshold,
-                                                  plotRanks=plotRanks,
-                                                  highlight=to_highlight,
-                                                  fileName=fileName)
+             colorMap="HSV",
+             prefix="BIN"
+            ):
+        self.loadData(timer)
+        hmPlot = HybridMeasurePlotter(self._pm)
+        bm = BinManager(self._pm)
+        binHighlightApi = BinHighlightAPI(self._pm)
 
+        for bid in bm.getBids():
+            fileName = "" if self.outDir is None else os.path.join(self.outDir, "%s_%d.png" % (prefix, bid))
+            hmPlot.plot(**binHighlightApi(bid=bid,
+                                          origin_mode=origin_mode,
+                                          highlight_mode=highlight_mode,
+                                          threshold=threshold,
+                                          plotRanks=plotRanks,
+                                          colorMap=colorMap,
+                                          fileName=fileName))
+            if self.outDir is None:
+                break
 
-class SurfaceHighlightPlotter:
-    """Plot a derived surface for contigs from a bin"""
-    def __init__(self, hm):
-        self._hmPlot = HybridMeasurePlotter(pm)
-        self._surfaceHighlightApi = SurfaceHighlightApi(pm)
-
-    def plotSurface(self, origin,
-                    surface_mode="inside",
-                    highlight_mode="mergers",
-                    threshold=None,
-                    plotRanks=False,
-                    fileName=""
-                   ):
-
-        self._hmPlot.plotSurface(**self._surfaceHighlightApi(origin=origin,
-                                                             surface_mode=surface_mode,
-                                                             highlight_mode=higlight_mode,
-                                                             threshold=threshold,
-                                                             plotRanks=plotRanks,
-                                                             fileName=fileName))
-
-class BinSurfaceHighlightPlotter:
-    """Plot a derived surface for contigs from a bin"""
-    def __init__(self, pm):
-        self._hmPlot = BinSurfacePlotter(pm)
-        self._binSurfaceHighlightApi = BinSurfaceHighlightAPI(pm)
-
-    def plotSurface(self, bid,
-                    origin_mode="mediod",
-                    surface_mode="inside",
-                    highlight_mode="mergers",
-                    threshold=None,
-                    plotRanks=False,
-                    fileName=""
-                   ):
-        self._BSPlot.plotSurface(**self._binSurfaceHighlighApi(bid=bid,
-                                                               origin_mode=origin_mode,
-                                                               surface_mode=surface_mode,
-                                                               highlight_mode=highlight_mode,
-                                                               plotRanks=plotRanks,
-                                                               fileName=fileName)
+        print "    %s" % timer.getTimeStamp()
 
 
 ###############################################################################

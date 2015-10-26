@@ -67,18 +67,18 @@ class HybridMeasure:
     """Computes the following metric pair:
         cov  = euclidean distance in log coverage space,
         kmer = euclidean distance in kmer sig space. """
-    def __init__(self, PM):
-        self._PM = PM
+    def __init__(self, pm):
+        self._pm = pm
 
     def getDistances(self, a_members, b_members=None):
         """Get distances between two sets of points for the metrics"""
 
         if b_members is None:
-            cov = distance.squareform(distance.pdist(numpy.log10(self._PM.covProfiles[a_members]+1), metric="euclidean"))
-            kmer = distance.squareform(distance.pdist(self._PM.kmerSigs[a_members], metric="euclidean"))
+            cov = distance.squareform(distance.pdist(numpy.log10(self._pm.covProfiles[a_members]+1), metric="euclidean"))
+            kmer = distance.squareform(distance.pdist(self._pm.kmerSigs[a_members], metric="euclidean"))
         else:
-            cov = distance.cdist(numpy.log10(self._PM.covProfiles[a_members]+1), numpy.log10(self._PM.covProfiles[b_members]+1), metric="euclidean")
-            kmer = distance.cdist(self._PM.kmerSigs[a_members], self._PM.kmerSigs[b_members], metric="euclidean")
+            cov = distance.cdist(numpy.log10(self._pm.covProfiles[a_members]+1), numpy.log10(self._pm.covProfiles[b_members]+1), metric="euclidean")
+            kmer = distance.cdist(self._pm.kmerSigs[a_members], self._pm.kmerSigs[b_members], metric="euclidean")
 
         return numpy.array([cov, kmer])
 
@@ -150,16 +150,17 @@ class PlotOriginAPI:
     Requires / replaces argument dict values:
         {members, origin_mode} -> {origin}
     """
-    def __init__(self, PM):
-        self._PM = PM
+    def __init__(self, pm):
+        self._pm = pm
+        self._hm = HybridMeasure(pm)
 
     def __call__(self, members, origin_mode, **kwargs):
         if origin_mode=="mediod":
-            index = self._HM.getMediod(members)
+            index = self._hm.getMediod(members)
         elif origin_mode=="max_coverage":
-            index = numpy.argmax(self._PM.normCoverages[members])
+            index = numpy.argmax(self._pm.normCoverages[members])
         elif origin_mode=="max_length":
-            index = numpy.argmax(self._PM.contigLengths[members])
+            index = numpy.argmax(self._pm.contigLengths[members])
         else:
             raise ValueError("Invalid mode: %s" % origin_mode)
 
@@ -170,21 +171,22 @@ class HybridMeasurePlotter:
     """Plot contigs in hybrid measure space"""
     COLOURS = 'rbgcmyk'
 
-    def __init__(self, PM):
-        self._PM = PM
-        self._HM = HybridMeasure(self._PM)
+    def __init__(self, pm):
+        self._pm = pm
+        self._hm = HybridMeasure(pm)
 
-    def plot(self, origin, plotRanks=False, keep=None,
-             highlight=None, divide=None, plotContigLengths=False, fileName=""):
+    def plot(self, origin, plotRanks=False, keep=None, highlight=None,
+            divide=None, plotContigLengths=False, colorMap="HSV", fileName=""):
         """Plot contigs in measure space"""
         fig = plt.figure()
 
         ax = fig.add_subplot(111)
         self.plotOnAx(ax, origin, plotRanks=plotRanks, keep=keep,
-                      highlight=highlight, plotContigLengths=plotContigLengths)
+                      highlight=highlight, plotContigLengths=plotContigLengths,
+                      colorMap=colorMap)
 
         if divide is not None:
-            for (clr, coords) in zip(COLOURS, divide):
+            for (clr, coords) in zip(self.COLOURS, divide):
                 fmt = '-'+clr
                 for (x_point, y_point) in zip(*coords):
                     ax.plot([x_point, x_point], [0, y_point], fmt)
@@ -210,14 +212,14 @@ class HybridMeasurePlotter:
 
     def plotSurface(self, origin, z, label, plotRanks=False, keep=None,
             highlight=None, plotContigLengths=False, elev=None, azim=None,
-            fileName="")
+            colorMap="HSV", fileName=""):
         """Plot a surface computed from coordinates in measure space"""
         fig = plt.figure()
 
         ax = fig.add_subplot(111, projection='3d')
         self.plotOnAx(ax, origin, z=z, z_label=label, plotRanks=plotRanks,
             keep=keep, highlight=highlight, plotContigLengths=plotContigLengths,
-            elev=elev, azim=azim)
+            colorMap=colorMap, elev=elev, azim=azim)
 
         if(fileName != ""):
             try:
@@ -242,18 +244,18 @@ class HybridMeasurePlotter:
             colorMap="HSV", azim=None):
 
         # display values
-        distances = self._HM.getDistancesToPoint(origin)
-        data = argrank(distances, axis=1) if ranks else distances
+        distances = self._hm.getDistancesToPoint(origin)
+        data = argrank(distances, axis=1) if plotRanks else distances
         (x, y) = (data[0], data[1])
         disp_vals = (x, y, z) if z is not None else (x, y)
 
         # display labels
-        labels = self._HM.getDimNames()
-        disp_cols = self._PM.contigGCs
+        labels = self._hm.getDimNames()
+        disp_cols = self._pm.contigGCs
 
         if highlight is not None:
             edgecolors=numpy.full_like(disp_cols, 'k', dtype=str)
-            for (clr, hl) in zip(COLOURS, highlight):
+            for (clr, hl) in zip(self.COLOURS, highlight):
                 edgecolors[hl] = clr
             if keep is not None:
                 edgecolors = edgecolors[keep]
@@ -261,7 +263,7 @@ class HybridMeasurePlotter:
             edgecolors = 'k'
 
         if plotContigLengths:
-            disp_lens = numpy.sqrt(self._PM.contigLengths)
+            disp_lens = numpy.sqrt(self._pm.contigLengths)
             if keep is not None:
                 disp_lens = disp_lens[keep]
         else:

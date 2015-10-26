@@ -58,7 +58,7 @@ from .version import __version__
 ###############################################################################
 
 #------------------------------------------------------------------------------
-# Helpers
+#Helpers
 
 class CustomHelpFormatter(argparse.HelpFormatter):
     def _split_lines(self, text, width):
@@ -94,7 +94,7 @@ class CustomHelpFormatter(argparse.HelpFormatter):
 ###############################################################################
 
 #------------------------------------------------------------------------------
-# Parse
+#Parse
 
 class ParseSubcommand:
     def add_subparser_to(self, subparsers):
@@ -123,8 +123,8 @@ class ParseSubcommand:
         if len(options.bamfiles) < 3:
             print "Sorry, You must supply at least 3 bamFiles to use GroopM. (You supplied %d)\n Exiting..." % len(options.bamfiles)
             return
-        DM = groopm.DataManager()
-        success = DM.createDB(options.bamfiles,
+        dm = groopm.DataManager()
+        success = dm.createDB(options.bamfiles,
                                   options.reference,
                                   options.dbname,
                                   options.cutoff,
@@ -135,14 +135,14 @@ class ParseSubcommand:
             print options.dbname,"not updated"
 
 #------------------------------------------------------------------------------
-# Core
+#Core
 
 class CoreSubcommand:
     def add_subparser_to(self, subparsers):
         parser = subparsers.add_parser("core",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="load saved data and make bin cores",
-                                          description="Load saved data and make bin cores")
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                       help="load saved data and make bin cores",
+                                       description="Load saved data and make bin cores")
         self.add_arguments_to(parser)
         parser.set_defaults(parse=self.parse_options)
         return parser
@@ -160,20 +160,20 @@ class CoreSubcommand:
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
 
-        CE = groopm.ClusterEngine(options.dbname, minSize=options.size, minBP=options.bp)
-        CE.run(timer, minLength=options.cutoff, force=options.force)
+        ce = groopm.ClusterEngine(options.dbname, minSize=options.size, minBP=options.bp)
+        ce.run(timer, minLength=options.cutoff, force=options.force)
 
 
 #------------------------------------------------------------------------------
-# Extract
+#Extract
 
 class ExtractSubcommand:
     def add_subparser_to(self, subparsers):
         parser = subparsers.add_parser("extract",
-                                     formatter_class=CustomHelpFormatter,
-                                     help='extract contigs or reads based on bin affiliations',
-                                     description="Extract contigs or reads based on bin affiliations",
-                                     epilog='''Example usage:
+                                       formatter_class=CustomHelpFormatter,
+                                       help='extract contigs or reads based on bin affiliations',
+                                       description="Extract contigs or reads based on bin affiliations",
+                                       epilog='''Example usage:
 
  Extract contigs from bin 33:
 
@@ -192,14 +192,14 @@ class ExtractSubcommand:
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('data', nargs='+', help="data file(s) to extract from, bam or fasta")
         parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
-        parser.add_argument('-m', '--mode', default="contigs", help="what to extract [reads, contigs]", choices=('contigs','reads'))
+        parser.add_argument('-m', '--mode', default="contigs", help="what to extract", choices=('contigs','reads'))
         parser.add_argument('-o', '--out_folder', default="", help="write to this folder (None for current dir)")
         parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
 
-        contig_extraction_options=parser.add_argument_group('Contig extraction options')
+        contig_extraction_options=parser.add_argument_group('Contigs mode extraction options')
         contig_extraction_options.add_argument('-c', '--cutoff', type=int, default=0, help="cutoff contig size (0 for no cutoff)")
 
-        read_extraction_options=parser.add_argument_group('Read extraction options')
+        read_extraction_options=parser.add_argument_group('Reads mode extraction options')
         read_extraction_options.add_argument('--mix_bams', action="store_true", default=False, help="use the same file for multiple bam files")
         read_extraction_options.add_argument('--mix_groups', action="store_true", default=False, help="use the same files for multiple group groups")
         read_extraction_options.add_argument('--mix_reads', action="store_true", default=False, help="use the same files for paired/unpaired reads")
@@ -225,18 +225,18 @@ class ExtractSubcommand:
         bids = []
         if options.bids is not None:
             bids = options.bids
-        BX = groopm.BinExtractor(options.dbname,
-                                      bids=bids,
-                                      folder=options.out_folder
-                                      )
+        bx = groopm.BinExtractor(options.dbname,
+                                 bids=bids,
+                                 folder=options.out_folder
+                                )
         if(options.mode=='contigs'):
-            BX.extractContigs(timer,
+            bx.extractContigs(timer,
                               fasta=options.data,
                               prefix=options.prefix,
                               cutoff=options.cutoff)
 
         elif(options.mode=='reads'):
-            BX.extractReads(timer,
+            bx.extractReads(timer,
                             bams=options.data,
                             prefix=options.prefix,
                             mixBams=options.mix_bams,
@@ -260,21 +260,21 @@ class ExtractSubcommand:
 ###############################################################################
 
 #------------------------------------------------------------------------------
-# Dump
+#Dump
 
 class DumpSubcommand:
     def add_subparser_to(self, subparsers):
         parser = subparsers.add_parser("dump",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="write database to text file",
-                                          description="Write database to text file")
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                       help="write database to text file",
+                                       description="Write database to text file")
         self.add_arguments_to(parser)
         parser.set_defaults(parse=self.parse_options)
         return parser
 
     def add_arguments_to(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all']")
+        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
         parser.add_argument('-o', '--outfile', default="GMdump.csv", help="write data to this file")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
@@ -299,8 +299,8 @@ class DumpSubcommand:
         else:
             separator = options.separator
 
-        DM = groopm.DataManager()
-        DM.dumpData(options.dbname,
+        dm = groopm.DataManager()
+        dm.dumpData(options.dbname,
                     fields,
                     options.outfile,
                     separator,
@@ -308,14 +308,14 @@ class DumpSubcommand:
 
 
 #------------------------------------------------------------------------------
-# Import
+#Import
 
 class ImportSubcommand:
     def add_subparser_to(self, subparsers):
         parser = subparsers.add_parser("import",
-                                          formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                          help="import information from text file",
-                                          description="Import information from text file")
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                       help="import information from text file",
+                                       description="Import information from text file")
         self.add_arguments_to(parser)
         parser.set_defaults(parse=self.parse_options)
         return parser
@@ -331,6 +331,55 @@ class ImportSubcommand:
 
     def parse_options(self, options):
         pass
+
+###############################################################################
+# Plotting
+###############################################################################
+
+#------------------------------------------------------------------------------
+# Dump
+
+class PlotSubcommand:
+    def add_subparser_to(self, subparsers):
+        parser = subparsers.add_parser("plot",
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                                       help="plot contigs in coverage vs kmer distance space",
+                                       description="Plot contigs in coverage vs kmer distance space")
+        self.add_arguments_to(parser)
+        parser.set_defaults(parse=self.parse_options)
+        return parser
+
+    def add_arguments_to(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
+        #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
+        parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", default=False, help="interatcive plot first bin or contig id")
+        parser.add_argument('--ranks', action="store_true", default=False, help="plot variable ranks")
+        parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
+        parser.add_argument('--highlight', default="bin", choices=["bin", "mergers", "partitions", "mask_inside", "mask_near"], help="choose how to highlight contigs")
+        parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
+
+        return parser
+
+    def parse_options(self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        bplot = groopm.BinHighlightPlotter(options.dbname,
+                                           bids=options.bids,
+                                           folder=None if options.interactive else options.out_folder)
+        bplot.plot(timer,
+                   origin_mode=options.origin,
+                   highlight_mode=options.highlight,
+                   threshold=0.5,
+                   plotRanks=options.ranks,
+                   colorMap=options.colormap,
+                   prefix=options.prefix)
 
 
 ###############################################################################

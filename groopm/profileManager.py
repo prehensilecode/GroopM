@@ -95,7 +95,7 @@ class ProfileManager:
                  silent=False,              # some to no output messages
                  loadCovProfiles=True,
                  loadKmerSigs=True,
-                 ladStoitNames=True,
+                 loadStoitNames=True,
                  loadContigNames=True,
                  loadContigLengths=True,
                  loadContigGCs=True,
@@ -230,8 +230,8 @@ def getColorMap(colorMapStr):
     if colorMapStr == 'HSV':
         S = 1.0
         V = 1.0
-        return matplotlib.colors.LinearSegmentedColormap.from_list('GC', [htr((1.0 + np_sin(np_pi * (val/1000.0) - np_pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
-    elif colorMapStr == 'Accent'
+        return matplotlib.colors.LinearSegmentedColormap.from_list('GC', [htr((1.0 + numpy.sin(numpy.pi * (val/1000.0) - numpy.pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
+    elif colorMapStr == 'Accent':
         return matplotlib.cm.get_cmap('Accent')
     elif colorMapStr == 'Blues':
         return matplotlib.cm.get_cmap('Blues')

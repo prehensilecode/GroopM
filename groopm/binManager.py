@@ -38,12 +38,12 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
+__author__ = "Michael Imelfort, Tim Lamberton"
 __copyright__ = "Copyright 2012/2013"
-__credits__ = ["Michael Imelfort"]
+__credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
-__maintainer__ = "Michael Imelfort"
-__email__ = "mike@mikeimelfort.com"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
 import numpy
@@ -78,10 +78,10 @@ class BinManager:
     def getBinIndices(self, bids):
         """Return array of binned contig indices"""
 
-        is_not_bid = numpy.logical_not(numpy.in1d(bids, self.get_bids()))
+        is_not_bid = numpy.logical_not(numpy.in1d(bids, self.getBids()))
         if numpy.any(is_not_bid):
             raise BinNotFoundException("Cannot find: "+",".join([str(bid) for bid in bids[is_not_bid]])+" in bins dicts")
-        return numpy.flatnonzero(numpy.in1d(self._pm.bidIds, bids))
+        return numpy.flatnonzero(numpy.in1d(self._pm.binIds, bids))
 
     def getUnbinned(self):
         return self.getBinIndices([0])
@@ -126,7 +126,7 @@ class BinManager:
 
     def getBids(self):
         """Return a sorted list of bin ids"""
-        return sorted(set(self._pm.bidIds))
+        return sorted(set(self._pm.binIds))
 
     def _getGlobalBinAssignments(self):
         """Merge the bids, raw DB indexes and core information so we can save to disk
@@ -136,7 +136,7 @@ class BinManager:
         { global_index : bid }
         """
         # we need a mapping from cid (or local index) to to global index to binID
-        return dict(zip(self._pm.indices, self._pm.bidIds))
+        return dict(zip(self._pm.indices, self._pm.binIds))
 
 
 ###############################################################################

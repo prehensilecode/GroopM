@@ -73,14 +73,14 @@ class GMExtractor:
                  bids=[],
                  folder='',
                  ):
-        self._PM = ProfileManager(dbFilename)
+        self._pm = ProfileManager(dbFilename)
         self.bids = [] if bids is None else bids
         self.outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         makeSurePathExists(self.outDir)
 
     def loadData(self, timer, cutoff=0):
-        self._PM.loadData(timer,
+        self._pm.loadData(timer,
                           loadBins=True,
                           bids=self.bids,
                           minLength=cutoff
@@ -93,42 +93,42 @@ class GMExtractor:
                        cutoff=0):
         """Extract contigs and write to file"""
         self.loadData(timer, cutoff=cutoff)
-        BM = binManager.BinManager(self._PM)
+        bm = binManager.BinManager(self._pm)
         if prefix is None or prefix == '':
             prefix=os.path.basename(self.dbFileName) \
                             .replace(".gm", "") \
                             .replace(".sm", "")
 
         # load all the contigs which have been assigned to bins
-        CP = mstore.ContigParser()
+        cp = mstore.ContigParser()
         # contigs looks like cid->seq
         contigs = {}
         import mimetypes
         try:
             for file_name in fasta:
-                GM_open = open
+                gm_open = open
                 try:
                     # handle gzipped files
                     mime = mimetypes.guess_type(file_name)
                     if mime[1] == 'gzip':
                         import gzip
-                        GM_open = gzip.open
+                        gm_open = gzip.open
                 except:
                     print "Error when guessing contig file mimetype"
                     raise
-                with GM_open(file_name, "r") as f:
-                    contigs = CP.getWantedSeqs(f, self._PM.contigNames, storage=contigs)
+                with gm_open(file_name, "r") as f:
+                    contigs = cp.getWantedSeqs(f, self._pm.contigNames, storage=contigs)
         except:
             print "Could not parse contig file:",fasta[0],sys.exc_info()[0]
             raise
 
         # now print out the sequences
         print "Writing files"
-        for bid in BM.getBids():
+        for bid in bm.getBids():
             file_name = os.path.join(self.outDir, "%s_bin_%d.fna" % (prefix, bid))
             try:
                 with open(file_name, 'w') as f:
-                    for cid in self._PM.contigNames[BM.getBinIndices(bid)]:
+                    for cid in self._PM.contigNames[bm.getBinIndices(bid)]:
                         if(cid in contigs):
                             f.write(">%s\n%s\n" % (cid, contigs[cid]))
                         else:
@@ -158,17 +158,17 @@ class GMExtractor:
         All logic is handled by BamM <- soon to be wrapped by StoreM"""
         # load data
         self.loadData()
-        BM = binManager.BinManager(self._PM)   # bins
+        bm = binManager.BinManager(self._bm)   # bins
 
         print "Extracting reads"
 
         # work out a set of targets to pass to the parser
         targets = []
         group_names = []
-        for bid in BM.getBids():
+        for bid in bm.getBids():
             group_names.append("BIN_%d" % bid)
-            row_indices = BM.getBinIndices(bid)
-            targets.append(list(self._PM.contigNames[row_indices]))
+            row_indices = bm.getBinIndices(bid)
+            targets.append(list(self._pm.contigNames[row_indices]))
 
         # get something to parse the bams with
         bam_parser = BMBE(targets,

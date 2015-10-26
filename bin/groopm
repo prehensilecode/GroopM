@@ -168,10 +168,19 @@ if __name__ == '__main__':
     ##################################################
 
     import_export_subparsers = parser.add_subparsers_group(title="Import, Export")
-    #import_export_subparsers = subparsers
 
     dump = subcommands.DumpSubcommand()
     dump.add_subparser_to(import_export_subparsers)
+
+
+    ##################################################
+    # plotting subcommands
+    ##################################################
+
+    plotting_subparsers = parser.add_subparsers_group(title="Plotting")
+
+    plot = subcommands.PlotSubcommand()
+    plot.add_subparser_to(plotting_subparsers)
 
     ##################################################
     # System
