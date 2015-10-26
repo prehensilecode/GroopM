@@ -54,10 +54,9 @@ import errno
 import numpy
 
 # GroopM imports
-from profileManager import ProfileManager
+from profileManager import ProfileManager, FeaturePlotter
 from binManager import BinManager
 from cluster import BinHighlightAPI
-from hybridMeasure import HybridMeasurePlotter
 from mstore import ContigParser
 
 # other local imports
@@ -79,16 +78,17 @@ class GMExtractor:
                  bids=[],
                  folder='',
                  ):
-        self._pm = ProfileManager(dbFilename)
-        self.bids = [] if bids is None else bids
-        self.outDir = os.getcwd() if folder == "" else folder
+        self.dbFileName = dbFileName
+        self._pm = ProfileManager(self.dbFilename)
+        self._bids = [] if bids is None else bids
+        self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
-        makeSurePathExists(self.outDir)
+        makeSurePathExists(self._outDir)
 
     def loadData(self, timer, cutoff=0):
         self._pm.loadData(timer,
                           loadBins=True,
-                          bids=self.bids,
+                          bids=self._bids,
                           minLength=cutoff
                          )
 
@@ -131,10 +131,10 @@ class GMExtractor:
         # now print out the sequences
         print "Writing files"
         for bid in bm.getBids():
-            file_name = os.path.join(self.outDir, "%s_bin_%d.fna" % (prefix, bid))
+            file_name = os.path.join(self._outDir, "%s_bin_%d.fna" % (prefix, bid))
             try:
                 with open(file_name, 'w') as f:
-                    for cid in self._PM.contigNames[bm.getBinIndices(bid)]:
+                    for cid in self._pm.contigNames[bm.getBinIndices(bid)]:
                         if(cid in contigs):
                             f.write(">%s\n%s\n" % (cid, contigs[cid]))
                         else:
@@ -164,7 +164,7 @@ class GMExtractor:
         All logic is handled by BamM <- soon to be wrapped by StoreM"""
         # load data
         self.loadData()
-        bm = BinManager(self._bm)   # bins
+        bm = BinManager(self._pm)   # bins
 
         print "Extracting reads"
 
@@ -181,7 +181,7 @@ class GMExtractor:
                           bams,
                           groupNames=group_names,
                           prefix=prefix,
-                          outFolder=self.outDir,
+                          outFolder=self._outDir,
                           mixBams=mixBams,
                           mixGroups=mixGroups,
                           mixReads=mixReads,
@@ -202,19 +202,19 @@ class GMExtractor:
 
 class BinHighlightPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, bids=[], folder=None):
+    def __init__(self, dbFileName, folder=None):
         self._pm = ProfileManager(dbFileName)
-        self.bids = [] if bids is None else bids
-        self.outDir = os.getcwd() if folder == "" else folder
+        self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
-        if self.outDir is not None:
-            makeSurePathExists(self.outDir)
+        if self._outDir is not None:
+            makeSurePathExists(self._outDir)
 
     def loadData(self, timer, cutoff=0):
-        self._pm.loadData(timer, loadBins=True, bids=self.bids, minLength=cutoff)
+        self._pm.loadData(timer, loadBins=True, minLength=cutoff)
 
     def plot(self,
              timer,
+             bids,
              origin_mode="mediod",
              highlight_mode="mergers",
              threshold=None,
@@ -223,20 +223,21 @@ class BinHighlightPlotter:
              prefix="BIN"
             ):
         self.loadData(timer)
-        hmPlot = HybridMeasurePlotter(self._pm)
+        fplot = FeaturePlotter(self._pm)
         bm = BinManager(self._pm)
         binHighlightApi = BinHighlightAPI(self._pm)
 
-        for bid in bm.getBids():
-            fileName = "" if self.outDir is None else os.path.join(self.outDir, "%s_%d.png" % (prefix, bid))
-            hmPlot.plot(**binHighlightApi(bid=bid,
-                                          origin_mode=origin_mode,
-                                          highlight_mode=highlight_mode,
-                                          threshold=threshold,
-                                          plotRanks=plotRanks,
-                                          colorMap=colorMap,
-                                          fileName=fileName))
-            if self.outDir is None:
+        bm.checkBids(bids)
+        for bid in bids:
+            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
+            fplot.plot(**binHighlightApi(bid=bid,
+                                         origin_mode=origin_mode,
+                                         highlight_mode=highlight_mode,
+                                         threshold=threshold,
+                                         plotRanks=plotRanks,
+                                         colorMap=colorMap,
+                                         fileName=fileName))
+            if self._outDir is None:
                 break
 
         print "    %s" % timer.getTimeStamp()

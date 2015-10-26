@@ -50,9 +50,6 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy
 import scipy.spatial.distance as distance
 
-import sys
-import matplotlib.pyplot as plt
-
 # groopm imports
 from profileManager import getColorMap
 
@@ -144,17 +141,17 @@ def argrank(array, axis=0):
 #------------------------------------------------------------------------------
 #Plotting
 
-class PlotOriginAPI:
-    """Compute origin point for hybrid measure.
+class PlotDataAPI:
+    """Compute hybrid measures for an origin point.
 
     Requires / replaces argument dict values:
-        {members, origin_mode} -> {origin}
+        {members, origin_mode, plotRanks} -> {x, y, x_label, y_label}
     """
     def __init__(self, pm):
         self._pm = pm
         self._hm = HybridMeasure(pm)
 
-    def __call__(self, members, origin_mode, **kwargs):
+    def __call__(self, members, origin_mode, plotRanks=False, **kwargs):
         if origin_mode=="mediod":
             index = self._hm.getMediod(members)
         elif origin_mode=="max_coverage":
@@ -164,136 +161,17 @@ class PlotOriginAPI:
         else:
             raise ValueError("Invalid mode: %s" % origin_mode)
 
-        kwargs["origin"] = members[index]
+        distances = self._hm.getDistancesToPoint(index)
+        data = argrank(distances, axis=1) if plotRanks else distances
+        labels = self._hm.getDimNames()
+
+        #kwargs["origin"] = members[index]
+        kwargs["x"] = data[0]
+        kwargs["y"] = data[1]
+        kwargs["x_label"] = labels[0]
+        kwargs["y_label"] = labels[1]
         return kwargs
 
-class HybridMeasurePlotter:
-    """Plot contigs in hybrid measure space"""
-    COLOURS = 'rbgcmyk'
-
-    def __init__(self, pm):
-        self._pm = pm
-        self._hm = HybridMeasure(pm)
-
-    def plot(self, origin, plotRanks=False, keep=None, highlight=None,
-            divide=None, plotContigLengths=False, colorMap="HSV", fileName=""):
-        """Plot contigs in measure space"""
-        fig = plt.figure()
-
-        ax = fig.add_subplot(111)
-        self.plotOnAx(ax, origin, plotRanks=plotRanks, keep=keep,
-                      highlight=highlight, plotContigLengths=plotContigLengths,
-                      colorMap=colorMap)
-
-        if divide is not None:
-            for (clr, coords) in zip(self.COLOURS, divide):
-                fmt = '-'+clr
-                for (x_point, y_point) in zip(*coords):
-                    ax.plot([x_point, x_point], [0, y_point], fmt)
-                    ax.plot([0, x_point], [y_point, y_point], fmt)
-
-        if(fileName != ""):
-            try:
-                fig.set_size_inches(6,6)
-                plt.savefig(fileName,dpi=300)
-            except:
-                print "Error saving image:", fileName, sys.exc_info()[0]
-                raise
-        else:
-            print "Plotting contig features"
-            try:
-                plt.show()
-            except:
-                print "Error showing image", sys.exc_info()[0]
-                raise
-
-        plt.close(fig)
-        del fig
-
-    def plotSurface(self, origin, z, label, plotRanks=False, keep=None,
-            highlight=None, plotContigLengths=False, elev=None, azim=None,
-            colorMap="HSV", fileName=""):
-        """Plot a surface computed from coordinates in measure space"""
-        fig = plt.figure()
-
-        ax = fig.add_subplot(111, projection='3d')
-        self.plotOnAx(ax, origin, z=z, z_label=label, plotRanks=plotRanks,
-            keep=keep, highlight=highlight, plotContigLengths=plotContigLengths,
-            colorMap=colorMap, elev=elev, azim=azim)
-
-        if(fileName != ""):
-            try:
-                fig.set_size_inches(6,6)
-                plt.savefig(fileName,dpi=300)
-            except:
-                print "Error saving image:", fileName, sys.exc_info()[0]
-                raise
-        else:
-            print "Plotting contig features"
-            try:
-                plt.show()
-            except:
-                print "Error showing image", sys.exc_info()[0]
-                raise
-
-        plt.close(fig)
-        del fig
-
-    def plotOnAx(self, ax, origin, z=None, z_label=None, keep=None, extents=None,
-            highlight=None, plotRanks=False, plotContigLengths=False, elev=None,
-            colorMap="HSV", azim=None):
-
-        # display values
-        distances = self._hm.getDistancesToPoint(origin)
-        data = argrank(distances, axis=1) if plotRanks else distances
-        (x, y) = (data[0], data[1])
-        disp_vals = (x, y, z) if z is not None else (x, y)
-
-        # display labels
-        labels = self._hm.getDimNames()
-        disp_cols = self._pm.contigGCs
-
-        if highlight is not None:
-            edgecolors=numpy.full_like(disp_cols, 'k', dtype=str)
-            for (clr, hl) in zip(self.COLOURS, highlight):
-                edgecolors[hl] = clr
-            if keep is not None:
-                edgecolors = edgecolors[keep]
-        else:
-            edgecolors = 'k'
-
-        if plotContigLengths:
-            disp_lens = numpy.sqrt(self._pm.contigLengths)
-            if keep is not None:
-                disp_lens = disp_lens[keep]
-        else:
-            disp_lens=30
-
-        if keep is not None:
-            disp_vals = [v[keep] for v in disp_vals]
-            disp_cols = disp_cols[keep]
-
-        sc = ax.scatter(*disp_vals,
-                        c=disp_cols, s=disp_lens,
-                        cmap=getColorMap(colorMap),
-                        vmin=0.0, vmax=1.0,
-                        marker='.')
-        sc.set_edgecolors(edgecolors)
-        sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
-
-        ax.set_xlabel(labels[0])
-        ax.set_ylabel(labels[1])
-        if z_label is not None and z is not None:
-            ax.set_zlabel(z_label)
-
-        if extents is not None:
-            ax.set_xlim([extents[0], extents[1]])
-            ax.set_ylim([extents[2], extents[3]])
-            if z is not None:
-                ax.set_zlim([extents[4], extents[5]])
-
-        if z is not None:
-            ax.view_init(elev=elev, azim=azim)
 
 ###############################################################################
 ###############################################################################

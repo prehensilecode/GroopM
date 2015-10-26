@@ -51,7 +51,7 @@ import numpy
 # GroopM imports
 from profileManager import ProfileManager
 from groopmExceptions import BinNotFoundException
-from hybridMeasure import HybridMeasurePlotter, PlotOriginAPI
+from hybridMeasure import PlotDataAPI
 
 numpy.seterr(all='raise')
 
@@ -75,12 +75,17 @@ class BinManager:
         """Return corresponding bin ids"""
         return self._pm.binIds[row_indices]
 
+    def checkBids(self, bids):
+        """Check if bids are valid"""
+        is_not_bid = numpy.logical_not(numpy.in1d(bids, self.getBids()))
+        if numpy.any(is_not_bid):
+            raise BinNotFoundException("ERROR: "+",".join([str(bid) for bid in bids[is_not_bid]])+" are not bin ids")
+
+
     def getBinIndices(self, bids):
         """Return array of binned contig indices"""
 
-        is_not_bid = numpy.logical_not(numpy.in1d(bids, self.getBids()))
-        if numpy.any(is_not_bid):
-            raise BinNotFoundException("Cannot find: "+",".join([str(bid) for bid in bids[is_not_bid]])+" in bins dicts")
+        self.checkBids(bids)
         return numpy.flatnonzero(numpy.in1d(self._pm.binIds, bids))
 
     def getUnbinned(self):
@@ -155,34 +160,19 @@ def isGoodBin(totalBP, binSize, minBP, minSize):
 #------------------------------------------------------------------------------
 # Plotting
 
-class BinOriginAPI:
+class BinDataAPI:
     """Get origin point from bin members.
 
     Requires / replaces argument dict values:
-        {bid, origin_mode} -> {origin}
+        {bid, origin_mode, plotRanks} -> {x, y, x_label, y_label}
     """
     def __init__(self, pm):
-        self._plotOriginApi = PlotOriginAPI(pm)
+        self._plotDataApi = PlotDataAPI(pm)
         self._bm = BinManager(pm)
 
     def __call__(self, bid, **kwargs):
         row_indices = self._bm.getBinIndices(bid)
-        return self._plotOriginApi(members=row_indices, **kwargs)
-
-class BinPlotter:
-    def __init__(self, pm):
-        self._binOriginApi = BinOriginAPI(pm)
-        self._hmPlot = HybridMeasurePlotter(pm)
-
-    def plot(self, bid,
-             origin_mode="mediod",
-             plotRanks=False,
-             fileName=""
-            ):
-        self._hmPlot.plot(**self._binOriginApi(bid=bid,
-                                               origin_mode=origin_mode,
-                                               plotRanks=plotRanks,
-                                               fileName=fileName))
+        return self._plotDataApi(members=row_indices, **kwargs)
 
 
 ###############################################################################

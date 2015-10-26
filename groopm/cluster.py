@@ -52,8 +52,10 @@ import scipy.stats as stats
 
 # GroopM imports
 from profileManager import ProfileManager
-from binManager import BinManager, BinOriginAPI
+from binManager import BinManager, BinDataAPI
 from hybridMeasure import HybridMeasure, argrank, PlotOriginAPI
+import corre
+from corre import SurfaceDataAPI
 
 numpy.seterr(all='raise')
 
@@ -154,87 +156,6 @@ class MediodClusterMaker:
 ###############################################################################
 #Utility functions
 ###############################################################################
-
-#------------------------------------------------------------------------------
-#Point counting
-
-def getInsideCount(data, points=None):
-    """For each data point return the number of data points that have lower value in all dimensions"""
-    data = numpy.asarray(data)
-    if points is None:
-        points = data
-    points = numpy.asarray(points)
-    (_num_dims, num_points) = points.shape
-    counts = numpy.empty(num_points, dtype=int)
-    for i in range(num_points):
-        is_inside = numpy.all([d <= c for (c, d) in zip(points[:, i], data)], axis=0)
-        counts[i] = numpy.count_nonzero(is_inside) - 1 # discount origin
-
-    return counts
-
-def getOutsideCount(data, inner_points, outer_points=None):
-    """Return the number of data points that have values in a region between each data point and an internal point."""
-
-    if outer_points is None:
-        outer_points = getBoundingPoints(inner_points, data)
-
-    outer_counts = getInsideCount(data, outer_points)
-    inner_counts = getInsideCount(data, inner_points)
-
-    return outer_counts - inner_counts
-
-def getBoundingPoints(a_points, b_points):
-    """Return a bounding region that contains both of a pair of points."""
-    (num_a_dims, num_a_points) = a_points.shape
-    (_num_b_dims, num_b_points) = b_points.shape
-
-    swap = num_b_points > num_a_points
-    (first, second, num_first, num_second) = (b_points, a_points, num_b_points, num_a_points) if num_b_points > num_a_points else (a_points, b_points, num_a_points, num_b_points)
-
-    bounds = numpy.empty_like(first)
-    for (i, j) in numpy.broadcast(range(num_first), range(num_second)):
-        bounds[:, i] = numpy.maximum(first[:, i], second[:, j])
-
-    return bounds
-
-#------------------------------------------------------------------------------
-#Rank correlation testing
-
-def getInsidePNull(ranks):
-    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
-    ranks = numpy.asarray(ranks, dtype=float)
-    (_num_dims, num_points) = ranks.shape
-    counts = getInsideCount(ranks)
-
-    # For a point with ranks r, the probability of another point having a
-    # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
-    # maximum rank, equal to the total number of points.
-    r_max = num_points - 1
-    p_inside = numpy.prod(ranks / r_max, axis=0)
-
-    # Statistical test counts
-    return binomOneTailedTest(counts, r_max, p_inside)
-
-def getOutsidePNull(ranks, inners):
-    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
-    ranks = numpy.asarray(ranks, dtype=float)
-    (_num_dims, num_points) = ranks.shape
-    outer_points = getBoundingPoints(ranks[:, inners], ranks)
-    counts = getOutsideCount(ranks, ranks[:, inners], outer_points=outer_points)
-
-    # For a pair of points r, s the probability of a point with all ranks
-    # at least as low as r and higher s is
-    # `prod(r / r_max) - prod(s / r_max)` where r_max is the highest rank,
-    # equal to the total number of points
-    r_max = num_points - 1
-    p_outside = numpy.prod(outer_points / r_max, axis=0) - numpy.prod(ranks[:, inners] / r_max, axis=0)
-
-    # Statistical test counts
-    return binomOneTailedTest(counts, r_max, p_outside)
-
-def binomOneTailedTest(counts, ns, ps):
-    """Test counts against one-tailed binomial distribution"""
-    return numpy.array([stats.binom.sf(c-1, n, p) for (c, n, p) in numpy.broadcast(counts, ns, ps)])
 
 #------------------------------------------------------------------------------
 #Extrema masking
@@ -340,11 +261,11 @@ def getOriginPartition(ranks, partitions):
 def getNearPNull(ranks, threshold, unmerged=None):
     """Get probability scores of points being near inner most partition"""
 
-    scores = getInsidePNull(ranks)
+    scores = corre.getInsidePNull(ranks)
     inside_partition = getOriginPartition(ranks, partitionByExtrema(ranks, scores, threshold, unmerged))
     inside_cutoff = inside_partition[numpy.argmin(scores[inside_partition])]
 
-    return getOutsidePNull(ranks, inside_cutoff)
+    return corre.getOutsidePNull(ranks, inside_cutoff)
 
 def getMergers(ranks, threshold, unmerged=None):
     """Recruit points with a significant rank correlation"""
@@ -362,57 +283,30 @@ def getMergers(ranks, threshold, unmerged=None):
 #------------------------------------------------------------------------------
 #Plotting tools
 
-class PlotSurfaceAPI:
-    """Computes derived surface in hybrid measure space.
-
-    Requires / replaces argument dict values:
-        {origin, surface_mode} -> {origin, z, label}
-    """
-    def __init__(self, pm):
-        self._hm = HybridMeasure(pm)
-
-    def __call__(self, surface_mode, **kwargs):
-        """Derive surface values"""
-
-        origin = kwargs["origin"]
-        distances = self._hm.getDistancesToPoint(origin)
-        ranks = argrank(distances, axis=1)
-        if surface_mode=="corr_inside":
-            z = numpy.log10(getInsidePNull(ranks))
-            label = "Inside correlation"
-        elif surface_mode=="corr_near":
-            z = numpy.log10(getNearPNull(ranks))
-            label = "Outside correlation"
-        else:
-            raise ValueError("Invaild surface mode: %s" % surface_mode)
-
-        kwargs["z"] = z
-        kwargs["label"] = label
-        return kwargs
 
 class PlotHighlightAPI:
     """"Get a tuple of sets of contigs to highlight.
 
     Requires / replaces argument dict values:
-        {origin, threshold, highlight_mode} -> {origin, highlight}
+        {x, y, threshold, highlight_mode} -> {x, y, highlight}
     """
-    def __init__(self, pm):
-        self._hm = HybridMeasure(pm)
+    def __init__(self):
+        pass
 
     def __call__(self, threshold, highlight_mode, **kwargs):
 
         if highlight_mode is None:
             return kwargs
 
-        origin = kwargs["origin"]
-        distances = self._hm.getDistancesToPoint(origin)
-        ranks = argrank(distances, axis=1)
+        x = kwargs["x"]
+        y = kwargs["y"]
+        ranks = argrank([x, y], axis=1)
         if highlight_mode=="mergers":
             highlight = (getMergers(ranks, threshold),)
         elif highlight_mode=="partitions":
-            highlight = tuple(getPartitionMembers(partitionByExtrema(ranks, getInsidePNull(ranks), threshold)))
+            highlight = tuple(getPartitionMembers(partitionByExtrema(ranks, corre.getInsidePNull(ranks), threshold)))
         elif highlight_mode=="mask_inside":
-            highlight = (numpy.flatnonzero(isExtremaMask(ranks, getInsidePNull(ranks), threshold)),)
+            highlight = (numpy.flatnonzero(isExtremaMask(ranks, corre.getInsidePNull(ranks), threshold)),)
         elif highlight_mode=="mask_near":
             highlight = (numpy.flatnonzero(isExtremaMask(ranks, getNearPNull(ranks), threshold)),)
         else:
@@ -425,11 +319,11 @@ class BinHighlightAPI:
     """Highlight contigs from a bin
 
     Requires / replaces argument dict values:
-        {bid, origin_mode, threshold, highlight_mode} -> {origin, highlight}
+        {bid, origin_mode, threshold, highlight_mode} -> {x, y, x_label, y_label, highlight}
     """
     def __init__(self, pm):
         self._plotHighlightApi = PlotHighlightAPI(pm)
-        self._binOriginApi = BinOriginAPI(pm)
+        self._binDataApi = BinDataAPI(pm)
         self._bm = BinManager(pm)
 
     def __call__(self, highlight_mode, threshold, **kwargs):
@@ -437,12 +331,12 @@ class BinHighlightAPI:
         if highlight_mode=="bin":
             bid = kwargs["bid"]
             highlight = (self._bm.getBinIndices(bid),)
-            return self._binOriginApi(highlight=highlight, **kwargs)
+            return self._binDataApi(highlight=highlight, **kwargs)
         else:
             try:
                 return self._plotHighlightApi(highlight_mode=highlight_mode,
                                               threshold=threshold,
-                                              **self._binOriginApi(**kwargs))
+                                              **self._binDataApi(**kwargs))
             except:
                 raise
 
@@ -450,27 +344,27 @@ class SurfaceHighlightAPI:
     """Combined surface + highlight api.
 
     Requires / replaces argument dict values:
-        {origin, threshold, highlight_mode, surface_mode} -> {origin, highlight, z, label}
+        {x, y, threshold, highlight_mode, surface_mode} -> {x, y, highlight, z, label}
     """
     def __init__(self, pm):
-        self._plotSurfaceApi = PlotSurfaceApi(pm)
-        self._plotHighlightApi = PlotHighlightApi(pm)
+        self._surfaceDataApi = SurfaceDataAPI(pm)
+        self._plotHighlightApi = PlotHighlightAPI(pm)
 
     def __call__(self, **kwargs):
-        return self._plotSurfaceApi(**self._plotHighlightApi(**kwargs))
+        return self._surfaceDataApi(**self._plotHighlightApi(**kwargs))
 
 class BinSurfaceHighlightAPI:
     """Combined surface + highlight + bin api.
 
     Requires / replaces argument dict values:
-        {bid, origin_mode, threshold, highlight_mode, surface_mode} -> {origin, highlihght, z, label}
+        {bid, origin_mode, threshold, highlight_mode, surface_mode} -> {x, y, z, x_label, y_label, z_label, highlihght}
     """
     def __init__(self, pm):
-        self._binOriginApi = BinOriginAPI(pm)
+        self._binDataApi = BinDataAPI(pm)
         self._surfaceHighlightApi = SurfaceHighlightAPI(pm)
 
     def __call__(self, **kwargs):
-        return self._surfaceHighlightApi(**self._binOriginApi(**kwargs))
+        return self._surfaceHighlightApi(**self._binDataApi(**kwargs))
 
 
 ###############################################################################

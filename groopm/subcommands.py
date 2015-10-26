@@ -371,9 +371,9 @@ class PlotSubcommand:
 
 
         bplot = groopm.BinHighlightPlotter(options.dbname,
-                                           bids=options.bids,
                                            folder=None if options.interactive else options.out_folder)
         bplot.plot(timer,
+                   bids=options.bids,
                    origin_mode=options.origin,
                    highlight_mode=options.highlight,
                    threshold=0.5,
