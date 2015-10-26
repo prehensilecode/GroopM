@@ -54,8 +54,11 @@ import errno
 import numpy
 
 # GroopM imports
-import binManager
-import mstore
+from profileManager import ProfileManager
+from binManager import BinManager
+from cluster import BinHighlightAPI
+from hybridMeasure import HybridMeasurePlotter
+from mstore import ContigParser
 
 # other local imports
 from bamm.bamExtractor import BamExtractor as BMBE
@@ -66,6 +69,9 @@ numpy.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
+#------------------------------------------------------------------------------
+#Extraction
 
 class GMExtractor:
     """Used for extracting reads and contigs based on bin assignments"""
@@ -93,14 +99,14 @@ class GMExtractor:
                        cutoff=0):
         """Extract contigs and write to file"""
         self.loadData(timer, cutoff=cutoff)
-        bm = binManager.BinManager(self._pm)
+        bm = BinManager(self._pm)
         if prefix is None or prefix == '':
             prefix=os.path.basename(self.dbFileName) \
                             .replace(".gm", "") \
                             .replace(".sm", "")
 
         # load all the contigs which have been assigned to bins
-        cp = mstore.ContigParser()
+        cp = ContigParser()
         # contigs looks like cid->seq
         contigs = {}
         import mimetypes
@@ -158,7 +164,7 @@ class GMExtractor:
         All logic is handled by BamM <- soon to be wrapped by StoreM"""
         # load data
         self.loadData()
-        bm = binManager.BinManager(self._bm)   # bins
+        bm = BinManager(self._bm)   # bins
 
         print "Extracting reads"
 
@@ -189,6 +195,56 @@ class GMExtractor:
 
         bam_parser.extract(threads=threads,
                            verbose=verbose)
+
+
+#------------------------------------------------------------------------------
+#Plotting
+
+class BinHighlightPlotter:
+    """Plot and highlight contigs from a bin"""
+    def __init__(self, dbFileName, bids=[], folder=None):
+        self._pm = ProfileManager(dbFileName)
+        self.bids = [] if bids is None else bids
+        self.outDir = os.getcwd() if folder == "" else folder
+        # make the dir if need be
+        if self.outDir is not None:
+            makeSurePathExists(self.outDir)
+
+    def loadData(self, timer, cutoff=0):
+        self._pm.loadData(timer, loadBins=True, bids=self.bids, minLength=cutoff)
+
+    def plot(self,
+             timer,
+             origin_mode="mediod",
+             highlight_mode="mergers",
+             threshold=None,
+             plotRanks=False,
+             colorMap="HSV",
+             prefix="BIN"
+            ):
+        self.loadData(timer)
+        hmPlot = HybridMeasurePlotter(self._pm)
+        bm = BinManager(self._pm)
+        binHighlightApi = BinHighlightAPI(self._pm)
+
+        for bid in bm.getBids():
+            fileName = "" if self.outDir is None else os.path.join(self.outDir, "%s_%d.png" % (prefix, bid))
+            hmPlot.plot(**binHighlightApi(bid=bid,
+                                          origin_mode=origin_mode,
+                                          highlight_mode=highlight_mode,
+                                          threshold=threshold,
+                                          plotRanks=plotRanks,
+                                          colorMap=colorMap,
+                                          fileName=fileName))
+            if self.outDir is None:
+                break
+
+        print "    %s" % timer.getTimeStamp()
+
+
+###############################################################################
+# Helpers
+###############################################################################
 
 def makeSurePathExists(path):
     try:

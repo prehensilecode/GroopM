@@ -49,6 +49,7 @@ __email__ = "mike@mikeimelfort.com"
 import numpy
 import sys
 import matplotlib
+import colorsys
 
 # GroopM imports
 from mstore import GMDataManager as DataManager
@@ -230,7 +231,7 @@ def getColorMap(colorMapStr):
     if colorMapStr == 'HSV':
         S = 1.0
         V = 1.0
-        return matplotlib.colors.LinearSegmentedColormap.from_list('GC', [htr((1.0 + numpy.sin(numpy.pi * (val/1000.0) - numpy.pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
+        return matplotlib.colors.LinearSegmentedColormap.from_list('GC', [colorsys.hsv_to_rgb((1.0 + numpy.sin(numpy.pi * (val/1000.0) - numpy.pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
     elif colorMapStr == 'Accent':
         return matplotlib.cm.get_cmap('Accent')
     elif colorMapStr == 'Blues':
