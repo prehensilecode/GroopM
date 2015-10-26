@@ -315,7 +315,7 @@ class FeaturePlotter:
 
         ax = fig.add_subplot(111)
         self.plotOnAx(ax, x, y,
-                      x_label=x_label, y_label=y_lable,
+                      x_label=x_label, y_label=y_label,
                       keep=keep, highlight=highlight,
                       plotContigLengths=plotContigLengths)
 

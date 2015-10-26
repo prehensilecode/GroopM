@@ -50,10 +50,6 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy
 import scipy.stats as stats
 
-# GroopM imports
-from binManager import BinOriginAPI
-from hybridMeasure import HybridMeasure, argrank, PlotOriginAPI
-
 numpy.seterr(all='raise')
 
 ###############################################################################
@@ -150,7 +146,7 @@ class SurfaceDataAPI:
     """Computes derived surface in hybrid measure space.
 
     Requires / replaces argument dict values:
-        {x, y, surface_mode} -> {x, y, z, label}
+        {ranks, surface_mode} -> {ranks, z, label}
     """
     def __init__(self):
         pass
@@ -158,20 +154,18 @@ class SurfaceDataAPI:
     def __call__(self, surface_mode, **kwargs):
         """Derive surface values"""
 
-        x = kwargs["x"]
-        y = kwargs["y"]
-        ranks = argrank([x, y], axis=1)
+        ranks = kwargs["ranks"]
         if surface_mode=="corr_inside":
             z = numpy.log10(getInsidePNull(ranks))
-            label = "Inside correlation"
+            z_label = "Inside correlation"
         elif surface_mode=="corr_near":
             z = numpy.log10(getNearPNull(ranks))
-            label = "Outside correlation"
+            z_label = "Outside correlation"
         else:
             raise ValueError("Invaild surface mode: %s" % surface_mode)
 
         kwargs["z"] = z
-        kwargs["label"] = label
+        kwargs["z_label"] = label
         return kwargs
 
 ###############################################################################

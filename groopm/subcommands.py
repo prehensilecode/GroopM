@@ -370,8 +370,8 @@ class PlotSubcommand:
         print "*******************************************************************************"
 
 
-        bplot = groopm.BinHighlightPlotter(options.dbname,
-                                           folder=None if options.interactive else options.out_folder)
+        bplot = groopm.BinPlotter(options.dbname,
+                                  folder=None if options.interactive else options.out_folder)
         bplot.plot(timer,
                    bids=options.bids,
                    origin_mode=options.origin,

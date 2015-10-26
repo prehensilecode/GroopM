@@ -141,17 +141,17 @@ def argrank(array, axis=0):
 #------------------------------------------------------------------------------
 #Plotting
 
-class PlotDataAPI:
+class PlotOriginAPI:
     """Compute hybrid measures for an origin point.
 
     Requires / replaces argument dict values:
-        {members, origin_mode, plotRanks} -> {x, y, x_label, y_label}
+        {members, origin_mode} -> {origin}
     """
     def __init__(self, pm):
         self._pm = pm
         self._hm = HybridMeasure(pm)
 
-    def __call__(self, members, origin_mode, plotRanks=False, **kwargs):
+    def __call__(self, members, origin_mode, **kwargs):
         if origin_mode=="mediod":
             index = self._hm.getMediod(members)
         elif origin_mode=="max_coverage":
@@ -161,17 +161,28 @@ class PlotDataAPI:
         else:
             raise ValueError("Invalid mode: %s" % origin_mode)
 
-        distances = self._hm.getDistancesToPoint(index)
-        data = argrank(distances, axis=1) if plotRanks else distances
-        labels = self._hm.getDimNames()
-
-        #kwargs["origin"] = members[index]
-        kwargs["x"] = data[0]
-        kwargs["y"] = data[1]
-        kwargs["x_label"] = labels[0]
-        kwargs["y_label"] = labels[1]
+        kwargs["origin"] = index
         return kwargs
 
+class PlotDataAPI:
+    """Compute hybrid measures for an origin point.
+
+    Requires / replaces argument dict values:
+        {origin} -> {data, ranks, x_label, y_label}
+    """
+    def __init__(self, pm):
+        self._pm = pm
+        self._hm = HybridMeasure(pm)
+
+    def __call__(self, origin, **kwargs):
+        data = self._hm.getDistancesToPoint(origin)
+        (x_label, y_label) = self._hm.getDimNames()
+
+        kwargs["data"] = data
+        kwargs["ranks"] = argrank(data, axis=1)
+        kwargs["x_label"] = x_label
+        kwargs["y_label"] = y_label
+        return kwargs
 
 ###############################################################################
 ###############################################################################

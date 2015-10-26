@@ -200,7 +200,7 @@ class GMExtractor:
 #------------------------------------------------------------------------------
 #Plotting
 
-class BinHighlightPlotter:
+class BinPlotter:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, folder=None):
         self._pm = ProfileManager(dbFileName)
@@ -223,20 +223,19 @@ class BinHighlightPlotter:
              prefix="BIN"
             ):
         self.loadData(timer)
-        fplot = FeaturePlotter(self._pm)
         bm = BinManager(self._pm)
+        fplot = FeaturePlotter(self._pm, colorMap=colorMap)
         binHighlightApi = BinHighlightAPI(self._pm)
 
         bm.checkBids(bids)
         for bid in bids:
             fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
-            fplot.plot(**binHighlightApi(bid=bid,
-                                         origin_mode=origin_mode,
-                                         highlight_mode=highlight_mode,
-                                         threshold=threshold,
-                                         plotRanks=plotRanks,
-                                         colorMap=colorMap,
-                                         fileName=fileName))
+            fplot.plot(**getPlotArgs(**binHighlightApi(bid=bid,
+                                                       origin_mode=origin_mode,
+                                                       highlight_mode=highlight_mode,
+                                                       threshold=threshold,
+                                                       plotRanks=plotRanks,
+                                                       fileName=fileName)))
             if self._outDir is None:
                 break
 
@@ -246,6 +245,12 @@ class BinHighlightPlotter:
 ###############################################################################
 # Helpers
 ###############################################################################
+
+def getPlotArgs(data, ranks, plotRanks=False, **kwargs):
+    (x, y) = (ranks[0], ranks[1]) if plotRanks else (data[0], data[1])
+    kwargs["x"] = x
+    kwargs["y"] = y
+    return kwargs
 
 def makeSurePathExists(path):
     try:

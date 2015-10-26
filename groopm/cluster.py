@@ -48,12 +48,11 @@ __email__ = "t.lamberton@uq.edu.au"
 ###############################################################################
 
 import numpy
-import scipy.stats as stats
 
 # GroopM imports
 from profileManager import ProfileManager
 from binManager import BinManager, BinDataAPI
-from hybridMeasure import HybridMeasure, argrank, PlotOriginAPI
+from hybridMeasure import HybridMeasure, argrank, PlotDataAPI
 import corre
 from corre import SurfaceDataAPI
 
@@ -283,12 +282,11 @@ def getMergers(ranks, threshold, unmerged=None):
 #------------------------------------------------------------------------------
 #Plotting tools
 
-
 class PlotHighlightAPI:
     """"Get a tuple of sets of contigs to highlight.
 
     Requires / replaces argument dict values:
-        {x, y, threshold, highlight_mode} -> {x, y, highlight}
+        {ranks, threshold, highlight_mode} -> {ranks, highlight}
     """
     def __init__(self):
         pass
@@ -298,9 +296,7 @@ class PlotHighlightAPI:
         if highlight_mode is None:
             return kwargs
 
-        x = kwargs["x"]
-        y = kwargs["y"]
-        ranks = argrank([x, y], axis=1)
+        ranks = kwargs["ranks"]
         if highlight_mode=="mergers":
             highlight = (getMergers(ranks, threshold),)
         elif highlight_mode=="partitions":
@@ -319,10 +315,10 @@ class BinHighlightAPI:
     """Highlight contigs from a bin
 
     Requires / replaces argument dict values:
-        {bid, origin_mode, threshold, highlight_mode} -> {x, y, x_label, y_label, highlight}
+        {bid, origin_mode, threshold, highlight_mode} -> {data, ranks, x_label, y_label, highlight}
     """
     def __init__(self, pm):
-        self._plotHighlightApi = PlotHighlightAPI(pm)
+        self._plotHighlightApi = PlotHighlightAPI()
         self._binDataApi = BinDataAPI(pm)
         self._bm = BinManager(pm)
 
@@ -344,11 +340,11 @@ class SurfaceHighlightAPI:
     """Combined surface + highlight api.
 
     Requires / replaces argument dict values:
-        {x, y, threshold, highlight_mode, surface_mode} -> {x, y, highlight, z, label}
+        {ranks, threshold, highlight_mode, surface_mode} -> {ranks, highlight, z, z_label}
     """
-    def __init__(self, pm):
-        self._surfaceDataApi = SurfaceDataAPI(pm)
-        self._plotHighlightApi = PlotHighlightAPI(pm)
+    def __init__(self):
+        self._surfaceDataApi = SurfaceDataAPI()
+        self._plotHighlightApi = PlotHighlightAPI()
 
     def __call__(self, **kwargs):
         return self._surfaceDataApi(**self._plotHighlightApi(**kwargs))
@@ -357,11 +353,11 @@ class BinSurfaceHighlightAPI:
     """Combined surface + highlight + bin api.
 
     Requires / replaces argument dict values:
-        {bid, origin_mode, threshold, highlight_mode, surface_mode} -> {x, y, z, x_label, y_label, z_label, highlihght}
+        {bid, origin_mode, threshold, highlight_mode, surface_mode} -> {data, ranks, z, x_label, y_label, z_label, highlihght}
     """
     def __init__(self, pm):
         self._binDataApi = BinDataAPI(pm)
-        self._surfaceHighlightApi = SurfaceHighlightAPI(pm)
+        self._surfaceHighlightApi = SurfaceHighlightAPI()
 
     def __call__(self, **kwargs):
         return self._surfaceHighlightApi(**self._binDataApi(**kwargs))
