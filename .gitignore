@@ -2,4 +2,5 @@ MANIFEST
 build/
 dist/
 groopm/*.pyc
+groopm/tests/*.pyc
 pip-log.txt

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    cluster.py                                                               #
+#    corre.py                                                                 #
 #                                                                             #
-#    A collection of classes / methods used when clustering contigs           #
+#    Rank correlation significance testing                                    #
 #                                                                             #
 #    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
@@ -139,34 +139,6 @@ def getBoundingPoints(a_points, b_points):
 
     return bounds
 
-#------------------------------------------------------------------------------
-#Plotting tools
-
-class SurfaceDataAPI:
-    """Computes derived surface in hybrid measure space.
-
-    Requires / replaces argument dict values:
-        {ranks, surface_mode} -> {ranks, z, label}
-    """
-    def __init__(self):
-        pass
-
-    def __call__(self, surface_mode, **kwargs):
-        """Derive surface values"""
-
-        ranks = kwargs["ranks"]
-        if surface_mode=="corr_inside":
-            z = numpy.log10(getInsidePNull(ranks))
-            z_label = "Inside correlation"
-        elif surface_mode=="corr_near":
-            z = numpy.log10(getNearPNull(ranks))
-            z_label = "Outside correlation"
-        else:
-            raise ValueError("Invaild surface mode: %s" % surface_mode)
-
-        kwargs["z"] = z
-        kwargs["z_label"] = label
-        return kwargs
 
 ###############################################################################
 ###############################################################################

@@ -358,7 +358,7 @@ class PlotSubcommand:
         parser.add_argument('-i', '--interactive', action="store_true", default=False, help="interatcive plot first bin or contig id")
         parser.add_argument('--ranks', action="store_true", default=False, help="plot variable ranks")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
-        parser.add_argument('--highlight', default="bin", choices=["bin", "mergers", "partitions", "mask_inside", "mask_near"], help="choose how to highlight contigs")
+        parser.add_argument('--highlight', default="cluster", choices=["cluster", "mergers"], help="choose how to highlight contigs")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
 
         return parser

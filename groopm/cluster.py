@@ -51,10 +51,9 @@ import numpy
 
 # GroopM imports
 from profileManager import ProfileManager
-from binManager import BinManager, BinDataAPI
-from hybridMeasure import HybridMeasure, argrank, PlotDataAPI
+from binManager import BinManager
+from coverageAndKmerDistance import CoverageAndKmerDistanceTool, CoverageAndKmerView, argrank
 import corre
-from corre import SurfaceDataAPI
 
 numpy.seterr(all='raise')
 
@@ -71,9 +70,10 @@ class ClusterEngine:
                  minBP,
                  threshold=0.5):
 
-        # Worker classes
+        # Worker class
         self._pm = ProfileManager(dbFileName)
         self._bm = BinManager(self._pm, minSize=minSize, minBP=minBP)
+        self._threshold = threshold
         self.updateBin = MediodClusterMaker(self._pm, threshold=threshold)
 
 
@@ -114,7 +114,7 @@ class ClusterEngine:
             print "Found %d unbinned." % self._bm.getUnbinned().size
 
             old_size = self._bm.getBinIndices([bid]).size
-            new_mediod = self.updateBin(self._bm, mediod)
+            new_mediod = self.updateBin(mediod)
 
             print "Recruited %d members." % self._bm.getBinIndices([bid]).size - old_size
 
@@ -128,26 +128,19 @@ class ClusterEngine:
         print " %d bins made." % self._bm.currentBid
         self._bm.unbinLowQualityAssignments()
 
+    def updateBin(self, mediod):
+        """Update bin labels based on current mediod"""
+        bid = self._bm.getBidsByIndex(mediod)
+        putative_members = self._bm.getBinIndices([0, bid])
 
-class MediodClusterMaker:
-    """Update cluster labels based on current mediod"""
-    def __init__(self, pm, threshold):
-        self._hm = HybridMeasure(pm)
-        self.threshold = threshold
-
-    def __call__(self, bm, mediod):
-        bid = bm.getBidsByIndex(mediod)
-        putative_members = bm.getBinIndices([0, bid])
-
-        distances = self._hm.getDistancesToPoint(mediod)
-        ranks = argrank(distances, axis=0)
-        recruited = getMergers(ranks, threshold=self.threshold, unmerged=putative_members)
-        bm.assignBin(recruited, bid=bid)
-        members = bm.getBinIndices(bid)
+        view = CoverageAndKmerView(self._pm, mediod)
+        recruited = getMergers([view.covRanks, view.kmerRanks], threshold=self.threshold, unmerged=putative_members)
+        self._bm.assignBin(recruited, bid=bid)
+        members = self._bm.getBinIndices(bid)
         if len(members)==1:
             mediod = members
         else:
-            index = self._hm.getMediod(members)
+            index = CoverageAndKmerDistanceTool(self._pm).getMediod(members)
             mediod = members[index]
 
         return mediod
@@ -157,7 +150,7 @@ class MediodClusterMaker:
 ###############################################################################
 
 #------------------------------------------------------------------------------
-#Extrema masking
+#Extrema mask partitioning
 
 class PartitionSet:
     def __init__(self, size):
@@ -278,90 +271,6 @@ def getMergers(ranks, threshold, unmerged=None):
         is_merger = numpy.logical_or(is_merger, is_inside)
 
     return numpy.flatnonzero(is_merger)
-
-#------------------------------------------------------------------------------
-#Plotting tools
-
-class PlotHighlightAPI:
-    """"Get a tuple of sets of contigs to highlight.
-
-    Requires / replaces argument dict values:
-        {ranks, threshold, highlight_mode} -> {ranks, highlight}
-    """
-    def __init__(self):
-        pass
-
-    def __call__(self, threshold, highlight_mode, **kwargs):
-
-        if highlight_mode is None:
-            return kwargs
-
-        ranks = kwargs["ranks"]
-        if highlight_mode=="mergers":
-            highlight = (getMergers(ranks, threshold),)
-        elif highlight_mode=="partitions":
-            highlight = tuple(getPartitionMembers(partitionByExtrema(ranks, corre.getInsidePNull(ranks), threshold)))
-        elif highlight_mode=="mask_inside":
-            highlight = (numpy.flatnonzero(isExtremaMask(ranks, corre.getInsidePNull(ranks), threshold)),)
-        elif highlight_mode=="mask_near":
-            highlight = (numpy.flatnonzero(isExtremaMask(ranks, getNearPNull(ranks), threshold)),)
-        else:
-            raise ValueError("Invalide mode: %s" % highlight_mode)
-
-        kwargs["highlight"] = highlight
-        return kwargs
-
-class BinHighlightAPI:
-    """Highlight contigs from a bin
-
-    Requires / replaces argument dict values:
-        {bid, origin_mode, threshold, highlight_mode} -> {data, ranks, x_label, y_label, highlight}
-    """
-    def __init__(self, pm):
-        self._plotHighlightApi = PlotHighlightAPI()
-        self._binDataApi = BinDataAPI(pm)
-        self._bm = BinManager(pm)
-
-    def __call__(self, highlight_mode, threshold, **kwargs):
-        """"""
-        if highlight_mode=="bin":
-            bid = kwargs["bid"]
-            highlight = (self._bm.getBinIndices(bid),)
-            return self._binDataApi(highlight=highlight, **kwargs)
-        else:
-            try:
-                return self._plotHighlightApi(highlight_mode=highlight_mode,
-                                              threshold=threshold,
-                                              **self._binDataApi(**kwargs))
-            except:
-                raise
-
-class SurfaceHighlightAPI:
-    """Combined surface + highlight api.
-
-    Requires / replaces argument dict values:
-        {ranks, threshold, highlight_mode, surface_mode} -> {ranks, highlight, z, z_label}
-    """
-    def __init__(self):
-        self._surfaceDataApi = SurfaceDataAPI()
-        self._plotHighlightApi = PlotHighlightAPI()
-
-    def __call__(self, **kwargs):
-        return self._surfaceDataApi(**self._plotHighlightApi(**kwargs))
-
-class BinSurfaceHighlightAPI:
-    """Combined surface + highlight + bin api.
-
-    Requires / replaces argument dict values:
-        {bid, origin_mode, threshold, highlight_mode, surface_mode} -> {data, ranks, z, x_label, y_label, z_label, highlihght}
-    """
-    def __init__(self, pm):
-        self._binDataApi = BinDataAPI(pm)
-        self._surfaceHighlightApi = SurfaceHighlightAPI()
-
-    def __call__(self, **kwargs):
-        return self._surfaceHighlightApi(**self._binDataApi(**kwargs))
-
 
 ###############################################################################
 ###############################################################################

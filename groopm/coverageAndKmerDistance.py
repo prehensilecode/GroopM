@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    hybridMeasure.py                                                         #
+#    coverageAndKmerDistance.py                                               #
 #                                                                             #
 #    Compute coverage / kmer hybrid distance measure                          #
 #                                                                             #
@@ -60,10 +60,11 @@ numpy.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 
-class HybridMeasure:
+class CoverageAndKmerDistanceTool:
     """Computes the following metric pair:
         cov  = euclidean distance in log coverage space,
-        kmer = euclidean distance in kmer sig space. """
+        kmer = euclidean distance in kmer sig space.
+    """
     def __init__(self, pm):
         self._pm = pm
 
@@ -79,15 +80,11 @@ class HybridMeasure:
 
         return numpy.array([cov, kmer])
 
-    def getDistancesToPoint(self, point, others=slice(None)):
-        """Get distances from an individual point"""
-        return self.getDistances([point], others)[:, 0, :]
-
     def getMediod(self, members):
         """Get member index that minimises the sum rank euclidean distance to other members.
 
-        The sum rank euclidean distance is the sum of the euclidean distances of distance ranks for the metrics"""
-
+        The sum rank euclidean distance is the sum of the euclidean distances of distance ranks for the metrics.
+        """
         # for each member, sum of distances to other members
         scores = [numpy.sum(d, axis=1) for d in self.getDistances(members)]
         ranks = argrank(scores, axis=1)
@@ -114,9 +111,30 @@ class HybridMeasure:
         return b_to_a
 
     def getDimNames(self):
-        """Labels for distances returned by get_distances"""
         return ("log coverage euclidean", "kmer euclidean")
 
+
+class CoverageAndKmerView:
+    """Coverage and kmer distances relative to an origin point"""
+
+    def __init__(self, pm, origin):
+        hm = CoverageAndKmerDistanceTool(pm)
+        self.origin = origin
+
+        # coverage and kmer distances
+        (covDists, kmerDists) = hm.getDistances([self.origin], slice(None))[:, 0, :]
+        self.covDists = covDists
+        self.kmerDists = kmerDists
+
+        # coverage and kmer ranks
+        (covRanks, kmerRanks) = argrank([covDists, kmerDists], axis=1)
+        self.covRanks = covRanks
+        self.kmerRanks = kmerRanks
+
+        # dim names
+        (covLabel, kmerLabel) = hm.getDimNames()
+        self.covLabel = covLabel
+        self.kmerLabel = kmerLabel
 
 ###############################################################################
 #Utility functions
@@ -138,51 +156,6 @@ def argrank(array, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     return numpy.apply_along_axis(rankWithTies, axis, array)
 
-#------------------------------------------------------------------------------
-#Plotting
-
-class PlotOriginAPI:
-    """Compute hybrid measures for an origin point.
-
-    Requires / replaces argument dict values:
-        {members, origin_mode} -> {origin}
-    """
-    def __init__(self, pm):
-        self._pm = pm
-        self._hm = HybridMeasure(pm)
-
-    def __call__(self, members, origin_mode, **kwargs):
-        if origin_mode=="mediod":
-            index = self._hm.getMediod(members)
-        elif origin_mode=="max_coverage":
-            index = numpy.argmax(self._pm.normCoverages[members])
-        elif origin_mode=="max_length":
-            index = numpy.argmax(self._pm.contigLengths[members])
-        else:
-            raise ValueError("Invalid mode: %s" % origin_mode)
-
-        kwargs["origin"] = index
-        return kwargs
-
-class PlotDataAPI:
-    """Compute hybrid measures for an origin point.
-
-    Requires / replaces argument dict values:
-        {origin} -> {data, ranks, x_label, y_label}
-    """
-    def __init__(self, pm):
-        self._pm = pm
-        self._hm = HybridMeasure(pm)
-
-    def __call__(self, origin, **kwargs):
-        data = self._hm.getDistancesToPoint(origin)
-        (x_label, y_label) = self._hm.getDimNames()
-
-        kwargs["data"] = data
-        kwargs["ranks"] = argrank(data, axis=1)
-        kwargs["x_label"] = x_label
-        kwargs["y_label"] = y_label
-        return kwargs
 
 ###############################################################################
 ###############################################################################

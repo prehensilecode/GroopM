@@ -5,7 +5,7 @@
 #                                                                             #
 #    Classes for non-clustering data manipulation and output                  #
 #                                                                             #
-#    Copyright (C) Michael Imelfort                                           #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -38,14 +38,14 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
-__copyright__ = "Copyright 2012/2013"
-__credits__ = ["Michael Imelfort"]
+__author__ = "Michael Imelfort, Tim Lamberton"
+__copyright__ = "Copyright 2012-2015"
+__credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
 __version__ = "0.2.11"
-__maintainer__ = "Michael Imelfort"
-__email__ = "mike@mikeimelfort.com"
-__status__ = "Released"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
+__status__ = "Development"
 
 ###############################################################################
 import os
@@ -56,8 +56,10 @@ import numpy
 # GroopM imports
 from profileManager import ProfileManager, FeaturePlotter
 from binManager import BinManager
-from cluster import BinHighlightAPI
+from coverageAndKmerDistance import CoverageAndKmerDistanceTool, CoverageAndKmerView
 from mstore import ContigParser
+from corre import getInsidePNull
+from cluster import getNearPNull
 
 # other local imports
 from bamm.bamExtractor import BamExtractor as BMBE
@@ -209,12 +211,12 @@ class BinPlotter:
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
 
-    def loadData(self, timer, cutoff=0):
-        self._pm.loadData(timer, loadBins=True, minLength=cutoff)
+    def loadData(self, timer):
+        self._pm.loadData(timer, loadBins=True, minLength=0, removeBins=True, bids=[0])
 
     def plot(self,
              timer,
-             bids,
+             bids=None,
              origin_mode="mediod",
              highlight_mode="mergers",
              threshold=None,
@@ -223,20 +225,25 @@ class BinPlotter:
              prefix="BIN"
             ):
         self.loadData(timer)
-        bm = BinManager(self._pm)
-        fplot = FeaturePlotter(self._pm, colorMap=colorMap)
-        binHighlightApi = BinHighlightAPI(self._pm)
 
-        bm.checkBids(bids)
+        bm = BinManager(self._pm)
+        if bids is None or len(bids) == 0:
+            bids = bm.getBids()
+        else:
+            bm.checkBids(bids)
+
+        fplot = FeaturePlotter(self._pm, colorMap=colorMap)
         for bid in bids:
             fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
-            fplot.plot(**getPlotArgs(**binHighlightApi(bid=bid,
-                                                       origin_mode=origin_mode,
-                                                       highlight_mode=highlight_mode,
-                                                       threshold=threshold,
-                                                       plotRanks=plotRanks,
-                                                       fileName=fileName)))
-            if self._outDir is None:
+
+            fplot.plot(fileName=fileName,
+                       **makePlotArgs(pm=self._pm,
+                                      bid=bid,
+                                      origin_mode=origin_mode,
+                                      highlight_mode=highlight_mode,
+                                      threshold=threshold,
+                                      plotRanks=plotRanks))
+            if fileName=="":
                 break
 
         print "    %s" % timer.getTimeStamp()
@@ -246,11 +253,69 @@ class BinPlotter:
 # Helpers
 ###############################################################################
 
-def getPlotArgs(data, ranks, plotRanks=False, **kwargs):
-    (x, y) = (ranks[0], ranks[1]) if plotRanks else (data[0], data[1])
-    kwargs["x"] = x
-    kwargs["y"] = y
-    return kwargs
+def makePlotArgs(pm, bid, origin_mode, highlight_mode, threshold, plotRanks):
+    """Compute plot feature values and labels"""
+
+    members = BinManager(pm).getBinIndices(bid)
+    origin = getOrigin(pm, origin_mode, members)
+    view = CoverageAndKmerView(pm, origin)
+    highlight = getHighlight(mode=highlight_mode,
+                             ranks=[view.covRanks, view.kmerRanks],
+                             threshold=threshold,
+                             members=members)
+    (x, y) = (view.covRanks, view.kmerRanks) if plotRanks else (view.covDists, view.kmerDists)
+    (x_label, y_label) = (view.covLabel, view.kmerLabel)
+    if plotRanks:
+        x_label += " rank"
+        y_label += " rank"
+
+    return {"x": x,
+            "y": y,
+            "x_label": x_label,
+            "y_label": y_label,
+            "highlight": highlight}
+
+
+def getHighlight(mode, ranks=None, threshold=None, members=None):
+    """"Get a tuple of sets of contigs to highlight.
+    """
+    if mode is None:
+        highlight = None
+    elif mode=="cluster":
+        highlight = (members,)
+    elif mode=="mergers":
+        highlight = (cluster.getMergers(ranks, threshold),)
+    else:
+        raise ValueError("Invalid mode: %s" % mode)
+
+    return highlight
+
+def getOrigin(pm, mode, members):
+    """Compute a view for a representative contig of a cluster"""
+
+    if mode=="mediod":
+        index = CoverageAndKmerDistanceTool(pm).getMediod(members)
+    elif mode=="max_coverage":
+        index = numpy.argmax(pm.normCoverages[members])
+    elif mode=="max_length":
+        index = numpy.argmax(pm.contigLengths[members])
+    else:
+        raise ValueError("Invalid mode: %s" % mode)
+
+    return members[index]
+
+def getSurface(mode, ranks):
+    """Computes derived surface in hybrid measure space"""
+    if mode=="corr_inside":
+        z = numpy.log10(getInsidePNull(ranks))
+        z_label = "Inside correlation"
+    elif mode=="corr_near":
+        z = numpy.log10(getNearPNull(ranks))
+        z_label = "Outside correlation"
+    else:
+        raise ValueError("Invaild mode: %s" % mode)
+
+    return (z, z_label)
 
 def makeSurePathExists(path):
     try:

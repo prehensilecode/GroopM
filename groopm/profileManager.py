@@ -68,9 +68,9 @@ class ProfileManager:
 
     Mostly a wrapper around a group of numpy arrays and a pytables quagmire
     """
-    def __init__(self, dbFileName, force=False):
+    def __init__(self, dbFileName):
         # misc
-        self._DM = DataManager()            # most data is saved to hdf
+        self._dm = DataManager()            # most data is saved to hdf
         self.dbFileName = dbFileName         # db containing all the data we'd like to use
 
         # --> NOTE: ALL of the arrays in this section are in sync
@@ -79,6 +79,7 @@ class ProfileManager:
         self.indices = numpy.array([])        # indices into the pytables data structure of selection
         self.covProfiles = numpy.array([])    # coverage based coordinates
         self.kmerSigs = numpy.array([])       # raw kmer signatures
+        #self.kmerPCs = numpy.array([])       # PCs of kmer sigs capturing specified variance
         self.normCoverages = numpy.array([])  # norm of the raw coverage vectors
         self.contigGCs = numpy.array([])
         self.contigNames = numpy.array([])
@@ -97,13 +98,15 @@ class ProfileManager:
                  silent=False,              # some to no output messages
                  loadCovProfiles=True,
                  loadKmerSigs=True,
+                 #loadKmerPCs=False,
                  loadStoitNames=True,
                  loadContigNames=True,
                  loadContigLengths=True,
                  loadContigGCs=True,
                  loadBins=False,
                  minLength=None,
-                 bids=[]
+                 bids=[],
+                 removeBins=False
                 ):
         """Load pre-parsed data"""
 
@@ -114,14 +117,13 @@ class ProfileManager:
 
         try:
             # Stoit names
-            self.numStoits = self._DM.getNumStoits(self.dbFileName)
+            self.numStoits = self._dm.getNumStoits(self.dbFileName)
             if(loadStoitNames):
-                self.stoitNames = numpy.array(self._DM.getStoitColNames(self.dbFileName).split(","))
+                self.stoitNames = numpy.array(self._dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
-            condition = getConditionString(minLength=minLength, bids=bids)
-            print condition
-            self.indices = self._DM.getConditionalIndices(self.dbFileName,
+            condition = getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
+            self.indices = self._dm.getConditionalIndices(self.dbFileName,
                                                           condition=condition,
                                                           silent=silent)
 
@@ -140,33 +142,39 @@ class ProfileManager:
             if(loadCovProfiles):
                 if(verbose):
                     print "    Loading coverage profiles"
-                self.covProfiles = self._DM.getCoverageProfiles(self.dbFileName, indices=self.indices)
-                self.normCoverages = self._DM.getNormalisedCoverageProfiles(self.dbFileName, indices=self.indices)
+                self.covProfiles = self._dm.getCoverageProfiles(self.dbFileName, indices=self.indices)
+                self.normCoverages = self._dm.getNormalisedCoverageProfiles(self.dbFileName, indices=self.indices)
 
             if(loadKmerSigs):
                 if(verbose):
                     print "    Loading RAW kmer sigs"
-                self.kmerSigs = self._DM.getKmerSigs(self.dbFileName, indices=self.indices)
+                self.kmerSigs = self._dm.getKmerSigs(self.dbFileName, indices=self.indices)
+
+            if(False):
+                self.kmerPCs = self._dm.getKmerPCAs(self.dbFileName, indices=self.indices)
+
+                if(verbose):
+                    print "    Loading PCA kmer sigs (" + str(len(self.kmerPCs[0])) + " dimensional space)"
 
             if(loadContigNames):
                 if(verbose):
                     print "    Loading contig names"
-                self.contigNames = self._DM.getContigNames(self.dbFileName, indices=self.indices)
+                self.contigNames = self._dm.getContigNames(self.dbFileName, indices=self.indices)
 
             if(loadContigLengths):
-                self.contigLengths = self._DM.getContigLengths(self.dbFileName, indices=self.indices)
+                self.contigLengths = self._dm.getContigLengths(self.dbFileName, indices=self.indices)
                 if(verbose):
                     print "    Loading contig lengths (Total: %d BP)" % ( sum(self.contigLengths) )
 
             if(loadContigGCs):
-                self.contigGCs = self._DM.getContigGCs(self.dbFileName, indices=self.indices)
+                self.contigGCs = self._dm.getContigGCs(self.dbFileName, indices=self.indices)
                 if(verbose):
                     print "    Loading contig GC ratios (Average GC: %0.3f)" % ( numpy.mean(self.contigGCs) )
 
             if(loadBins):
                 if(verbose):
                     print "    Loading bin assignments"
-                self.binIds = self._DM.getBins(self.dbFileName, indices=self.indices)
+                self.binIds = self._dm.getBins(self.dbFileName, indices=self.indices)
             else:
                 # we need zeros as bin indicies then...
                 self.binIds = numpy.zeros(self.numContigs, dtype=int)
@@ -180,14 +188,14 @@ class ProfileManager:
 
     def setBinAssignments(self, assignments, nuke=False):
         """Save our bins into the DB"""
-        self._DM.setBinAssignments(self.dbFileName,
+        self._dm.setBinAssignments(self.dbFileName,
                                    assignments,
                                    nuke=nuke)
 
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""
-        if(self._DM.isClustered()):
+        if(self._dm.isClustered()):
             input_not_ok = True
             valid_responses = ['Y','N']
             vrs = ",".join([str.lower(str(x)) for x in valid_responses])
@@ -216,16 +224,19 @@ class ProfileManager:
 #Utility functions
 ###############################################################################
 
-def getConditionString(minLength=None, maxLength=None, bids=None):
+def getConditionString(minLength=None, maxLength=None, bids=None, removeBins=False):
     """Simple condition generation"""
 
     conds = []
-    if(minLength):
+    if minLength is not None:
         conds.append("(length >= %d)" % minLength)
-    if(maxLength):
+    if maxLength is not None:
         conds.append("(length <= %d)" % maxLength)
-    if(bids):
-        conds.append(" | ".join(["(bid == %d)" % bid for bid in bids]))
+    if bids is not None and len(bids) > 0:
+        if removeBins:
+            conds.append(" | ".join(["(bid != %d)" % bid for bid in bids]))
+        else:
+            conds.append(" | ".join(["(bid == %d)" % bid for bid in bids]))
 
     if len(conds) == 0:
         return ""

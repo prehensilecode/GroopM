@@ -51,7 +51,6 @@ import numpy
 # GroopM imports
 from profileManager import ProfileManager
 from groopmExceptions import BinNotFoundException
-from hybridMeasure import PlotDataAPI, PlotOriginAPI
 
 numpy.seterr(all='raise')
 
@@ -156,36 +155,6 @@ def isGoodBin(totalBP, binSize, minBP, minSize):
 
     # contains enough bp or enough contigs
     return totalBP >= minBP or binSize >= minSize
-
-#------------------------------------------------------------------------------
-# Plotting
-
-class BinOriginAPI:
-    """Get origin point from bin members.
-
-    Requires / replaces argument dict values:
-        {bid, origin_mode} -> {origin}
-    """
-    def __init__(self, pm):
-        self._plotOriginApi = PlotOriginAPI(pm)
-        self._bm = BinManager(pm)
-
-    def __call__(self, bid, **kwargs):
-        row_indices = self._bm.getBinIndices(bid)
-        return self._plotOriginApi(members=row_indices, **kwargs)
-
-class BinDataAPI:
-    """Get distance and rank data for origin point of bin.
-
-    Requires / replaces argument dict values:
-        {bid, origin_mode} -> {data, ranks, x_label, y_label}
-    """
-    def __init__(self, pm):
-        self._binOriginApi = BinOriginAPI(pm)
-        self._plotDataApi = PlotDataAPI(pm)
-
-    def __call__(self, **kwargs):
-        return self._plotDataApi(**self._binOriginApi(**kwargs))
 
 ###############################################################################
 ###############################################################################
