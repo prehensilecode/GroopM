@@ -74,7 +74,6 @@ class ClusterEngine:
         self._pm = ProfileManager(dbFileName)
         self._bm = BinManager(self._pm, minSize=minSize, minBP=minBP)
         self._threshold = threshold
-        self.updateBin = MediodClusterMaker(self._pm, threshold=threshold)
 
 
     def run(self, timer, minLength=None, force=False):
@@ -134,7 +133,7 @@ class ClusterEngine:
         putative_members = self._bm.getBinIndices([0, bid])
 
         view = CoverageAndKmerView(self._pm, mediod)
-        recruited = getMergers([view.covRanks, view.kmerRanks], threshold=self.threshold, unmerged=putative_members)
+        recruited = getMergers([view.covRanks, view.kmerRanks], threshold=self._threshold, unmerged=putative_members)
         self._bm.assignBin(recruited, bid=bid)
         members = self._bm.getBinIndices(bid)
         if len(members)==1:

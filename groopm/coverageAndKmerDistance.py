@@ -51,7 +51,7 @@ import numpy
 import scipy.spatial.distance as distance
 
 # groopm imports
-from profileManager import getColorMap
+from corre import argrank
 
 numpy.seterr(all='raise')
 
@@ -72,10 +72,10 @@ class CoverageAndKmerDistanceTool:
         """Get distances between two sets of points for the metrics"""
 
         if b_members is None:
-            cov = distance.squareform(distance.pdist(numpy.log10(self._pm.covProfiles[a_members]+1), metric="euclidean"))
+            cov = distance.squareform(distance.pdist(self._pm.covProfiles[a_members], metric="euclidean"))
             kmer = distance.squareform(distance.pdist(self._pm.kmerSigs[a_members], metric="euclidean"))
         else:
-            cov = distance.cdist(numpy.log10(self._pm.covProfiles[a_members]+1), numpy.log10(self._pm.covProfiles[b_members]+1), metric="euclidean")
+            cov = distance.cdist(self._pm.covProfiles[a_members], self._pm.covProfiles[b_members], metric="euclidean")
             kmer = distance.cdist(self._pm.kmerSigs[a_members], self._pm.kmerSigs[b_members], metric="euclidean")
 
         return numpy.array([cov, kmer])
@@ -98,7 +98,7 @@ class CoverageAndKmerDistanceTool:
     def associateWith(self, a_members, b_members):
         """Associate b points with closest a point"""
 
-        distances = self.getDistances(self, a_members, b_members)
+        distances = self.getDistances(a_members, b_members)
         (_dims, a_num, b_num) = distances.shape
 
         # rank distances to a points
@@ -135,27 +135,6 @@ class CoverageAndKmerView:
         (covLabel, kmerLabel) = hm.getDimNames()
         self.covLabel = covLabel
         self.kmerLabel = kmerLabel
-
-###############################################################################
-#Utility functions
-###############################################################################
-
-#------------------------------------------------------------------------------
-#Ranking
-
-def rankWithTies(array):
-    """Return sorted of array indices with tied values averaged"""
-    ranks = numpy.asarray(numpy.argsort(numpy.argsort(array)), dtype=float)
-    for val in set(array):
-        g = array == val
-        ranks[g] = numpy.mean(ranks[g])
-    return ranks
-
-
-def argrank(array, axis=0):
-    """Return the positions of elements of a when sorted along the specified axis"""
-    return numpy.apply_along_axis(rankWithTies, axis, array)
-
 
 ###############################################################################
 ###############################################################################

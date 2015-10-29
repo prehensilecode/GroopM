@@ -107,21 +107,20 @@ class BinManager:
                 low_quality.append(label)
 
         print " Found %d low quality bins." % len(low_quality)
-        self._PM.bidIds[self.getBinIndices(low_quality)] = 0
+        self._pm.bidIds[self.getBinIndices(low_quality)] = 0
 
     def assignBin(self, row_indices, bid=None):
         """Make a new bin and add to the list of existing bins"""
         if bid is None:
             bid = max(self._pm.binIds) + 1
 
-        self._PM.bidIds[row_indices] = bid
+        self._pm.bidIds[row_indices] = bid
 
     def saveBins(self, nuke=False):
         """Save binning results
 
-        binAssignments is a hash of LOCAL row indices Vs bin ids
-        { row_index : bid }
         PM.setBinAssignments needs GLOBAL row indices
+        { global_index : bid }
         """
         # save the bin assignments
         self._pm.setBinAssignments(self._getGlobalBinAssignments(), # convert to global indices

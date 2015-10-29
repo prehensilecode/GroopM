@@ -74,7 +74,7 @@ numpy.seterr(all='raise')
 #------------------------------------------------------------------------------
 #Extraction
 
-class GMExtractor:
+class BinExtractor:
     """Used for extracting reads and contigs based on bin assignments"""
     def __init__(self, dbFilename,
                  bids=[],
@@ -197,6 +197,67 @@ class GMExtractor:
 
         bam_parser.extract(threads=threads,
                            verbose=verbose)
+
+#------------------------------------------------------------------------------
+#Import
+
+class BinImporter:
+    """Used for importing bin assignments"""
+    def __init__(self, dbFilename):
+        self.dbFileName = dbFileName
+        self._pm = ProfileManager(self.dbFilename)
+
+    def loadData(self, timer):
+        self._pm.loadData(timer)
+
+    def readBinAssignments(self,
+                           timer,
+                           infile,
+                           separator,
+                           binField=None,
+                           nameField=None,
+                           noHeaders=False):
+        """Parse fasta files for bin contigs"""
+        self.loadData(timer)
+
+        conParser = ContigParser()
+        # looks like cid->bid
+        contig_bin_assignments={}
+        bin_counter=0
+        try:
+            with open(infile, "r") as f:
+                for l in f:
+                    fields = l.rstrip().split(separator)
+                    if not noHeader:
+                        # look for a 'cid' field in headers
+                        try:
+                            nameField = fields.index('cid')
+                        except ValueError:
+                            pass
+
+                        # look for a 'bid' field in headers
+                        try:
+                            binField = fields.index('bid')
+                        except ValueError:
+                            pass
+                        noHeader = True
+                        continue
+
+                    contig_bin_assignments[fields[nameField]] = fields[binField]
+        except:
+            print "Error importing binned contigs files:", sys.exc_info()[0]
+            raise
+
+        # now get the internal indices for contigs
+        row_bin_assignments = {}
+        for (global_index, cid) in zip(self._pm.indices, self._pm.contigNames):
+            try:
+                row_bin_assignments[global_index] = contig_bin_assignments[cid]
+            except IndexError:
+                row_bin_assignment[global_index] = 0
+
+        self._pm.setBinAssignments(row_bin_assignments, nuke=False)
+
 
 
 #------------------------------------------------------------------------------

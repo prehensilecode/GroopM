@@ -323,14 +323,31 @@ class ImportSubcommand:
     def add_arguments_to(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('infile', help="file with data to import")
-        parser.add_argument('-t', '--fields', default="bins", help="data type to import. [bins]")
+        parser.add_argument('--names', type=int, default=1, help="names field index, counted from 1 (will use 'cid' column if header present)")
+        parser.add_argument('--bins', type=int, default=2, help="bins field index, counted from 1 (will use 'bid' column if header present)")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
-        parser.add_argument('--has_headers', action="store_true", default=False, help="file contains headers")
+        parser.add_argument('--no_headers', action="store_true", default=False, help="does file contain headers")
 
         return parser
 
     def parse_options(self, options):
-        pass
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data import mode..." % __version__
+        print "*******************************************************************************"
+
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        bi = groopm.BinImporter(options.dbname)
+        bi.readBinAssignments(timer,
+                              options.infile,
+                              separator,
+                              options.bins,
+                              options.names,
+                              options.no_headers)
 
 ###############################################################################
 # Plotting

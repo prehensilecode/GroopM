@@ -57,6 +57,23 @@ numpy.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 
+
+#------------------------------------------------------------------------------
+#Ranking
+
+def rankWithTies(array):
+    """Return sorted of array indices with tied values averaged"""
+    ranks = numpy.asarray(numpy.argsort(numpy.argsort(array)), dtype=float)
+    for val in set(array):
+        g = array == val
+        ranks[g] = numpy.mean(ranks[g])
+    return ranks
+
+
+def argrank(array, axis=0):
+    """Return the positions of elements of a when sorted along the specified axis"""
+    return numpy.apply_along_axis(rankWithTies, axis, array)
+
 #------------------------------------------------------------------------------
 #Rank correlation testing
 
@@ -138,6 +155,68 @@ def getBoundingPoints(a_points, b_points):
         bounds[:, i] = numpy.maximum(first[:, i], second[:, j])
 
     return bounds
+
+#------------------------------------------------------------------------------
+#Containment graph edges
+
+class ContainmentFinder:
+    """Recursive algorithm to compute and retrieve containment pairs of points.
+
+    We say a point 'contains' another point if it has a higher value in all
+    dimensions of the space.
+
+    We say a containment pair is a pair of points where the first 'contains'
+    the second with no intermediate points contained by the first and containing
+    the second.
+    """
+    def __init__(self, data):
+        data = numpy.asarray(data)
+
+        sort_order = numpy.argsort(-data[0])
+        data = data[:, sort_order]
+
+        # dummy point with highest value in all dimensions
+        dummy = numpy.reshape(numpy.max(data, axis=1)+1, (-1,1))
+        data = numpy.hstack((dummy, data))
+
+        self._index2data = numpy.concatenate(([None], sort_order))
+        self._data = data
+        self._size = data.shape[1]
+        self._links = {}
+
+    def run(self):
+        self._recursiveGetContained(0) # start from the dummy point with highest value in all dimensions
+        return self._links
+
+    def _nextInside(self, i, is_contained):
+        """If we have a point and a list of already contained points, we can search
+        for an uncontained inside point with the closest value in the sorted
+        dimension, which is guaranteed to form a containment pair with the original point.
+        """
+        for j in range(i, self._size):
+            if not is_contained[j] and numpy.all(self._data[:, j] < self._data[:, i]):
+                return j
+        return None
+
+    def _recursiveGetContained(self, i):
+        """From a selected point, we can determine a contained point using _nextInside, and
+        assuming we can determine all inside points for that contained point (or none if there
+        are none), we find another contained point if any exist, or we have covered all points
+        inside the selected point.
+        """
+        is_contained = numpy.zeros(self._size, dtype=bool)
+        links = []
+        while(True):
+            j = self._nextInside(i, is_contained)
+            if j is None:
+                break # we're done
+
+            is_contained = numpy.logical_or(is_contained, self._recursiveGetContained(j))
+            links.append(self._index2data[j])
+
+        self._links[self._index2data[i]] = links
+        is_contained[i] = True
+        return is_contained
 
 
 ###############################################################################

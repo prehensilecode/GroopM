@@ -25,41 +25,64 @@ __email__ = "tim.lamberton@gmail.com"
 ###############################################################################
 
 # system imports
-from tools import assert_equal_arrays, assert_almost_equal_arrays
+from nose.tools import assert_equals
+from tools import assert_equal_arrays, assert_almost_equal_arrays, DummyProfileManager
 import numpy
-from groopm.coverageAndKmerDistance import argrank
+from groopm.coverageAndKmerDistance import CoverageAndKmerDistanceTool
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
+def test_coverage_and_kmer_distance_tool():
 
+    pm = DummyProfileManager(indices=numpy.array([0, 1, 2, 3]),
+                             covProfiles=numpy.array([[1, 3],
+                                                      [2, 3],
+                                                      [1, 2],
+                                                      [2, 2]]),
+                             kmerSigs=numpy.array([[0,   0,   0.5, 0.5],
+                                                   [1,   0,   0,   0  ],
+                                                   [0,   0.5, 0,   0.5],
+                                                   [0.5, 0,   0.5, 0  ]]),
+                             contigGCs=numpy.array([]),
+                             contigNames=numpy.array([]),
+                             contigLengths=numpy.array([]),
+                             binIds=numpy.array([]),
+                             stoitNames=numpy.array([]))
+    assert_equals(pm.numContigs, 4, "has five contigs")
 
-###############################################################################
-#Utility functions
-###############################################################################
+    # contig distances, computed by hand
+    cov_dist_matrix = numpy.sqrt([[0, 1, 1, 2],
+                                  [1, 0, 2, 1],
+                                  [1, 2, 0, 1],
+                                  [2, 1, 1, 0]])
+    kmer_dist_matrix = numpy.sqrt([[0,   1.5, 0.5, 0.5],
+                                   [1.5, 0,   1.5, 0.5],
+                                   [0.5, 1.5, 0,   1  ],
+                                   [0.5, 0.5, 1,   0  ]])
 
-#------------------------------------------------------------------------------
-#Ranking
+    ct = CoverageAndKmerDistanceTool(pm)
+    assert_equal_arrays(ct.getDistances([0, 1, 3]),
+                        numpy.array([cov_dist_matrix[numpy.ix_([0, 1, 3], [0, 1, 3])],
+                                     kmer_dist_matrix[numpy.ix_([0, 1, 3], [0, 1, 3])]]),
+                        "returns squareform distance array of selected contigs")
+    assert_equal_arrays(ct.getDistances([0, 1, 3], [2]),
+                        numpy.array([cov_dist_matrix[numpy.ix_([0, 1, 3], [2])],
+                                     kmer_dist_matrix[numpy.ix_([0, 1, 3], [2])]]),
+                        "returns distance array between two groups of contigs")
 
-def test_argrank():
-    assert_equal_arrays(argrank([5, 3, 4, 8]),
-                       [2, 0, 1, 3],
-                       "`argrank` returns integer rank of values in one-dimensional array")
+    # contig mediod
+    assert_equal_arrays(ct.getMediod([1, 2, 3]),
+                        2, # computed by hand
+                        "computes index of group mediod")
 
-    assert_equal_arrays(argrank([5, 3, 8, 8]),
-                        [1, 0, 2.5, 2.5],
-                        "`argrank` returns mean of tied ranks")
+    # closest points
+    assert_equal_arrays(ct.associateWith([0, 3], [1, 2]),
+                        [1, 0], #=> 1 closest to 3, 2 closest to 0, computed by hand
+                        "computes index of closest contig")
 
-    arr2d = numpy.array([[1, 10, 5, 2], [1, 4, 6, 2], [5, 5, 3, 10]])
-    ranks2d = numpy.array([[0, 3, 2, 1], [0, 2, 3, 1], [1.5, 1.5, 0, 3]])
-    assert_equal_arrays(argrank(arr2d, axis=1),
-                        ranks2d,
-                        "`argrank(..,axis=1)` returns ranks along rows of 2-d array")
-    assert_equal_arrays(argrank(arr2d.T, axis=0),
-                        ranks2d.T,
-                        "`argrank(..,axis=0)` returns ranks along columns of 2-d array")
 
 ###############################################################################
 ###############################################################################
