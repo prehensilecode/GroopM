@@ -151,7 +151,7 @@ class EllipsoidTool:
             try:
                 U, s, rotation = linalg.svd(A)
                 radii = 1.0/np.sqrt(s)
-            except np.linalg.linalg.LinAlgError:
+            except np.linalg.linalg.LinAlgError, FloatingPointError:
                 # hack -> better than crashing...
                 rotation = np.eye(3)
                 radii = np.ones(3)
