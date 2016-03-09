@@ -39,7 +39,7 @@
 ###############################################################################
 
 __author__ = "Michael Imelfort"
-__copyright__ = "Copyright 2012-2014"
+__copyright__ = "Copyright 2012-2015"
 __credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
 __maintainer__ = "Tim Lamberton"
@@ -50,142 +50,410 @@ __status__ = "Development"
 
 import argparse
 import sys
-from groopm import subcommands, __version__
+import groopm
+from groopm.groopmExceptions import ExtractModeNotAppropriateException
+from groopm import __version__
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-class PrintAction(argparse.Action):
-    def __init__(self, option_strings, dest, nargs=None, format=None, **kwargs):
-        self.format = format
-        argparse.Action.__init__(self, option_strings, dest, nargs=0, **kwargs)
+#------------------------------------------------------------------------------
+#Helpers
 
+class CustomHelpFormatter(argparse.HelpFormatter):
+    def _split_lines(self, text, width):
+        return text.splitlines()
+
+    def _get_help_string(self, action):
+        h = action.help
+        if '%(default)' not in action.help:
+            if action.default != '' and \
+               action.default != [] and \
+               action.default != None \
+               and action.default != False:
+                if action.default is not argparse.SUPPRESS:
+                    defaulting_nargs = [argparse.OPTIONAL,
+                                        argparse.ZERO_OR_MORE]
+
+                    if action.option_strings or action.nargs in defaulting_nargs:
+
+                        if '\n' in h:
+                            lines = h.splitlines()
+                            lines[0] += ' (default: %(default)s)'
+                            h = '\n'.join(lines)
+                        else:
+                            h += ' (default: %(default)s)'
+        return h
+
+    def _fill_text(self, text, width, indent):
+        return ''.join([indent + line for line in text.splitlines(True)])
+
+        
+class PrintHelpAction(argparse.Action):
+    def __init__(self, nargs=0, *args, **kwargs):
+        argparse.Action.__init__(self, *args, nargs=nargs, **kwargs)
+        
     def __call__(self, parser, *_args):
-        print self.format()
-
+        self.print_help()
         parser.exit(1)
-
-
-class GMSubparsersGroup:
-    def __init__(self, title, subparsers):
-        self._subparsers = subparsers
-        self._subcommands = []
-        self._title = title
-
-    def add_parser(self, name, description="", **kwargs):
-        parser = self._subparsers.add_parser(name,
-                                            description=description,
-                                            **kwargs)
-        self._subcommands.append((name, description))
-
-        return parser
-
-    def format_help(self):
-        lines = ["    {0}:\n".format(self._title)]
-        for (name, description) in self._subcommands:
-            lines.append("    groopm {0:<13}-> {1}".format(name, description))
-
-        return "\n".join(lines)
-
-
-class GMArgumentParser:
-    def __init__(self):
-        self._parser = argparse.ArgumentParser(add_help=False)
-        self._parser.add_argument('-h', '--help', action=PrintAction, format=self.format_help)
-        self._parser.add_argument('-v', '--version', action="version",
-            version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
-
-        self._subparsers = self._parser.add_subparsers()
-        self._main_subparsers_group = GMSubparsersGroup("Typical workflow", self._subparsers)
-        self._subparsers_groups = []
-
-    def parse_args(self, *args, **kwargs):
-        return self._parser.parse_args(*args, **kwargs)
-
-    def add_parser(self, *args, **kwargs):
-        return self._main_subparsers_group.add_parser(*args, **kwargs)
-
-    def add_subparsers_group(self, title):
-        subparsers_group = GMSubparsersGroup(title, self._subparsers)
-        self._subparsers_groups.append(subparsers_group)
-        return subparsers_group
-
-    def format_help(self):
-        lines = ['''\
+       
+    def print_help(_self):
+        print '''\
 
                              ...::: GroopM :::...
 
                      Automagical metagenomic binning FTW!
 
    -------------------------------------------------------------------------
-                                  version: %s
+                                  version: {version}
    -------------------------------------------------------------------------
-''' % __version__,
-                self._main_subparsers_group.format_help()]
-        if len(self._subparsers_groups) > 0:
-            lines.append('''\
-
+   
+    Typical workflow:
+    
+    groopm parse        -> {parse}
+    groopm core         -> {core}
+    groopm extract      -> {extract}
+    
     Extra features:
-''')
-            for grp in self._subparsers_groups:
-                lines.append('''\
-        %s
-''' % grp.format_help())
-
-            lines.append('''\
+        
+        Import / Export
+        
+    groopm dump         -> {dump}
+    groopm import       -> {import_}
+    
+        Plotting
+        
+    groopm plot         -> {plot}
+    
     USE: groopm OPTION -h to see detailed options
-''')
+'''.format(
+            version=__version__,
+            parse=parse_command_configure.description,
+            core=core_command_configure.description,
+            extract=extract_command_configure.description,
+            dump=dump_command_configure.description,
+            import_=import_command_configure.description,
+            plot=plot_command_configure.description
+        )
 
-        return "\n".join(lines)
+#------------------------------------------------------------------------------
+#Subcommands
+  
+class parse_command_configure:
+    description="Parse raw data and save to disk"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database being created")
+        parser.add_argument('reference', help="fasta file containing bam reference sequences")
+        parser.add_argument('bamfiles', nargs='+', help="bam files to parse")
+        parser.add_argument('-t', '--threads', type=int, default=1, help="number of threads to use during BAM parsing")
+        parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
+        parser.add_argument('-c', '--cutoff', type=int, default=500, help="cutoff contig size during parsing")
+        parser.set_defaults(run=self)
+        
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data parsing mode..." % __version__
+        print "*******************************************************************************"
+        # check this here:
+        if len(options.bamfiles) < 3:
+            print "Sorry, You must supply at least 3 bamFiles to use GroopM. (You supplied %d)\n Exiting..." % len(options.bamfiles)
+            return
+        dm = groopm.DataManager()
+        success = dm.createDB(
+            options.bamfiles,
+            options.reference,
+            options.dbname,
+            options.cutoff,
+            timer,
+            force=options.force,
+            threads=options.threads)
+        if not success:
+            print options.dbname,"not updated"
+            
+            
+class core_command_configure:
+    description = "Load saved data and make bin cores"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
+        parser.add_argument('-s', '--size', type=int, default=10, help="minimum number of contigs which define a core")
+        parser.add_argument('-b', '--bp', type=int, default=1000000, help="cumulative size of contigs which define a core regardless of number of contigs")
+        parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
+        parser.set_defaults(run=self)
+        
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in core creation mode..." % __version__
+        print "*******************************************************************************"
+
+        ce = groopm.ClusterEngine(options.dbname, minSize=options.size, minBP=options.bp)
+        ce.run(timer, minLength=options.cutoff, force=options.force)
+        
+        
+class extract_command_configure:
+    description = "Extract contigs or reads based on bin affiliations"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('data', nargs='+', help="data file(s) to extract from, bam or fasta")
+        parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
+        parser.add_argument('-m', '--mode', default="contigs", help="what to extract", choices=('contigs','reads'))
+        parser.add_argument('-o', '--out_folder', default="", help="write to this folder (None for current dir)")
+        parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
+        parser.set_defaults(run=self)
+
+        contig_extraction_options=parser.add_argument_group('Contigs mode extraction options')
+        contig_extraction_options.add_argument('-c', '--cutoff', type=int, default=0, help="cutoff contig size (0 for no cutoff)")
+
+        read_extraction_options=parser.add_argument_group('Reads mode extraction options')
+        read_extraction_options.add_argument('--mix_bams', action="store_true", default=False, help="use the same file for multiple bam files")
+        read_extraction_options.add_argument('--mix_groups', action="store_true", default=False, help="use the same files for multiple group groups")
+        read_extraction_options.add_argument('--mix_reads', action="store_true", default=False, help="use the same files for paired/unpaired reads")
+        read_extraction_options.add_argument('--interleave', action="store_true", default=False, help="interleave paired reads in ouput files")
+        read_extraction_options.add_argument('--headers_only', action="store_true", default=False, help="extract only (unique) headers")
+        read_extraction_options.add_argument('--no_gzip', action="store_true", default=False, help="do not gzip output files")
+
+        read_extraction_options.add_argument('--mapping_quality', type=int, default=0, help="mapping quality threshold")
+        read_extraction_options.add_argument('--use_secondary', action="store_true", default=False, help="use reads marked with the secondary flag")
+        read_extraction_options.add_argument('--use_supplementary', action="store_true", default=False, help="use reads marked with the supplementary flag")
+        read_extraction_options.add_argument('--max_distance', type=int, default=1000, help="maximum allowable edit distance from query to reference")
+
+        read_extraction_options.add_argument('-v', '--verbose', action="store_true", default=False, help="be verbose")
+        read_extraction_options.add_argument('-t', '--threads', type=int, default=1, help="maximum number of threads to use")
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in '%s' extraction mode..." % (__version__, options.mode)
+        print "*******************************************************************************"
+        bids = []
+        if options.bids is not None:
+            bids = options.bids
+        bx = groopm.BinExtractor(options.dbname,
+                                 bids=bids,
+                                 folder=options.out_folder
+                                )
+        if(options.mode=='contigs'):
+            bx.extractContigs(timer,
+                              fasta=options.data,
+                              prefix=options.prefix,
+                              cutoff=options.cutoff)
+
+        elif(options.mode=='reads'):
+            bx.extractReads(timer,
+                            bams=options.data,
+                            prefix=options.prefix,
+                            mixBams=options.mix_bams,
+                            mixGroups=options.mix_groups,
+                            mixReads=options.mix_reads,
+                            interleaved=options.interleave,
+                            bigFile=options.no_gzip,
+                            headersOnly=options.headers_only,
+                            minMapQual=options.mapping_quality,
+                            maxMisMatches=options.max_distance,
+                            useSuppAlignments=options.use_supplementary,
+                            useSecondaryAlignments=options.use_secondary,
+                            verbose=options.verbose,
+                            threads=options.threads)
+
+        else:
+            raise ExtractModeNotAppropriateException("mode: "+ options.mode + " is unknown")
+
+            
+class dump_command_configure:
+    description="Write database to text file"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
+        parser.add_argument('-o', '--outfile', default="GMdump.csv", help="write data to this file")
+        parser.add_argument('-s', '--separator', default=",", help="data separator")
+        parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data dumping mode..." % __version__
+        print "*******************************************************************************"
+
+        # prep fields. Do this first cause users are mot likely to
+        # mess this part up!
+        allowable_fields = ['names', 'mers', 'gc', 'coverage', 'tcoverage', 'ncoverage', 'lengths', 'bins', 'all']
+        fields = options.fields.split(',')
+        for field in fields:
+            if field not in allowable_fields:
+                print "ERROR: field '%s' not recognised. Allowable fields are:" % field
+                print '\t',",".join(allowable_fields)
+                return
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        dm = groopm.DataManager()
+        dm.dumpData(options.dbname,
+                    fields,
+                    options.outfile,
+                    separator,
+                    not options.no_headers)
 
 
+class import_command_configure:
+    description="Import information from text file"
 
-if __name__ == '__main__':
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('infile', help="file with data to import")
+        parser.add_argument('--names', type=int, default=1, help="names field index, counted from 1 (will use 'cid' column if header present)")
+        parser.add_argument('--bins', type=int, default=2, help="bins field index, counted from 1 (will use 'bid' column if header present)")
+        parser.add_argument('-s', '--separator', default=",", help="data separator")
+        parser.add_argument('--no_headers', action="store_true", default=False, help="does file contain headers")
+        parser.set_defaults(run=self)
 
-    ##################################################
-    # intialise the options parser
-    ##################################################
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data import mode..." % __version__
+        print "*******************************************************************************"
 
-    parser = GMArgumentParser()
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
 
+        bi = groopm.BinImporter(options.dbname)
+        bi.readBinAssignments(timer,
+                              options.infile,
+                              separator,
+                              options.bins,
+                              options.names,
+                              options.no_headers)
+
+class plot_command_configure:
+    description="Plot contigs in coverage vs kmer distance space"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
+        #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
+        parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", default=False, help="interatcive plot first bin or contig id")
+        parser.add_argument('--ranks', action="store_true", default=False, help="plot variable ranks")
+        parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
+        parser.add_argument('--highlight', default="cluster", choices=["cluster", "mergers"], help="choose how to highlight contigs")
+        parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        bplot = groopm.BinPlotter(options.dbname,
+                                  folder=None if options.interactive else options.out_folder)
+        bplot.plot(timer,
+                   bids=options.bids,
+                   origin_mode=options.origin,
+                   highlight_mode=options.highlight,
+                   threshold=0.5,
+                   plotRanks=options.ranks,
+                   colorMap=options.colormap,
+                   prefix=options.prefix)
+                   
+
+#------------------------------------------------------------------------------
+#GroopM command
+
+def groopm_command_configure(parser):
+    parser.add_argument('-h', '--help', action=PrintHelpAction)
+    parser.add_argument('-v', '--version', action="version",
+        version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
+        
     ##################################################
     # workflow subcommands
     ##################################################
+    
+    subparsers = parser.add_subparsers()
+    parse_subparser = subparsers.add_parser(
+        "parse",
+        description=parse_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parse_command_configure(parse_subparser)
 
-    parse = subcommands.ParseSubcommand()
-    parse.add_subparser_to(parser)
+    core_subparser = subparsers.add_parser(
+        "core",
+        description=core_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    core_command_configure(core_subparser)
+    
+    extract_subparser = subparsers.add_parser(
+        "extract",
+        description=extract_command_configure.description,
+        formatter_class=CustomHelpFormatter,
+        epilog='''Example usage:
 
-    core = subcommands.CoreSubcommand()
-    core.add_subparser_to(parser)
+ Extract contigs from bin 33:
 
-    extract = subcommands.ExtractSubcommand()
-    extract.add_subparser_to(parser)
+  $ groopm extract my_db.gm my_contigs.fasta --bids 33
+
+ Extract reads mapping to contigs in bin 35:
+
+  $ groopm extract my_db.gm my.bam -bids 35 --mode reads
+
+''')
+    extract_command_configure(extract_subparser)
 
     ##################################################
     # import/export subcommands
     ##################################################
 
-    import_export_subparsers = parser.add_subparsers_group(title="Import, Export")
-
-    dump = subcommands.DumpSubcommand()
-    dump.add_subparser_to(import_export_subparsers)
+    dump_subparser = subparsers.add_parser(
+        "dump",
+        description=dump_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    dump_command_configure(dump_subparser)
+    
+    import_subparser = subparsers.add_parser(
+        "import",
+        description=import_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    import_command_configure(import_subparser)
 
 
     ##################################################
     # plotting subcommands
     ##################################################
 
-    plotting_subparsers = parser.add_subparsers_group(title="Plotting")
-
-    plot = subcommands.PlotSubcommand()
-    plot.add_subparser_to(plotting_subparsers)
+    plot_subparser = subparsers.add_parser(
+        "plot",
+        description=plot_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    plot_command_configure(plot_subparser)
+            
+if __name__ == '__main__':
 
     ##################################################
-    # System
+    # intialise the options parser
     ##################################################
 
+    parser = argparse.ArgumentParser(add_help=False)
+    groopm_command_configure(parser)
+    
     args = parser.parse_args()
 
     #-------------------------------------------------
@@ -193,7 +461,7 @@ if __name__ == '__main__':
     try:
         if(False):
             import cProfile
-            cProfile.run('args.parse(args)', 'prof')
+            cProfile.run('args.run(args)', 'prof')
             ##########################################
             ##########################################
             # Use this in python console!
@@ -204,7 +472,7 @@ if __name__ == '__main__':
             ##########################################
             ##########################################
         else:
-            args.parse(args)
+            args.run(args)
     except:
         print "Unexpected error:", sys.exc_info()[0]
         raise
