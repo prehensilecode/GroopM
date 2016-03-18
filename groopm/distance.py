@@ -163,19 +163,41 @@ def argrank(array, weights=None, axis=0):
      
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
-    (codebook, codes) = np.unique(a, return_inverse=True) #codebook is in sorted order
-    (n, _bins) = np.histogram(codes, bins=np.arange(codebook.size+1), weights=weights)
-    w = np.concatenate(([0.], n.astype(np.double).cumsum()))
-    r = (w[1:] + w[:-1] - 1) / 2
+    a = np.asarray(a)
+    shape = a.shape
+    size = a.size
     
-    return r[codes]
+    if weights is not None:
+        weights = np.asarray(weights)
+        if weights.shape != shape:
+            raise ValueError('weights should have the same shape as a.')
+        weights = weights.ravel()
+    a = a.ravel()
+    
+    sorting_index = a.argsort()
+    sa = a[sorting_index]
+    flag = np.concatenate(([True], sa[1:] != sa[:-1], [True]))
+    if weights is None:
+        # counts up to 
+        cw = np.flatnonzero(flag)
+    else:
+        cw = np.concatenate(([0], weights[sorting_index].cumsum()))
+        cw = cw[flag]
+    cw = cw.astype(np.double)
+    sr = (cw[1:] + cw[:-1] - 1) / 2
+    
+    iflag = np.cumsum(flag[:-1]) - 1
+    r = np.empty(size, dtype=np.double)
+    r[sorting_index] = sr[iflag]
+    r = r.reshape(shape)
+    return r
  
     
 def _rank_with_ties_(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     (codebook, codes) = np.unique(a, return_inverse=True) #codebook is in sorted order
     (n, _bins) = np.histogram(codes, bins=np.arange(codebook.size+1), weights=weights)
-    w = np.concatenate(([0.], n.astype(np.double).cumsum()))
+    w = np.concatenate(([0.], n.cumsum())).astype(np.double)
     r = (w[1:] + w[:-1] - 1) / 2
     
     return r[codes]
