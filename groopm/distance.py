@@ -70,13 +70,21 @@ class FeatureDistanceTool:
     def __init__(self, Xs):
         self._Xs = tuple([np.asarray(X) for X in Xs])
         ns = [X.shape[0] for X in self._Xs]
-        if np.any(ns != n[0]):
+        if np.any(ns != ns[0]):
             raise ValueError("Input arrays must have equal numbers of rows.")
-
-    def pdist(self, idx):
+        self._nobs = ns[0]
+            
+    def num_obs(self):
+        return self._nobs
+        
+    def pdist(self, idx=None):
+        if idx is None:
+            idx = slice(None)
         return np.transpose([sp_distance.pdist(X[idx], metric="euclidean") for X in self._Xs])
         
-    def cdist(self, idxA, idxB):
+    def cdist(self, idxA, idxB=None):
+        if idxB is None:
+            idxB = slice(None)
         return np.dstack([sp_distance.cdist(X[idxA], X[idxB], metric="euclidean") for X in self._Xs])
 
 
@@ -98,13 +106,20 @@ class FeatureGlobalDistanceRankTool:
         self._ranks = distance.argrank_weighted(Ys, weights=weights, axis=0)
         self._nobs = num_obs(self._ranks)
         
-    def pdist(self, idx):
-        cond_idx = pcoords(idx, self._nobs)
-        return self._ranks[cond_idx]
+    def num_obs(self):
+        return self._nobs
         
-    def cdist(self, idxA, idxB):
+    def pdist(self, idx=None):
+        if idx is None:
+            return self._ranks
+        cond_idx = pcoords(idx, self._nobs)
+        return np.where(cond_idx==-1, 0, self._ranks[cond_idx])
+        
+    def cdist(self, idxA, idxB=None):
+        if idxB is None:
+            idxB = np.arange(self._nobs)
         cond_idx = ccords(idxA, idxB, self._nobs)
-        return self._ranks[cond_idx]
+        return np.where(cond_idx==-1, 0, self._ranks[cond_idx])
         
         
 def mediod(Y):
@@ -144,9 +159,19 @@ def argrank(array, weights=None, axis=0):
         return numpy.apply_along_axis(_rank_with_ties, axis, array)
     else:
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, (array, weights))
-    
-    
+ 
+     
 def _rank_with_ties(a, weights=None):
+    """Return sorted of array indices with tied values averaged"""
+    (codebook, codes) = np.unique(a, return_inverse=True) #codebook is in sorted order
+    (n, _bins) = np.histogram(codes, bins=np.arange(codebook.size+1), weights=weights)
+    w = np.concatenate(([0.], n.astype(np.double).cumsum()))
+    r = (w[1:] + w[:-1] - 1) / 2
+    
+    return r[codes]
+ 
+    
+def _rank_with_ties_(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     (codebook, codes) = np.unique(a, return_inverse=True) #codebook is in sorted order
     (n, _bins) = np.histogram(codes, bins=np.arange(codebook.size+1), weights=weights)
@@ -208,7 +233,7 @@ def multi_apply_along_axis(func1d, axis, tup, *args, **kwargs):
 # Utility
 def squareform_index(i, j, n):
     """Returns indices in a condensed matrix corresponding to input
-    coordinates.
+    coordinates, or -1 for diagonal elements.
     
     From the numpy documentation for `squareform` the element of the condensed
     matrix `v` containing the distance between points `i` and `j` is
@@ -240,9 +265,11 @@ def squareform_index(i, j, n):
     x x + + + + ...
     - - - i + j ...
     """
-    return n * i - i * (i + 1) // 2 + j - i -1
+    if not np.all(i < n) or not np.all(j < n) or np.any(i < 0) or np.any(j < 0):
+        raise IndexError("Indices must be between 0 and %s-1." % n)
+    return np.where(i==j, -1, n * i - i * (i + 1) // 2 + j - i -1)
 
-
+    
 ###############################################################################
 ###############################################################################
 ###############################################################################

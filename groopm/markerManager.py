@@ -50,6 +50,8 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 
+# local imports
+import distance
 
 np.seterr(all='raise')
 
@@ -99,15 +101,12 @@ class MarkerManager:
     def makeDisconnectivity(self, level):
         """Condensed disconnectivity matrix"""
         n = self.numMarkers
-        
         dm = self.makeDistances() > level
         
         # disconnect members in the same group
-        gm = np.zeros((n ,n), dtype=bool)
         for (_, m) in self.itergroups():
-            gm[np.ix_(m, m)] = True
-            gm[m, m] = False
-        dm[sp_distance.squareform(gm)] = False
+            idx = distance.pcoords(m, n)
+            dm[idx[idx != -1]] = True 
         
         return dm
         
