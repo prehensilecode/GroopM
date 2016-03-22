@@ -50,41 +50,100 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import numpy.linalg as np_linalg
 import scipy.cluster.hierarchy as sp_hierarchy
+import operator
 
 # local imports
 import distance
+import corre
+from bin import BinManager
+from partition import MarkerPartitionTool
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-class HierachicalClusterEngine:
-    """Hierarchical clustering algorthm"""
-    def __init__(self, dm, pe):
-        self._dm = dm #DistanceManager
-        self._pe = pe #PartitionEngine
+def run_cluster_engine(timer,
+                       dbFileName,
+                       markerFileName,
+                       minSize,
+                       minBP,
+                       minLength,
+                       force=False):
+    pm = ProfileManager(dbFileName, markerFileName)
+    # check that the user is OK with nuking stuff...
+    if not force and not pm.promptOnOverwrite():
+        return
         
-    def makeBins(self):
+    profile = pm.loadData(timer, minLength=minLength)
+    ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
+    
+    # cluster and bin!
+    print "Create cores"
+    ce.makeBins(out_bins=profile.binIds)
+    print "    %s" % timer.getTimeStamp()
+    
+    bt = BinQualityTool(profile, minSize=minSize, minBP=minBP)
+    bt.unbinLowQualityAssignments(out_bins=profile.binIds)
+
+    # Now save all the stuff to disk!
+    print "Saving bins"
+    pm.setBinAssignments(profile, nuke=True)
+    print "    %s" % timer.getTimeStamp()
+        
+        
+## Algorithms
+class HybridHierachicalClusterEngine:
+    """Hybrid hierarchical clustering algorthm"""
+    def makeBins(self, out_bins):
         """Run binning algorithm"""
-
-        dists = self._dm.pdist()
-        combined = np_linalg.norm(dists, axis=-1)
-        Z = sp_hierarchy.average(combined)
         
-        return pe.partition(Z)
-        
+        self.setup()
 
+        dists = self.distances()
+        Z = sp_hierarchy.average(dists)
+        out_bins[...] = self.fcluster(Z)
+            
+    def setup(self):
+        pass
+            
+    def distances(self):
+        # computes pairwise distances of observations
+        pass
+        
+    def fcluster(self, Z):
+        # finds flat clusters from linkage matrix
+        pass
+        
+        
+class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
+    """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
+    def __init__(self, profile, threshold=1):
+        self._profile = profile
+        self._ct = ClassificationCoherenceClusterTool(profile.markers)
+        self._features = (profile.covProfile, profile.kmerSigs)
+        self._hybrid_ranks = None
+        self._threshold = threshold
+        
+    def setup(self):
+        feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
+        weights = sp_distance.pdist(self._profile.contigLengths, operator.mul)
+        feature_ranks = distance.argrank_weighted(feature_distances, weights=weights, axis=1)
+        self._hybrid_ranks = np_linalg.norm(feature_ranks, axis=0)
+        
+    def distances(self):
+        return self._hybrid_ranks
+        
+    def fcluster(self, Z):
+        return self._ct.cluster_classification(Z, self._threshold)
+        
+    
+            
+# Mediod clustering
 class MediodsClusterEngine:
     """Iterative mediod clustering algorithm"""
     
-    UNBINNED = -1
-    
-    def __init__(self, dm, re):
-        self._dm = dm #DistanceManager
-        self._re = re #RecruitEngine
-    
-    def makeBins(self, init):
+    def makeBins(self, init, out_bins):
         """Run binning algorithm
         
         Parameters
@@ -92,15 +151,15 @@ class MediodsClusterEngine:
         init : ndarray
             Array of indices used to determine starting points for new
             clusters.
-        
-        Returns
-        -------
-        T : ndarray
-            `T[i]` is the cluster number for the `i`th observation.
+        out_bins: ndarray
+            1-D array of initial bin ids. An id of 0 is considered unbinned. 
+            The bin id for the `i`th original observation will be stored in
+            `out_bins[i]`.
         """
+        self.setup()
+        
+        bin_counter = np.max(out_bins)
         mediod = None
-        bin_counter = UNBINNED
-        labels = np.full(self._dm.num_obs(), UNBINNED, dtype=int)
         queue = init
 
         while(True):
@@ -108,31 +167,32 @@ class MediodsClusterEngine:
                 if len(queue) == 0:
                     break
                 mediod = queue.pop()
-                if labels[mediod] != UNBINNED:
+                if out_bins[mediod] != 0:
                     mediod = None
                     continue
                 round_counter = 0
                 bin_counter += 1
-                labels[mediod] = bin_counter
+                out_binds[mediod] = bin_counter
 
             round_counter += 1
             print "Recruiting bin %d, round %d." % (bin_counter, round_counter)
             
-            print "Found %d unbinned." % np.count_nonzero(labels == UNBINNED)
+            is_unbinned = out_bins == 0
+            print "Found %d unbinned." % np.count_nonzero(is_unbinned)
 
-            old_size = np.count_nonzero(labels == bin_counter)
-            putative_members = np.flatnonzero(np.in1d(labels, [UNBINNED, bin_counter]))
-            recruited = self._re.recruit(mediod, putative_members=putative_members)
+            is_old_members = out_bins == bin_counter
+            putative_members = np.flatnonzero(np.logical_and(is_unbinned, is_old_members))
+            recruited = self.recruit(mediod, putative_members=putative_members)
             
-            labels[recruited] = bin_counter
-            members = np.flatnonzero(labels == bin_counter)
+            out_bins[recruited] = bin_counter
+            members = np.flatnonzero(out_bins == bin_counter)
             
-            print "Recruited %d members." % (members.size - old_size)
+            print "Recruited %d members." % (members.size - old_members.size)
             
             if len(members)==1:
                 new_mediod = members
             else:
-                index = distance.mediod(self._dm.pdist(members))
+                index = self.mediod(members)
                 new_mediod = members[index]
 
 
@@ -143,7 +203,33 @@ class MediodsClusterEngine:
                 mediod = new_mediod
 
         print " %d bins made." % bin_counter
-        return labels
+        
+    def setup():
+        pass
+        
+    def recruit(self, mediod, putative_members):
+        # recruit contigs close to a mediod contig
+        pass
+        
+    def mediod(self, indices):
+        # computes pairwise distances of observations
+        pass
+        
+        
+class FeatureRankCorrelationClusterEngine(MediodsClusteringEngine):
+    """Cluster using mediod feature distance rank correlation"""
+    def __init__(self, profile, threshold=0.5):
+        self._profile = profile
+        self._features = (profile.covProfiles, profile.kmerSigs)
+        self._threshold = threshold
+        
+    def mediod(self, indices):
+        feature_ranks = tuple(distance.argrank(sp_distance.cdist(f[indices], f, metric="euclidean"), axis=1)[:, indices] for f in self._features)
+        return np_linalg.norm(feature_dists, axis=0).sum(axis=1).argmin()
+        
+    def recruit(self, origin, putative_members):
+        (covRanks, kmerRanks) = tuple(distance.argrank(sp_distance.cdist(f[[origin]], f, metric="euclidean")[0]) for f in self._features)
+        return corre.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
         
 
 ###############################################################################

@@ -104,7 +104,7 @@ class FeatureGlobalDistanceRankTool:
     def __init__(self, Ys, weights=None):
         Ys = np.transpose(Ys)
         self._ranks = distance.argrank_weighted(Ys, weights=weights, axis=0)
-        self._nobs = num_obs(self._ranks)
+        self._nobs = num_obs_for_condensed(self._ranks)
         
     def num_obs(self):
         return self._nobs
@@ -192,18 +192,9 @@ def _rank_with_ties(a, weights=None):
     r = r.reshape(shape)
     return r
  
-    
-def _rank_with_ties_(a, weights=None):
-    """Return sorted of array indices with tied values averaged"""
-    (codebook, codes) = np.unique(a, return_inverse=True) #codebook is in sorted order
-    (n, _bins) = np.histogram(codes, bins=np.arange(codebook.size+1), weights=weights)
-    w = np.concatenate(([0.], n.cumsum())).astype(np.double)
-    r = (w[1:] + w[:-1] - 1) / 2
-    
-    return r[codes]
 
 # Utility
-def num_obs(Y):
+def num_obs_for_condensed(Y):
     """Number of original observations in condensed distance matrix."""
     m = Y.shape[0]
     d = np.ceil(np.sqrt(2*m))

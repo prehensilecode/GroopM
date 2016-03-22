@@ -3,7 +3,7 @@
 #                                                                             #
 #    groopm.py                                                                #
 #                                                                             #
-#    Exports main groopm classes                                              #
+#    Wraps main workflows                                                     #
 #                                                                             #
 #    Copyright (C) Tim Lamberton, Michael Imelfort                            #
 #                                                                             #

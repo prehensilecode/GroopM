@@ -55,30 +55,31 @@ from profileManager import ProfileManager
 ###############################################################################
 ###############################################################################
 
+def run_import_bins(timer, dbFileName, binFile, separator):
+    pm = ProfileManager(dbFileName)
+    prof = pm.loadData(timer)
+    
+    bi = BinImporter(profile=prof)
+    bi.readBinAssignments(binFile,
+                          separator,
+                          out_pm=pm)
+
+                          
 class BinImporter:
     """Used for importing bin assignments"""
-    def __init__(self, dbFilename):
-        self.dbFileName = dbFileName
-        self._pm = ProfileManager(self.dbFilename)
-
-    def loadData(self, timer):
-        self._pm.loadData(timer)
-
-    def readBinAssignments(self,
-                           timer,
-                           infile,
-                           separator,
-                           binField=None,
-                           nameField=None,
-                           noHeaders=False):
+    def __init__(self, profile):
+        self._profile = profile
+        
+    def importBinAssignments(self,
+                             infile,
+                             separator,
+                             out_pm):
         """Parse fasta files for bin contigs"""
-        self.loadData(timer)
-
         br = BinReader()
         # looks like cid->bid
         contig_bins = {}
         try:
-            (con_names, con_bins) = binReader.parse(infile)
+            (con_names, con_bins) = binReader.parse(infile, separator)
             contig_bins = dict(zip(con_names, con_bins))
         except:
             print "Could not parse bin assignment file:",infile,sys.exc_info()[0]
@@ -86,54 +87,30 @@ class BinImporter:
 
         # now get the internal indices for contigs
         row_bin_assignments = {}
-        for (global_index, cid) in zip(self._pm.indices, self._pm.contigNames):
+        for (global_index, cid) in zip(self._profile.indices, self._profile.contigNames):
             try:
                 row_bin_assignments[global_index] = contig_bins[cid]
             except IndexError:
                 row_bin_assignment[global_index] = 0
-
-        self._pm.setBinAssignments(row_bin_assignments, nuke=False)
+        
+        out_pm.setBinAssignments(row_bin_assignments, nuke=False)
 
         
-class BinReader(CSVReader):   
+class BinReader:   
     """Read a file of tab separated contig name and bin groupings."""
-    def parse(self, infile):
+    def parse(self, infile, separator):
         con_names = []
         con_bins = []
+        
+        reader = CSVReader()
         with open(infile, "r") as f:
             for l in f:
-                (cid, bid) = self.readCSV(f, separator)
+                (cid, bid) = reader.readCSV(f, separator)
 
                 con_names.append(cid)
                 con_bins.append(bid)
         
         return (con_names, con_bins)
-        
-        
-class MarkerReader(CSVReader):
-    """Read a file of tab delimited contig names, marker names and optionally classifications."""
-    def parse(self, infile, doclassifications=False):
-        con_names = []
-        con_markers = []
-        if doclassifications:
-            con_taxstrings = []
-           
-        with open(infile, "r") as f:
-            for l in f:
-                fields = self.readCSV(f, separator)
-
-                con_names.append(fields[0])
-                con_markers.append(fields[1])
-                if doclassifications:
-                    if len(fields) > 2:
-                        con_taxstrings.append(fields[2])
-                    else:
-                        con_taxstrings.append("")
-        
-        if doclassifications:
-            return (con_names, con_markers, con_taxstrings)
-        else:
-            return (con_names, con_markers)
        
        
 # Utility

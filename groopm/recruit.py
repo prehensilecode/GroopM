@@ -51,6 +51,7 @@ import numpy as np
 
 # GroopM imports
 import corre
+import distance
 
 np.seterr(all='raise')
 
@@ -61,13 +62,13 @@ np.seterr(all='raise')
 
 class CorrelationRecruitEngine:
     """Recruit nearby contigs using a correlation threshold."""
-    def __init__(self, dm, threshold):
-        self._dm = dm
+    def __init__(self, distanceTool, threshold):
+        self._dt = distanceTool # distances from origin point
         self._threshold = threshold
     
     def recruit(self, origin, putative_members=None):
-        dists = self._dm.cdist([origin])
-        return getMergers([dists[:,:,0], dists[:,:,1]], threshold=self._threshold, unmerged=putative_members)
+        ranks = distance.argrank(self._dt(origin))
+        return getMergers((ranks[:,0], ranks[:,1]), threshold=self._threshold, unmerged=putative_members)
 
 ###############################################################################
 #Utility functions

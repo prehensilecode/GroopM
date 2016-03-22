@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    markerManager.py                                                         #
+#    classification.py                                                        #
 #                                                                             #
-#    Manage a set of marker gene hits                                         #
+#    Manage marker gene hits classifications                                  #
 #                                                                             #
 #    Copyright (C) Tim Lamberton                                              #
 #                                                                             #
@@ -52,6 +52,7 @@ import scipy.spatial.distance as sp_distance
 
 # local imports
 import distance
+from import_ import CSVReader
 
 np.seterr(all='raise')
 
@@ -59,48 +60,25 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-class MarkerManager:
+class ClassificationManager:
     """Class for managing marker gene hits for contigs.
     """
-    
-    def __init__(self,
-                 pm,
-                 rowIndices,
-                 contigNames,
-                 markerNames,
-                 taxstrings=None):
-        
-        self.rowIndices = np.asarray(rowIndices)
-        n = len(self.rowIndices)
-        self.contigNames = np.asarray(contigNames)
-        if len(self.contigNames) != n:
-            raise ValueError("Lists of contig names and indices must have same length.")
-        self.markerNames = np.asarray(markerNames)
-        if len(self.markerNames) != n:
-            raise ValueError("Lists of marker names and indices must have same length.")
-               
-        self.taxstrings = None 
-        self._classifications = None
-        if taxstrings is not None:
-            self.taxstrings = np.asarray(taxstrings)
-            if len(self.taxstrings) != n:
-                raise ValueError("Lists of taxstrings and indices must have same length.")
-            self._clist = [_Classification(s) for s in self.taxstrings]
-            
-        self.numMarkers = n
+    def __init__(self, markers):
+        self._mapping = markers
         
     def makeDistances(self):
         """Condensed distance matrix between pairs of marker hits"""
-        if self._clist is None:
-            n = self.numMarkers
+        taxstrings = self._mapping.taxstrings
+        if taxstrings is not None:
+            clist = [_Classification(s) for s in taxstrings]
+            return _classification_pdist(clist)
+        else:
+            n = self._mapping.numMappings
             return np.zeros( n * (n - 1) // 2, dtype=np.double)
-        
-        return _classification_pdist(self._clist)
         
     def makeDisconnectivity(self, level):
         """Condensed disconnectivity matrix"""
-        n = self.numMarkers
+        n = self._mapping.numMarkers
         dm = self.makeDistances() > level
         
         # disconnect members in the same group
@@ -112,7 +90,7 @@ class MarkerManager:
         
     def itergroups(self):
         """Returns an iterator of marker names and indices."""
-        return group_iterator(self.markerNames)
+        return group_iterator(self._mapping.markerNames)
 
 
 # Utility
@@ -210,6 +188,7 @@ def _classification_pdist(clist):
             k = k + 1
             
     return dm
+    
 
 ###############################################################################
 ###############################################################################

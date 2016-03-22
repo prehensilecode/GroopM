@@ -192,8 +192,13 @@ class core_command_configure:
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
 
-        ce = groopm.ClusterEngine(options.dbname, minSize=options.size, minBP=options.bp)
-        ce.run(timer, minLength=options.cutoff, force=options.force)
+        run_cluster_engine(timer,
+                           options.dbname,
+                           options.markerFile,
+                           minSize=options.size,
+                           minBP=options.bp,
+                           minLength=options.cutoff,
+                           force=options.force)
         
         
 class extract_command_configure:
@@ -311,10 +316,7 @@ class import_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('infile', help="file with data to import")
-        parser.add_argument('--names', type=int, default=1, help="names field index, counted from 1 (will use 'cid' column if header present)")
-        parser.add_argument('--bins', type=int, default=2, help="bins field index, counted from 1 (will use 'bid' column if header present)")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
-        parser.add_argument('--no_headers', action="store_true", default=False, help="does file contain headers")
         parser.set_defaults(run=self)
 
     def __call__(_self, options):
@@ -328,13 +330,10 @@ class import_command_configure:
         else:
             separator = options.separator
 
-        bi = groopm.BinImporter(options.dbname)
-        bi.readBinAssignments(timer,
-                              options.infile,
-                              separator,
-                              options.bins,
-                              options.names,
-                              options.no_headers)
+        run_import_bins(timer,
+                        options.dbname,
+                        options.infile,
+                        separator)
 
 class plot_command_configure:
     description="Plot contigs in coverage vs kmer distance space"

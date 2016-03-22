@@ -46,59 +46,108 @@ __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
-import numpy as np
+import numpy
 
 # GroopM imports
+from profileManager import ProfileManager
 from groopmExceptions import BinNotFoundException
 
-np.seterr(all='raise')
+numpy.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class BinQualityTool:
-    """Class used for manipulating bins
-    
-    Wraps an array of bin ids
-    """
-    
+
+class BinManager:
+    """Class used for manipulating bins"""
     def __init__(self,
-                 profile,
+                 pm,
                  minSize=0,
                  minBP=0):
 
-        self._profile = profile
+        self._pm = pm
         self._minSize = minSize
         self._minBP = minBP
-        
+
+    def getBidsByIndex(self, row_indices):
+        """Return corresponding bin ids"""
+        return self._pm.binIds[row_indices]
+
     def checkBids(self, bids):
         """Check if bids are valid"""
-        is_not_bid = np.logical_not(np.in1d(bids, self.getBids()))
-        if np.any(is_not_bid):
+        is_not_bid = numpy.logical_not(numpy.in1d(bids, self.getBids()))
+        if numpy.any(is_not_bid):
             raise BinNotFoundException("ERROR: "+",".join([str(bid) for bid in bids[is_not_bid]])+" are not bin ids")
 
-    def unbinLowQualityAssignments(self, out_binIds):
+
+    def getBinIndices(self, bids):
+        """Return array of binned contig indices"""
+
+        self.checkBids(bids)
+        return numpy.flatnonzero(numpy.in1d(self._pm.binIds, bids))
+
+    def getUnbinned(self):
+        return self.getBinIndices([0])
+
+    def unbinLowQualityAssignments(self):
         """Check bin assignment quality"""
         low_quality = []
-        for bid in self.getBids(out_binIds):
-            is_in_bin = out_binIds == bid
-            total_BP = np.sum(self._profile.contigLengths[is_in_bin])
-            bin_size = np.count_nonzero(is_in_bin)
+        for bid in self.getBids():
+            # 0 == unbinned
+            if bid == 0:
+                continue
+
+            members = self.getBinIndices([bid])
+            total_BP = numpy.sum(self._pm.contigLengths[members])
+            bin_size = len(members)
 
             if not isGoodBin(total_BP, bin_size, minBP=self._minBP, minSize=self._minSize):
                 # This partition is too small, ignore
-                low_quality.append(bid)
+                low_quality.append(label)
 
         print " Found %d low quality bins." % len(low_quality)
-        out_bidIds[np.in1d(out_binIds, low_quality)] = 0
+        self._pm.bidIds[self.getBinIndices(low_quality)] = 0
 
-    def getBids(self, binIds=None):
+    def assignBin(self, row_indices, bid=None):
+        """Make a new bin and add to the list of existing bins"""
+        if bid is None:
+            bid = max(self._pm.binIds) + 1
+
+        self._pm.bidIds[row_indices] = bid
+
+    def saveBins(self, nuke=False):
+        """Save binning results
+
+        PM.setBinAssignments needs GLOBAL row indices
+        { global_index : bid }
+        """
+        # save the bin assignments
+        self._pm.setBinAssignments(self._getGlobalBinAssignments(), # convert to global indices
+                                   nuke=nuke
+                                  )
+
+    def getBids(self):
         """Return a sorted list of bin ids"""
-        if binIds is None:
-            binIds = self._profile.binIds
-        return sorted(set(binIds).difference([0]))
+        return sorted(set(self._pm.binIds))
 
+    def _getGlobalBinAssignments(self):
+        """Merge the bids, raw DB indexes and core information so we can save to disk
+
+        returns a hash of type:
+
+        { global_index : bid }
+        """
+        # we need a mapping from cid (or local index) to to global index to binID
+        return dict(zip(self._pm.indices, self._pm.binIds))
+
+
+###############################################################################
+#Utility functions
+###############################################################################
+
+#------------------------------------------------------------------------------
+# Helpers
 
 def isGoodBin(totalBP, binSize, minBP, minSize):
     """Does this bin meet my exacting requirements?"""

@@ -111,6 +111,148 @@ class BinPlotter:
                 break
 
         print "    %s" % timer.getTimeStamp()
+        
+        
+class FeaturePlotter:
+    """Plot contigs in feature space"""
+    COLOURS = 'rbgcmyk'
+
+    def __init__(self, pm, colorMap="HSV"):
+        self._pm = pm
+        self._cm = getColorMap(colorMap)
+
+    def plot(self,
+             x, y,
+             x_label="", y_label="",
+             keep=None, highlight=None, divide=None,
+             plotContigLengths=False,
+             fileName=""
+            ):
+        """Plot contigs in measure space"""
+        fig = pyplot.figure()
+
+        ax = fig.add_subplot(111)
+        self.plotOnAx(ax, x, y,
+                      x_label=x_label, y_label=y_label,
+                      keep=keep, highlight=highlight,
+                      plotContigLengths=plotContigLengths)
+
+        if divide is not None:
+            for (clr, coords) in zip(self.COLOURS, divide):
+                fmt = '-'+clr
+                for (x_point, y_point) in zip(*coords):
+                    ax.plot([x_point, x_point], [0, y_point], fmt)
+                    ax.plot([0, x_point], [y_point, y_point], fmt)
+
+        if(fileName != ""):
+            try:
+                fig.set_size_inches(6,6)
+                pyplot.savefig(fileName,dpi=300)
+            except:
+                print "Error saving image:", fileName, sys.exc_info()[0]
+                raise
+        else:
+            print "Plotting contig features"
+            try:
+                pyplot.show()
+            except:
+                print "Error showing image", sys.exc_info()[0]
+                raise
+
+        pyplot.close(fig)
+        del fig
+
+    def plotSurface(self,
+                    x, y, z,
+                    x_label="", y_label="", z_label="",
+                    keep=None, highlight=None,
+                    plotContigLengths=False,
+                    elev=None, azim=None,
+                    fileName=""
+                   ):
+        """Plot a surface computed from coordinates in measure space"""
+        fig = pyplot.figure()
+
+        ax = fig.add_subplot(111, projection='3d')
+        self.plotOnAx(ax,
+                      x, y, z=z,
+                      x_label=x_label, y_label=y_label, z_label=label,
+                      keep=keep, highlight=highlight,
+                      plotContigLengths=plotContigLengths,
+                      elev=elev, azim=azim)
+
+        if(fileName != ""):
+            try:
+                fig.set_size_inches(6,6)
+                pyplot.savefig(fileName,dpi=300)
+            except:
+                print "Error saving image:", fileName, sys.exc_info()[0]
+                raise
+        else:
+            print "Plotting contig features"
+            try:
+                pyplot.show()
+            except:
+                print "Error showing image", sys.exc_info()[0]
+                raise
+
+        pyplot.close(fig)
+        del fig
+
+    def plotOnAx(self, ax,
+                 x, y, z=None,
+                 x_label="", y_label="", z_label="",
+                 keep=None, extents=None, highlight=None,
+                 plotContigLengths=False,
+                 elev=None, azim=None,
+                 colorMap="HSV"
+                ):
+
+        # display values
+        disp_vals = (x, y, z) if z is not None else (x, y)
+        disp_cols = self._pm.contigGCs
+
+        if highlight is not None:
+            edgecolors=numpy.full_like(disp_cols, 'k', dtype=str)
+            for (clr, hl) in zip(self.COLOURS, highlight):
+                edgecolors[hl] = clr
+            if keep is not None:
+                edgecolors = edgecolors[keep]
+        else:
+            edgecolors = 'k'
+
+        if plotContigLengths:
+            disp_lens = numpy.sqrt(self._pm.contigLengths)
+            if keep is not None:
+                disp_lens = disp_lens[keep]
+        else:
+            disp_lens=30
+
+        if keep is not None:
+            disp_vals = [v[keep] for v in disp_vals]
+            disp_cols = disp_cols[keep]
+
+        sc = ax.scatter(*disp_vals,
+                        c=disp_cols, s=disp_lens,
+                        cmap=self._cm,
+                        vmin=0.0, vmax=1.0,
+                        marker='.')
+        sc.set_edgecolors(edgecolors)
+        sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
+
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        if z is not None:
+            ax.set_zlabel(z_label)
+
+        if extents is not None:
+            ax.set_xlim([extents[0], extents[1]])
+            ax.set_ylim([extents[2], extents[3]])
+            if z is not None:
+                ax.set_zlim([extents[4], extents[5]])
+
+        if z is not None:
+            ax.view_init(elev=elev, azim=azim)
 
 
 ###############################################################################
@@ -180,6 +322,70 @@ def getSurface(mode, ranks):
         raise ValueError("Invaild mode: %s" % mode)
 
     return (z, z_label)
+    
+    
+def getColorMap(colorMapStr):
+    if colorMapStr == 'HSV':
+        S = 1.0
+        V = 1.0
+        return matplotlib.colors.LinearSegmentedColormap.from_list('GC', [colorsys.hsv_to_rgb((1.0 + numpy.sin(numpy.pi * (val/1000.0) - numpy.pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
+    elif colorMapStr == 'Accent':
+        return matplotlib.cm.get_cmap('Accent')
+    elif colorMapStr == 'Blues':
+        return matplotlib.cm.get_cmap('Blues')
+    elif colorMapStr == 'Spectral':
+        return matplotlib.cm.get_cmap('spectral')
+    elif colorMapStr == 'Grayscale':
+        return matplotlib.cm.get_cmap('gist_yarg')
+    elif colorMapStr == 'Discrete':
+        discrete_map = [(0,0,0)]
+        discrete_map.append((0,0,0))
+        discrete_map.append((0,0,0))
+
+        discrete_map.append((0,0,0))
+        discrete_map.append((141/255.0,211/255.0,199/255.0))
+        discrete_map.append((255/255.0,255/255.0,179/255.0))
+        discrete_map.append((190/255.0,186/255.0,218/255.0))
+        discrete_map.append((251/255.0,128/255.0,114/255.0))
+        discrete_map.append((128/255.0,177/255.0,211/255.0))
+        discrete_map.append((253/255.0,180/255.0,98/255.0))
+        discrete_map.append((179/255.0,222/255.0,105/255.0))
+        discrete_map.append((252/255.0,205/255.0,229/255.0))
+        discrete_map.append((217/255.0,217/255.0,217/255.0))
+        discrete_map.append((188/255.0,128/255.0,189/255.0))
+        discrete_map.append((204/255.0,235/255.0,197/255.0))
+        discrete_map.append((255/255.0,237/255.0,111/255.0))
+        discrete_map.append((1,1,1))
+
+        discrete_map.append((0,0,0))
+        discrete_map.append((0,0,0))
+        discrete_map.append((0,0,0))
+        return matplotlib.colors.LinearSegmentedColormap.from_list('GC_DISCRETE', discrete_map, N=20)
+
+    elif colorMapStr == 'DiscretePaired':
+        discrete_map = [(0,0,0)]
+        discrete_map.append((0,0,0))
+        discrete_map.append((0,0,0))
+
+        discrete_map.append((0,0,0))
+        discrete_map.append((166/255.0,206/255.0,227/255.0))
+        discrete_map.append((31/255.0,120/255.0,180/255.0))
+        discrete_map.append((178/255.0,223/255.0,138/255.0))
+        discrete_map.append((51/255.0,160/255.0,44/255.0))
+        discrete_map.append((251/255.0,154/255.0,153/255.0))
+        discrete_map.append((227/255.0,26/255.0,28/255.0))
+        discrete_map.append((253/255.0,191/255.0,111/255.0))
+        discrete_map.append((255/255.0,127/255.0,0/255.0))
+        discrete_map.append((202/255.0,178/255.0,214/255.0))
+        discrete_map.append((106/255.0,61/255.0,154/255.0))
+        discrete_map.append((255/255.0,255/255.0,179/255.0))
+        discrete_map.append((217/255.0,95/255.0,2/255.0))
+        discrete_map.append((1,1,1))
+
+        discrete_map.append((0,0,0))
+        discrete_map.append((0,0,0))
+        discrete_map.append((0,0,0))
+        return matplotlib.colors.LinearSegmentedColormap.from_list('GC_DISCRETE', discrete_map, N=20)
 
 
 ###############################################################################

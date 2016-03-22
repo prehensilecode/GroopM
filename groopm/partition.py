@@ -54,6 +54,7 @@ import scipy.spatial.distance as sp_distance
 # local imports
 import hierarchy
 import distance
+import classifier
 
 np.seterr(all='raise')
 
@@ -63,24 +64,25 @@ np.seterr(all='raise')
 ###############################################################################
 
 
-class MarkerPartitionEngine:
+class ClassificationCoherenceTool:
     """Partition a hierarchical clustering using the taxonomic classification
     distances of marker gene hits to identify clusters that maximise a measure
     of taxonomic coherence. 
     """
-    def __init__(self, mm, threshold, greedy=False):
-        self._mm = mm
-        self._threshold = threshold
-        self._greedy = greedy
+    def __init__(self, markers):
+        self._mapping = markers
         
-    def partition(self, Z):
+    def cluster_coherence(self, Z, t, greedy=False):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
         H = hierarchy.height(Z)
-        (rows, cols) = np.ix_(self._mm.rowIndices, self._mm.rowIndices)
+        
+        indices = self._mapping.rowIndices
+        classifier = Classifier(self._mapping)
+        (rows, cols) = np.ix_(indices, indices)
         idx = distance.squareform_coords(rows, cols, n)
-        mA = np.where(rows==cols, np.diag(self._mm.rowIndices), H[idx]+n)
-        mC = np.logical_not(sp_distance.squareform(self._mm.makeDisconnectivity(self._threshold)))
+        mA = np.where(rows==cols, np.diag(indices), H[idx]+n)
+        mC = np.logical_not(sp_distance.squareform(classifier.makeDisconnectivity(t)))
         (mcc, mnodes) = connectivity_coeffs(mA, mC)
         
         cc = np.zeros(2*n - 1, dtype=np.dtype(mcc))
@@ -105,7 +107,7 @@ class MarkerPartitionEngine:
         rootinds = maxinds
         rootancestors = hierarchy.ancestors(Z, rootinds)
         
-        if self._greedy:
+        if greedy:
             # Greedily extend clusters until a node with an actively lower
             # coefficient is reached. Requires an additional pass over
             # hierarchy.
@@ -116,8 +118,8 @@ class MarkerPartitionEngine:
         # removing ancestor nodes of forest root nodes.
         remove = np.zeros(n-1, dtype=bool)
         remove[rootancestors] = True
-        part = hierarchy.fcluster(Z, remove)
-        return part
+        T = hierarchy.fcluster(Z, remove)
+        return T
 
 
 def connectivity_coeffs(A, C):

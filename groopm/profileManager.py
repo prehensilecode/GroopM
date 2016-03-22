@@ -5,7 +5,7 @@
 #                                                                             #
 #    GroopM - High level data management                                      #
 #                                                                             #
-#    Copyright (C) Michael Imelfort                                           #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -40,57 +40,97 @@
 
 __author__ = "Michael Imelfort"
 __copyright__ = "Copyright 2012/2013"
-__credits__ = ["Michael Imelfort"]
+__credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
-__maintainer__ = "Michael Imelfort"
-__email__ = "mike@mikeimelfort.com"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
-import numpy
+import numpy as np
 import sys
-import matplotlib
-from matplotlib import pyplot
-import colorsys
 
 # GroopM imports
 from mstore import GMDataManager as DataManager
 
-numpy.seterr(all='raise')
+np.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
+        
+        
+class Mapping:
+    """Class for carrying gene mapping data around, constructed using
+    ProfileManager class.
+    
+    Fields
+    ------
+    # mapping data
+    profile: ndarray
+        Profile instance, see ProfileManager class.
+    rowIndices: ndarray
+        `rowIndices[i]` is the row index in `profile` of the `i`th mapping.
+    markerNames: ndarray
+        `markerNames[i]` is the marker gene name hit for the `i`th mapping.
+    taxstrings: ndarray
+        `taxstrings[i]` is a taxonomic classification string for the `i`th 
+        mapping.
+        
+    #metadata
+    numMappings: int
+        Corresponds to the lengths of above arrays.
+    """
+    pass
+        
+class Profile:
+    """Class for carrying profile data around, construct using ProfileManager class.
+    
+    Fields
+    ------
+    # contig data
+    indices: ndarray
+        `indices[i]` is the index into the pytables data structure of contig `i`.
+    covProfile: ndarray
+        `covProfile[i, j]` is the trimmed mean coverage of contig `i` in stoit `j`.
+    kmerSigs: ndarray
+        `kmerSigs[i, j]` is the relative frequency of occurrence in contig `i` of
+        the `j`th kmer.
+    normCoverages: ndarray
+        `normCoverage[i]` is the norm of all stoit coverages for contig `i`.
+    contigGCs: ndarray
+        `contigGCs[i]` is the percentage GC for contig `i`.
+    contigNames: ndarray
+        `contigNames[i]` is the fasta contig id of contig `i`.
+    contigLengths: ndarray
+        `contigLengths[i]` is the length in bp of contig `i`.
+    binIds: ndarray
+        `binIds[i]` is the bin id assigned to contig `i`.
+    markers: Mapping
+        Instance of Mapping class for marker gene hits
+        
+    
+    # metadata
+    numContigs: int
+        Number of contigs, corresponds to length of axis 1 in above arrays.
+    stoitNames: ndarray
+        Names of stoits for each column of covProfiles array.
+    numStoits: int
+        Corresponds to number of columns of covProfiles array.
+    """
+    pass
 
-
+    
 class ProfileManager:
     """Interacts with the groopm DataManager and local data fields
 
     Mostly a wrapper around a group of numpy arrays and a pytables quagmire
     """
-    def __init__(self, dbFileName):
+    def __init__(self, dbFileName, markerFileName=None):
         # misc
         self._dm = DataManager()            # most data is saved to hdf
         self.dbFileName = dbFileName         # db containing all the data we'd like to use
-
-        # --> NOTE: ALL of the arrays in this section are in sync
-        # --> last axis (axis=-1) holds information for individuals contig
-        # --> Think "struct of arrays".
-        self.indices = numpy.array([])        # indices into the pytables data structure of selection
-        self.covProfiles = numpy.array([])    # coverage based coordinates
-        self.kmerSigs = numpy.array([])       # raw kmer signatures
-        #self.kmerPCs = numpy.array([])       # PCs of kmer sigs capturing specified variance
-        self.normCoverages = numpy.array([])  # norm of the raw coverage vectors
-        self.contigGCs = numpy.array([])
-        self.contigNames = numpy.array([])
-        self.contigLengths = numpy.array([])
-        self.binIds = numpy.array([])         # list of bin IDs
-        # --> end section
-
-        # meta
-        self.numContigs = 0                   # corresponds to length of axis=-1 of above arrays
-        self.stoitNames = numpy.array([])     # names of stoits for each row of covProfiles array
-        self.numStoits = 0                    # corresponds to number of rows of covProfiles array and length of stoitColNames array
+        self.markerFileName = markerFileName
 
     def loadData(self,
                  timer,
@@ -104,6 +144,7 @@ class ProfileManager:
                  loadContigLengths=True,
                  loadContigGCs=True,
                  loadBins=False,
+                 loadMarkers=False,
                  minLength=None,
                  bids=[],
                  removeBins=False
@@ -116,82 +157,113 @@ class ProfileManager:
             print "Loading data from:", self.dbFileName
 
         try:
+            prof = Profile()
+            
             # Stoit names
-            self.numStoits = self._dm.getNumStoits(self.dbFileName)
+            prof.numStoits = self._dm.getNumStoits(self.dbFileName)
             if(loadStoitNames):
-                self.stoitNames = numpy.array(self._dm.getStoitColNames(self.dbFileName).split(","))
+                prof.stoitNames = np.array(self._dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
             condition = getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
-            self.indices = self._dm.getConditionalIndices(self.dbFileName,
+            prof.indices = self._dm.getConditionalIndices(self.dbFileName,
                                                           condition=condition,
                                                           silent=silent)
 
             # Collect contig data
             if(verbose):
                 print "    Loaded indices with condition:", condition
-            self.numContigs = len(self.indices)
+            prof.numContigs = len(prof.indices)
 
-            if self.numContigs == 0:
+            if prof.numContigs == 0:
                 print "    ERROR: No contigs loaded using condition:", condition
                 return
 
             if(not silent):
-                print "    Working with: %d contigs" % self.numContigs
+                print "    Working with: %d contigs" % prof.numContigs
 
             if(loadCovProfiles):
                 if(verbose):
                     print "    Loading coverage profiles"
-                self.covProfiles = self._dm.getCoverageProfiles(self.dbFileName, indices=self.indices)
-                self.normCoverages = self._dm.getNormalisedCoverageProfiles(self.dbFileName, indices=self.indices)
+                prof.covProfiles = self._dm.getCoverageProfiles(self.dbFileName, indices=prof.indices)
+                prof.normCoverages = self._dm.getNormalisedCoverageProfiles(self.dbFileName, indices=prof.indices)
 
             if(loadKmerSigs):
                 if(verbose):
                     print "    Loading RAW kmer sigs"
-                self.kmerSigs = self._dm.getKmerSigs(self.dbFileName, indices=self.indices)
+                prof.kmerSigs = self._dm.getKmerSigs(self.dbFileName, indices=prof.indices)
 
             if(False):
-                self.kmerPCs = self._dm.getKmerPCAs(self.dbFileName, indices=self.indices)
+                prof.kmerPCs = self._dm.getKmerPCAs(self.dbFileName, indices=prof.indices)
 
                 if(verbose):
-                    print "    Loading PCA kmer sigs (" + str(len(self.kmerPCs[0])) + " dimensional space)"
+                    print "    Loading PCA kmer sigs (" + str(len(prof.kmerPCs[0])) + " dimensional space)"
 
             if(loadContigNames):
                 if(verbose):
                     print "    Loading contig names"
-                self.contigNames = self._dm.getContigNames(self.dbFileName, indices=self.indices)
+                prof.contigNames = self._dm.getContigNames(self.dbFileName, indices=prof.indices)
 
             if(loadContigLengths):
-                self.contigLengths = self._dm.getContigLengths(self.dbFileName, indices=self.indices)
+                prof.contigLengths = self._dm.getContigLengths(self.dbFileName, indices=prof.indices)
                 if(verbose):
-                    print "    Loading contig lengths (Total: %d BP)" % ( sum(self.contigLengths) )
+                    print "    Loading contig lengths (Total: %d BP)" % ( sum(prof.contigLengths) )
 
             if(loadContigGCs):
-                self.contigGCs = self._dm.getContigGCs(self.dbFileName, indices=self.indices)
+                prof.contigGCs = self._dm.getContigGCs(self.dbFileName, indices=prof.indices)
                 if(verbose):
-                    print "    Loading contig GC ratios (Average GC: %0.3f)" % ( numpy.mean(self.contigGCs) )
+                    print "    Loading contig GC ratios (Average GC: %0.3f)" % ( np.mean(prof.contigGCs) )
 
             if(loadBins):
                 if(verbose):
                     print "    Loading bin assignments"
-                self.binIds = self._dm.getBins(self.dbFileName, indices=self.indices)
+                prof.binIds = self._dm.getBins(self.dbFileName, indices=prof.indices)
             else:
                 # we need zeros as bin indicies then...
-                self.binIds = numpy.zeros(self.numContigs, dtype=int)
+                prof.binIds = np.zeros(prof.numContigs, dtype=int)
 
         except:
             print "Error loading DB:", self.dbFileName, sys.exc_info()[0]
             raise
+             
+        if(loadMarkers):
+            if verbose:
+                print "Loading marker data from:", self.markerFileName
+            
+            try:
+                markers = Mapping()
+                reader = MappingReader()
+                (con_names, con_markers, con_taxstrings) = reader.parse(markerFile, True)
+                
+                lookup = dict(zip(prof.contigNames, np.arange(prof.numContigs)))
+                rowIndices = np.array([lookup[name] for name in con_names])
+                
+                markers.rowIndices = rowIndices
+                markers.markerNames = np.asarray(con_markers)
+                markers.taxstrings = np.asarray(con_taxstrings)
+                markers.numMappings = len(con_names)
+                
+                prof.markers = markers
+            except:
+                print "Error opening marker file:", self.markerFileName, sys.exc_info()[0]
+                raise
+                
 
         if(not silent):
             print "    %s" % timer.getTimeStamp()
+            
+        return prof
 
-    def setBinAssignments(self, assignments, nuke=False):
-        """Save our bins into the DB"""
+    def setBinAssignments(self, profile, nuke=False):
+        """Save bins into the DB
+        
+        dataManager.setBinAssignments needs GLOBAL row indices
+        { global_index : bid }
+        """
+        assignments = dict(zip(profile.indices, profile.binIds))
         self._dm.setBinAssignments(self.dbFileName,
                                    assignments,
                                    nuke=nuke)
-
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""
@@ -220,6 +292,32 @@ class ProfileManager:
         return True
 
 
+class MappingReader:
+    """Read a file of tab delimited contig names, marker names and optionally classifications."""
+    def parse(self, infile, doclassifications=False):
+        con_names = []
+        con_markers = []
+        if doclassifications:
+            con_taxstrings = []
+           
+        reader = CSVReader()
+        with open(infile, "r") as f:
+            for l in f:
+                fields = reader.readCSV(f, separator)
+
+                con_names.append(fields[0])
+                con_markers.append(fields[1])
+                if doclassifications:
+                    if len(fields) > 2:
+                        con_taxstrings.append(fields[2])
+                    else:
+                        con_taxstrings.append("")
+        
+        if doclassifications:
+            return (con_names, con_markers, con_taxstrings)
+        else:
+            return (con_names, con_markers)
+        
 ###############################################################################
 #Utility functions
 ###############################################################################
@@ -242,210 +340,6 @@ def getConditionString(minLength=None, maxLength=None, bids=None, removeBins=Fal
         return ""
     else:
         return "(" + " & ".join(conds) + ")"
-
-def getColorMap(colorMapStr):
-    if colorMapStr == 'HSV':
-        S = 1.0
-        V = 1.0
-        return matplotlib.colors.LinearSegmentedColormap.from_list('GC', [colorsys.hsv_to_rgb((1.0 + numpy.sin(numpy.pi * (val/1000.0) - numpy.pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
-    elif colorMapStr == 'Accent':
-        return matplotlib.cm.get_cmap('Accent')
-    elif colorMapStr == 'Blues':
-        return matplotlib.cm.get_cmap('Blues')
-    elif colorMapStr == 'Spectral':
-        return matplotlib.cm.get_cmap('spectral')
-    elif colorMapStr == 'Grayscale':
-        return matplotlib.cm.get_cmap('gist_yarg')
-    elif colorMapStr == 'Discrete':
-        discrete_map = [(0,0,0)]
-        discrete_map.append((0,0,0))
-        discrete_map.append((0,0,0))
-
-        discrete_map.append((0,0,0))
-        discrete_map.append((141/255.0,211/255.0,199/255.0))
-        discrete_map.append((255/255.0,255/255.0,179/255.0))
-        discrete_map.append((190/255.0,186/255.0,218/255.0))
-        discrete_map.append((251/255.0,128/255.0,114/255.0))
-        discrete_map.append((128/255.0,177/255.0,211/255.0))
-        discrete_map.append((253/255.0,180/255.0,98/255.0))
-        discrete_map.append((179/255.0,222/255.0,105/255.0))
-        discrete_map.append((252/255.0,205/255.0,229/255.0))
-        discrete_map.append((217/255.0,217/255.0,217/255.0))
-        discrete_map.append((188/255.0,128/255.0,189/255.0))
-        discrete_map.append((204/255.0,235/255.0,197/255.0))
-        discrete_map.append((255/255.0,237/255.0,111/255.0))
-        discrete_map.append((1,1,1))
-
-        discrete_map.append((0,0,0))
-        discrete_map.append((0,0,0))
-        discrete_map.append((0,0,0))
-        return matplotlib.colors.LinearSegmentedColormap.from_list('GC_DISCRETE', discrete_map, N=20)
-
-    elif colorMapStr == 'DiscretePaired':
-        discrete_map = [(0,0,0)]
-        discrete_map.append((0,0,0))
-        discrete_map.append((0,0,0))
-
-        discrete_map.append((0,0,0))
-        discrete_map.append((166/255.0,206/255.0,227/255.0))
-        discrete_map.append((31/255.0,120/255.0,180/255.0))
-        discrete_map.append((178/255.0,223/255.0,138/255.0))
-        discrete_map.append((51/255.0,160/255.0,44/255.0))
-        discrete_map.append((251/255.0,154/255.0,153/255.0))
-        discrete_map.append((227/255.0,26/255.0,28/255.0))
-        discrete_map.append((253/255.0,191/255.0,111/255.0))
-        discrete_map.append((255/255.0,127/255.0,0/255.0))
-        discrete_map.append((202/255.0,178/255.0,214/255.0))
-        discrete_map.append((106/255.0,61/255.0,154/255.0))
-        discrete_map.append((255/255.0,255/255.0,179/255.0))
-        discrete_map.append((217/255.0,95/255.0,2/255.0))
-        discrete_map.append((1,1,1))
-
-        discrete_map.append((0,0,0))
-        discrete_map.append((0,0,0))
-        discrete_map.append((0,0,0))
-        return matplotlib.colors.LinearSegmentedColormap.from_list('GC_DISCRETE', discrete_map, N=20)
-
-class FeaturePlotter:
-    """Plot contigs in feature space"""
-    COLOURS = 'rbgcmyk'
-
-    def __init__(self, pm, colorMap="HSV"):
-        self._pm = pm
-        self._cm = getColorMap(colorMap)
-
-    def plot(self,
-             x, y,
-             x_label="", y_label="",
-             keep=None, highlight=None, divide=None,
-             plotContigLengths=False,
-             fileName=""
-            ):
-        """Plot contigs in measure space"""
-        fig = pyplot.figure()
-
-        ax = fig.add_subplot(111)
-        self.plotOnAx(ax, x, y,
-                      x_label=x_label, y_label=y_label,
-                      keep=keep, highlight=highlight,
-                      plotContigLengths=plotContigLengths)
-
-        if divide is not None:
-            for (clr, coords) in zip(self.COLOURS, divide):
-                fmt = '-'+clr
-                for (x_point, y_point) in zip(*coords):
-                    ax.plot([x_point, x_point], [0, y_point], fmt)
-                    ax.plot([0, x_point], [y_point, y_point], fmt)
-
-        if(fileName != ""):
-            try:
-                fig.set_size_inches(6,6)
-                pyplot.savefig(fileName,dpi=300)
-            except:
-                print "Error saving image:", fileName, sys.exc_info()[0]
-                raise
-        else:
-            print "Plotting contig features"
-            try:
-                pyplot.show()
-            except:
-                print "Error showing image", sys.exc_info()[0]
-                raise
-
-        pyplot.close(fig)
-        del fig
-
-    def plotSurface(self,
-                    x, y, z,
-                    x_label="", y_label="", z_label="",
-                    keep=None, highlight=None,
-                    plotContigLengths=False,
-                    elev=None, azim=None,
-                    fileName=""
-                   ):
-        """Plot a surface computed from coordinates in measure space"""
-        fig = pyplot.figure()
-
-        ax = fig.add_subplot(111, projection='3d')
-        self.plotOnAx(ax,
-                      x, y, z=z,
-                      x_label=x_label, y_label=y_label, z_label=label,
-                      keep=keep, highlight=highlight,
-                      plotContigLengths=plotContigLengths,
-                      elev=elev, azim=azim)
-
-        if(fileName != ""):
-            try:
-                fig.set_size_inches(6,6)
-                pyplot.savefig(fileName,dpi=300)
-            except:
-                print "Error saving image:", fileName, sys.exc_info()[0]
-                raise
-        else:
-            print "Plotting contig features"
-            try:
-                pyplot.show()
-            except:
-                print "Error showing image", sys.exc_info()[0]
-                raise
-
-        pyplot.close(fig)
-        del fig
-
-    def plotOnAx(self, ax,
-                 x, y, z=None,
-                 x_label="", y_label="", z_label="",
-                 keep=None, extents=None, highlight=None,
-                 plotContigLengths=False,
-                 elev=None, azim=None,
-                 colorMap="HSV"
-                ):
-
-        # display values
-        disp_vals = (x, y, z) if z is not None else (x, y)
-        disp_cols = self._pm.contigGCs
-
-        if highlight is not None:
-            edgecolors=numpy.full_like(disp_cols, 'k', dtype=str)
-            for (clr, hl) in zip(self.COLOURS, highlight):
-                edgecolors[hl] = clr
-            if keep is not None:
-                edgecolors = edgecolors[keep]
-        else:
-            edgecolors = 'k'
-
-        if plotContigLengths:
-            disp_lens = numpy.sqrt(self._pm.contigLengths)
-            if keep is not None:
-                disp_lens = disp_lens[keep]
-        else:
-            disp_lens=30
-
-        if keep is not None:
-            disp_vals = [v[keep] for v in disp_vals]
-            disp_cols = disp_cols[keep]
-
-        sc = ax.scatter(*disp_vals,
-                        c=disp_cols, s=disp_lens,
-                        cmap=self._cm,
-                        vmin=0.0, vmax=1.0,
-                        marker='.')
-        sc.set_edgecolors(edgecolors)
-        sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
-
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        if z is not None:
-            ax.set_zlabel(z_label)
-
-        if extents is not None:
-            ax.set_xlim([extents[0], extents[1]])
-            ax.set_ylim([extents[2], extents[3]])
-            if z is not None:
-                ax.set_zlim([extents[4], extents[5]])
-
-        if z is not None:
-            ax.view_init(elev=elev, azim=azim)
 
 ###############################################################################
 ###############################################################################
