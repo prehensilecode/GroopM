@@ -75,8 +75,8 @@ class BinPlotter:
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
 
-    def loadData(self, timer):
-        self._pm.loadData(timer, loadBins=True, minLength=0, removeBins=True, bids=[0])
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer, loadBins=True, minLength=0, removeBins=True, bids=[0])
 
     def plot(self,
              timer,
@@ -88,15 +88,16 @@ class BinPlotter:
              colorMap="HSV",
              prefix="BIN"
             ):
-        self.loadData(timer)
+        
+        profile = self.loadProfile(timer)
 
-        bm = BinManager(self._pm)
+        bm = BinManager(profile)
         if bids is None or len(bids) == 0:
             bids = bm.getBids()
         else:
             bm.checkBids(bids)
 
-        fplot = FeaturePlotter(self._pm, colorMap=colorMap)
+        fplot = FeaturePlotter(profile, colorMap=colorMap)
         for bid in bids:
             fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
 
@@ -117,8 +118,8 @@ class FeaturePlotter:
     """Plot contigs in feature space"""
     COLOURS = 'rbgcmyk'
 
-    def __init__(self, pm, colorMap="HSV"):
-        self._pm = pm
+    def __init__(self, profile, colorMap="HSV"):
+        self._profile = profile
         self._cm = getColorMap(colorMap)
 
     def plot(self,
@@ -210,7 +211,7 @@ class FeaturePlotter:
 
         # display values
         disp_vals = (x, y, z) if z is not None else (x, y)
-        disp_cols = self._pm.contigGCs
+        disp_cols = self._profile.contigGCs
 
         if highlight is not None:
             edgecolors=numpy.full_like(disp_cols, 'k', dtype=str)
@@ -222,7 +223,7 @@ class FeaturePlotter:
             edgecolors = 'k'
 
         if plotContigLengths:
-            disp_lens = numpy.sqrt(self._pm.contigLengths)
+            disp_lens = numpy.sqrt(self._profile.contigLengths)
             if keep is not None:
                 disp_lens = disp_lens[keep]
         else:

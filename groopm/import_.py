@@ -54,27 +54,22 @@ from profileManager import ProfileManager
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-def run_import_bins(timer, dbFileName, binFile, separator):
-    pm = ProfileManager(dbFileName)
-    prof = pm.loadData(timer)
-    
-    bi = BinImporter(profile=prof)
-    bi.readBinAssignments(binFile,
-                          separator,
-                          out_pm=pm)
-
-                          
 class BinImporter:
     """Used for importing bin assignments"""
-    def __init__(self, profile):
-        self._profile = profile
+    def __init__(self,
+                 dbFileName):
+        self._pm = ProfileManager(dbFileName)
+        
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer)
         
     def importBinAssignments(self,
+                             timer,
                              infile,
-                             separator,
-                             out_pm):
-        """Parse fasta files for bin contigs"""
+                             separator):
+        """Parse assignment file for bin contigs"""
+        
+        profile = self.loadProfile(timer)
         br = BinReader()
         # looks like cid->bid
         contig_bins = {}
@@ -86,14 +81,16 @@ class BinImporter:
             raise
 
         # now get the internal indices for contigs
-        row_bin_assignments = {}
-        for (global_index, cid) in zip(self._profile.indices, self._profile.contigNames):
+        for (i, cid) in enumerate(profile.contigNames):
             try:
-                row_bin_assignments[global_index] = contig_bins[cid]
-            except IndexError:
-                row_bin_assignment[global_index] = 0
+                profile.binIds[i] = contig_bins[cid]
+            except KeyError:
+                pass
         
-        out_pm.setBinAssignments(row_bin_assignments, nuke=False)
+        # Now save all the stuff to disk!
+        print "Saving bins"
+        self._pm.setBinAssignments(profile, nuke=False)
+        print "    %s" % timer.getTimeStamp()
 
         
 class BinReader:   
@@ -116,7 +113,7 @@ class BinReader:
 # Utility
 class CSVReader:
     """Read tabular data from text files"""
-    def readCSV(self, fp, separtor):
+    def readCSV(self, fp, separator):
         for l in fp:
             yield line.rstrip().split(separator)
             

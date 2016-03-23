@@ -106,8 +106,6 @@ class Profile:
         `contigLengths[i]` is the length in bp of contig `i`.
     binIds: ndarray
         `binIds[i]` is the bin id assigned to contig `i`.
-    markers: Mapping
-        Instance of Mapping class for marker gene hits
         
     
     # metadata
@@ -117,6 +115,8 @@ class Profile:
         Names of stoits for each column of covProfiles array.
     numStoits: int
         Corresponds to number of columns of covProfiles array.
+    markers: Mapping
+        Instance of Mapping class for marker gene hits
     """
     pass
 
@@ -303,7 +303,7 @@ class MappingReader:
         reader = CSVReader()
         with open(infile, "r") as f:
             for l in f:
-                fields = reader.readCSV(f, separator)
+                fields = reader.readCSV(f, "\t")
 
                 con_names.append(fields[0])
                 con_markers.append(fields[1])

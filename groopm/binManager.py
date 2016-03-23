@@ -57,7 +57,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class BinQualityTool:
+class BinManager:
     """Class used for manipulating bins
     
     Wraps an array of bin ids
@@ -71,6 +71,11 @@ class BinQualityTool:
         self._profile = profile
         self._minSize = minSize
         self._minBP = minBP
+        
+    def getBinIndices(self, bids):
+        """Get indices for bins"""
+        self.checkBids(bids)
+        return np.flatnonzero(np.in1d(self._profile.binIds, bids))
         
     def checkBids(self, bids):
         """Check if bids are valid"""

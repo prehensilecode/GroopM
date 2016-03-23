@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    groopmUtils.py                                                           #
+#    extract.py                                                               #
 #                                                                             #
-#    Classes for non-clustering data manipulation and output                  #
+#    Classes for data extraction                                              #
 #                                                                             #
 #    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
@@ -53,6 +53,7 @@ import sys
 import errno
 
 from profileManager import ProfileManager
+from binManager import BinManager
 from bamm.bamExtractor import BamExtractor as BMBE
 
 
@@ -64,36 +65,38 @@ from bamm.bamExtractor import BamExtractor as BMBE
 class BinExtractor:
     """Used for extracting reads and contigs based on bin assignments"""
     def __init__(self, dbFilename,
-                 bids=[],
                  folder='',
                  ):
         self.dbFileName = dbFileName
         self._pm = ProfileManager(self.dbFilename)
-        self._bids = [] if bids is None else bids
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         makeSurePathExists(self._outDir)
 
-    def loadData(self, timer, cutoff=0):
-        self._pm.loadData(timer,
-                          loadBins=True,
-                          bids=self._bids,
-                          minLength=cutoff
-                         )
+    def loadProfle(self, timer, bids=[], cutoff=0):
+        bids = [] if bids is None else bids
+        return self._pm.loadData(timer,
+                                 loadBins=True,
+                                 bids=bids,
+                                 minLength=cutoff
+                                )
 
     def extractContigs(self,
                        timer,
+                       bids=[],
                        fasta=[],
                        prefix='',
                        cutoff=0):
         """Extract contigs and write to file"""
-        self.loadData(timer, cutoff=cutoff)
-        bm = BinManager(self._pm)
+        
         if prefix is None or prefix == '':
             prefix=os.path.basename(self.dbFileName) \
                             .replace(".gm", "") \
                             .replace(".sm", "")
-
+                            
+        profile = self.loadProfile(timer, bids, cutoff)
+        bm = BinManager(profile)
+        
         # load all the contigs which have been assigned to bins
         cp = ContigParser()
         # contigs looks like cid->seq
@@ -112,7 +115,7 @@ class BinExtractor:
                     print "Error when guessing contig file mimetype"
                     raise
                 with gm_open(file_name, "r") as f:
-                    contigs = cp.getWantedSeqs(f, self._pm.contigNames, storage=contigs)
+                    contigs = cp.getWantedSeqs(f, profile.contigNames, storage=contigs)
         except:
             print "Could not parse contig file:",fasta[0],sys.exc_info()[0]
             raise
@@ -123,7 +126,7 @@ class BinExtractor:
             file_name = os.path.join(self._outDir, "%s_bin_%d.fna" % (prefix, bid))
             try:
                 with open(file_name, 'w') as f:
-                    for cid in self._pm.contigNames[bm.getBinIndices(bid)]:
+                    for cid in profile.contigNames[bm.getBinIndices(bid)]:
                         if(cid in contigs):
                             f.write(">%s\n%s\n" % (cid, contigs[cid]))
                         else:
@@ -134,6 +137,7 @@ class BinExtractor:
 
     def extractReads(self,
                      timer,
+                     bids=[],
                      bams=[],
                      prefix="",
                      mixBams=False,
@@ -152,8 +156,8 @@ class BinExtractor:
 
         All logic is handled by BamM <- soon to be wrapped by StoreM"""
         # load data
-        self.loadData()
-        bm = BinManager(self._pm)   # bins
+        profile = self.loadProfile(timer, bids)
+        bm = BinManager(profile) # bins
 
         print "Extracting reads"
 
@@ -163,7 +167,7 @@ class BinExtractor:
         for bid in bm.getBids():
             group_names.append("BIN_%d" % bid)
             row_indices = bm.getBinIndices(bid)
-            targets.append(list(self._pm.contigNames[row_indices]))
+            targets.append(list(profile.contigNames[row_indices]))
 
         # get something to parse the bams with
         bam_parser = BMBE(targets,

@@ -55,44 +55,48 @@ import operator
 # local imports
 import distance
 import corre
-from bin import BinManager
-from partition import MarkerPartitionTool
+from hierarchy import ClassificationCoherenceClusterTool
+from binManager import BinManager
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-def run_cluster_engine(timer,
-                       dbFileName,
-                       markerFileName,
-                       minSize,
-                       minBP,
-                       minLength,
-                       force=False):
-    pm = ProfileManager(dbFileName, markerFileName)
-    # check that the user is OK with nuking stuff...
-    if not force and not pm.promptOnOverwrite():
-        return
+class CoreCreator:
+    def __init__(self, dbFileName, markerFileName):
+        self._pm = ProfileManager(dbFileName, markerFileName)
         
-    profile = pm.loadData(timer, minLength=minLength)
-    ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
-    
-    # cluster and bin!
-    print "Create cores"
-    ce.makeBins(out_bins=profile.binIds)
-    print "    %s" % timer.getTimeStamp()
-    
-    bt = BinQualityTool(profile, minSize=minSize, minBP=minBP)
-    bt.unbinLowQualityAssignments(out_bins=profile.binIds)
+    def loadProfile(timer, minLength):
+        return self._pm.loadData(timer, minLength=minLength)
+        
+    def run(self,
+            timer,
+            minSize,
+            minBP,
+            minLength,
+            force=False):
+        # check that the user is OK with nuking stuff...
+        if not force and not self._pm.promptOnOverwrite():
+            return
+            
+        profile = self.loadProfile(timer, minLength)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
+        
+        # cluster and bin!
+        print "Create cores"
+        ce.makeBins(out_bins=profile.binIds)
+        print "    %s" % timer.getTimeStamp()
+        
+        bm = BinManager(profile, minSize=minSize, minBP=minBP)
+        bm.unbinLowQualityAssignments(out_bins=profile.binIds)
 
-    # Now save all the stuff to disk!
-    print "Saving bins"
-    pm.setBinAssignments(profile, nuke=True)
-    print "    %s" % timer.getTimeStamp()
+        # Now save all the stuff to disk!
+        print "Saving bins"
+        self._pm.setBinAssignments(profile, nuke=True)
+        print "    %s" % timer.getTimeStamp()
+
         
-        
-## Algorithms
 class HybridHierachicalClusterEngine:
     """Hybrid hierarchical clustering algorthm"""
     def makeBins(self, out_bins):
@@ -104,16 +108,15 @@ class HybridHierachicalClusterEngine:
         Z = sp_hierarchy.average(dists)
         out_bins[...] = self.fcluster(Z)
             
-    def setup(self):
-        pass
+    def setup(self): pass #subclass to overrride
             
     def distances(self):
-        # computes pairwise distances of observations
-        pass
+        """computes pairwise distances of observations"""
+        pass #subclass to override
         
     def fcluster(self, Z):
-        # finds flat clusters from linkage matrix
-        pass
+        """finds flat clusters from linkage matrix"""
+        pass #subclass to override
         
         
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
@@ -204,16 +207,15 @@ class MediodsClusterEngine:
 
         print " %d bins made." % bin_counter
         
-    def setup():
-        pass
+    def setup(): pass #subclass to override
         
     def recruit(self, mediod, putative_members):
-        # recruit contigs close to a mediod contig
-        pass
+        """recruit contigs close to a mediod contig"""
+        pass #subclass to override
         
     def mediod(self, indices):
-        # computes pairwise distances of observations
-        pass
+        """computes pairwise distances of observations"""
+        pass #subclass to override
         
         
 class FeatureRankCorrelationClusterEngine(MediodsClusteringEngine):

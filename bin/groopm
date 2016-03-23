@@ -158,10 +158,6 @@ class parse_command_configure:
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in data parsing mode..." % __version__
         print "*******************************************************************************"
-        # check this here:
-        if len(options.bamfiles) < 3:
-            print "Sorry, You must supply at least 3 bamFiles to use GroopM. (You supplied %d)\n Exiting..." % len(options.bamfiles)
-            return
         dm = groopm.DataManager()
         success = dm.createDB(
             options.bamfiles,
@@ -172,7 +168,7 @@ class parse_command_configure:
             force=options.force,
             threads=options.threads)
         if not success:
-            print options.dbname,"not updated"
+            print dbFileName,"not updated"
             
             
 class core_command_configure:
@@ -180,6 +176,7 @@ class core_command_configure:
     
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
         parser.add_argument('-s', '--size', type=int, default=10, help="minimum number of contigs which define a core")
         parser.add_argument('-b', '--bp', type=int, default=1000000, help="cumulative size of contigs which define a core regardless of number of contigs")
@@ -191,14 +188,12 @@ class core_command_configure:
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
-
-        run_cluster_engine(timer,
-                           options.dbname,
-                           options.markerFile,
-                           minSize=options.size,
-                           minBP=options.bp,
-                           minLength=options.cutoff,
-                           force=options.force)
+        cc = groopm.CoreCreator(options.dbname, options.markerfile)
+        cc.run(timer,
+               minSize=options.size,
+               minBP=options.bp,
+               minLength=options.cutoff,
+               force=options.force)
         
         
 class extract_command_configure:
@@ -241,17 +236,18 @@ class extract_command_configure:
         if options.bids is not None:
             bids = options.bids
         bx = groopm.BinExtractor(options.dbname,
-                                 bids=bids,
                                  folder=options.out_folder
                                 )
         if(options.mode=='contigs'):
             bx.extractContigs(timer,
+                              bids=bids,
                               fasta=options.data,
                               prefix=options.prefix,
                               cutoff=options.cutoff)
 
         elif(options.mode=='reads'):
             bx.extractReads(timer,
+                            bids=bids,
                             bams=options.data,
                             prefix=options.prefix,
                             mixBams=options.mix_bams,
@@ -330,10 +326,10 @@ class import_command_configure:
         else:
             separator = options.separator
 
-        run_import_bins(timer,
-                        options.dbname,
-                        options.infile,
-                        separator)
+        bi = groopm.BinImporter(options.dbname)
+        bi.importBinAssignments(timer,
+                                options.infile,
+                                separator)
 
 class plot_command_configure:
     description="Plot contigs in coverage vs kmer distance space"
