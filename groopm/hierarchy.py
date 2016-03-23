@@ -53,7 +53,7 @@ import scipy.spatial.distance as sp_distance
 
 # local imports
 import distance
-from Classification import ClassificationManager
+from classification import ClassificationManager
 
 np.seterr(all='raise')
 
@@ -268,9 +268,8 @@ def filter_descendents(Z, indices):
     Z = np.asarray(Z)
     n = Z.shape[0] + 1
     indices = set(indices)
-    
     outarr = []
-    stack = [2*n - 1]
+    stack = [2*n - 2]
     while True:
         if len(stack) == 0:
             break
@@ -283,7 +282,7 @@ def filter_descendents(Z, indices):
             continue
         stack.extend(Z[j,:2].astype(int))
         
-    return np.array(outarr)
+    return np.sort(outarr)
         
 
 def maxcoeffs(Z, coeffs):
@@ -319,7 +318,7 @@ def maxcoeffs(Z, coeffs):
     for i in range(n-1):
         outarr[n+i] = np.maximum(outarr[n+i], outarr[Z[i,:2].astype(int)].max())
     
-    return outarr[:n]
+    return outarr[n:]
     
     
 def height(Z):
@@ -327,7 +326,7 @@ def height(Z):
     """
     Z = np.copy(Z)
     Z[:, 2] = np.arange(Z.shape[0])
-    return sp_hierachy.cophenet(Z)
+    return sp_hierarchy.cophenet(Z)
 
 
 ###############################################################################

@@ -57,71 +57,6 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-class FeatureDistanceTool:
-    """Computes euclidean distance between pairs of observations in feature
-    spaces.
-    
-    Parameters
-    ----------
-    Xs : sequence of ndarrays
-        A sequence of matrices with `m` rows corresponding to observations.
-    """
-    def __init__(self, Xs):
-        self._Xs = tuple([np.asarray(X) for X in Xs])
-        ns = [X.shape[0] for X in self._Xs]
-        if np.any(ns != ns[0]):
-            raise ValueError("Input arrays must have equal numbers of rows.")
-        self._nobs = ns[0]
-            
-    def num_obs(self):
-        return self._nobs
-        
-    def pdist(self, idx=None):
-        if idx is None:
-            idx = slice(None)
-        return np.transpose([sp_distance.pdist(X[idx], metric="euclidean") for X in self._Xs])
-        
-    def cdist(self, idxA, idxB=None):
-        if idxB is None:
-            idxB = slice(None)
-        return np.dstack([sp_distance.cdist(X[idxA], X[idxB], metric="euclidean") for X in self._Xs])
-
-
-class FeatureGlobalDistanceRankTool:
-    """Computes global rank of distances between pairs of observations in feature
-    spaces.
-    
-    Parameters
-    ----------
-    Ys : sequence of ndarray
-        A sequence of 1-D arrays of length `m` corresponding to condensed
-        distance matrices in feature spaces.
-    weights : ndarray, optional
-        A 1-D array of length `m` containing pairwise observation weights in
-        condensed form.
-    """
-    def __init__(self, Ys, weights=None):
-        Ys = np.transpose(Ys)
-        self._ranks = distance.argrank_weighted(Ys, weights=weights, axis=0)
-        self._nobs = num_obs_for_condensed(self._ranks)
-        
-    def num_obs(self):
-        return self._nobs
-        
-    def pdist(self, idx=None):
-        if idx is None:
-            return self._ranks
-        cond_idx = pcoords(idx, self._nobs)
-        return np.where(cond_idx==-1, 0, self._ranks[cond_idx])
-        
-    def cdist(self, idxA, idxB=None):
-        if idxB is None:
-            idxB = np.arange(self._nobs)
-        cond_idx = ccords(idxA, idxB, self._nobs)
-        return np.where(cond_idx==-1, 0, self._ranks[cond_idx])
-        
-        
 def mediod(Y):
     """Get member index that minimises the sum distance to other members
 
@@ -137,26 +72,25 @@ def mediod(Y):
         Mediod observation index.
     """
     # for each member, sum of distances to other members
-    index = np.squareform(Y).sum(axis=1).argmin()
+    index = sp_distance.squareform(Y).sum(axis=1).argmin()
 
     return index
 
                 
 def pcoords(idx, n):
-    (rows, cols) = np.ix_(idx, idx)
-    iu = np.triu_indices(len(idx))
-    return squareform_coords(rows[iu], cols[iu], n)
+    (iu, ju) = np.triu_indices(len(idx), k=1)
+    return _squareform_index(idx[iu], idx[ju], n)
   
   
 def ccoords(idxA, idxB, n):
     (rows, cols) = np.ix_(idxA, idxB)
-    return squareform_coords(rows, cols, n)
+    return _squareform_index(rows, cols, n)
 
     
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if weights is None:
-        return numpy.apply_along_axis(_rank_with_ties, axis, array)
+        return np.apply_along_axis(_rank_with_ties, axis, array)
     else:
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, (array, weights))
  
@@ -191,16 +125,6 @@ def _rank_with_ties(a, weights=None):
     r[sorting_index] = sr[iflag]
     r = r.reshape(shape)
     return r
- 
-
-# Utility
-def num_obs_for_condensed(Y):
-    """Number of original observations in condensed distance matrix."""
-    m = Y.shape[0]
-    d = np.ceil(np.sqrt(2*m))
-    if m != d * (d-1) // 2:
-        raise ValueError("Argument is not a valid condensed distance matrix.")
-    return d
     
     
 # Utility
@@ -232,7 +156,7 @@ def multi_apply_along_axis(func1d, axis, tup, *args, **kwargs):
         `arr`.
     """
     tup = [np.asarray(t) for t in tup]
-    ns = [t.shape[axis] for t in tup]
+    ns = np.array([t.shape[axis] for t in tup])
     a = np.concatenate(tup, axis=axis)
     edges = np.concatenate(([0, ], ns.cumsum()))
     
@@ -240,11 +164,11 @@ def multi_apply_along_axis(func1d, axis, tup, *args, **kwargs):
         splits = tuple([arr[s:e] for (s, e) in zip(edges[:-1], edges[1:])])
         return func1d(splits, *args, **kwargs)
         
-    return numpy.apply_along_axis(multi_func1d, axis, a)
+    return np.apply_along_axis(multi_func1d, axis, a)
         
     
 # Utility
-def squareform_index(i, j, n):
+def _squareform_index(i, j, n):
     """Returns indices in a condensed matrix corresponding to input
     coordinates, or -1 for diagonal elements.
     
@@ -279,8 +203,13 @@ def squareform_index(i, j, n):
     - - - i + j ...
     """
     if not np.all(i < n) or not np.all(j < n) or np.any(i < 0) or np.any(j < 0):
-        raise IndexError("Indices must be between 0 and %s-1." % n)
-    return np.where(i==j, -1, n * i - i * (i + 1) // 2 + j - i -1)
+        raise IndexError("Indices must be between 0 and %s." % n-1)
+    
+    # must have row < col
+    ii = np.where(j < i, j, i)
+    jj = np.where(i > j, i, j)
+    #return np.where(ii==jj, -1, n*(n-1)//2 - (n-ii)*(n-ii-1)//2 + jj-ii-1)
+    return np.where(ii==jj, -1, n*ii - ii*(ii+1)//2 + jj-ii-1)
 
     
 ###############################################################################

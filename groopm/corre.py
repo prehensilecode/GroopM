@@ -47,87 +47,30 @@ __email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
 
-import numpy
-import scipy.stats as stats
+import numpy as np
+import scipy.stats as sp_stats
 
-numpy.seterr(all='raise')
+np.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-
-#------------------------------------------------------------------------------
-#Ranking
-
-def rankWithTies(array):
-    """Return sorted of array indices with tied values averaged"""
-    ranks = numpy.asarray(numpy.argsort(numpy.argsort(array)), dtype=float)
-    for val in set(array):
-        g = array == val
-        ranks[g] = numpy.mean(ranks[g])
-    return ranks
-
-
-def argrank(array, axis=0):
-    """Return the positions of elements of a when sorted along the specified axis"""
-    return numpy.apply_along_axis(rankWithTies, axis, array)
-
-#------------------------------------------------------------------------------
-#Rank correlation testing
-
-def getInsidePNull(ranks):
-    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
-    ranks = numpy.asarray(ranks, dtype=float)
-    (_num_dims, num_points) = ranks.shape
-    counts = getInsideCount(ranks)
-
-    # For a point with ranks r, the probability of another point having a
-    # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
-    # maximum rank, equal to the total number of points.
-    r_max = num_points - 1
-    p_inside = numpy.prod(ranks / r_max, axis=0)
-
-    # Statistical test counts
-    return binomOneTailedTest(counts, r_max, p_inside)
-
-def getOutsidePNull(ranks, inners):
-    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
-    ranks = numpy.asarray(ranks, dtype=float)
-    (_num_dims, num_points) = ranks.shape
-    outer_points = getBoundingPoints(ranks[:, inners], ranks)
-    counts = getOutsideCount(ranks, ranks[:, inners], outer_points=outer_points)
-
-    # For a pair of points r, s the probability of a point with all ranks
-    # at least as low as r and higher s is
-    # `prod(r / r_max) - prod(s / r_max)` where r_max is the highest rank,
-    # equal to the total number of points
-    r_max = num_points - 1
-    p_outside = numpy.prod(outer_points / r_max, axis=0) - numpy.prod(ranks[:, inners] / r_max, axis=0)
-
-    # Statistical test counts
-    return binomOneTailedTest(counts, r_max, p_outside)
-
-def binomOneTailedTest(counts, ns, ps):
-    """Test counts against one-tailed binomial distribution"""
-    return numpy.array([stats.binom.sf(c-1, n, p) for (c, n, p) in numpy.broadcast(counts, ns, ps)])
-
 
 #------------------------------------------------------------------------------
 #Point counting
 
 def getInsideCount(data, points=None):
     """For each data point return the number of data points that have lower value in all dimensions"""
-    data = numpy.asarray(data)
+    data = np.asarray(data)
     if points is None:
         points = data
-    points = numpy.asarray(points)
+    points = np.asarray(points)
     (_num_dims, num_points) = points.shape
-    counts = numpy.empty(num_points, dtype=int)
+    counts = np.empty(num_points, dtype=int)
     for i in range(num_points):
-        is_inside = numpy.all([d <= c for (c, d) in zip(points[:, i], data)], axis=0)
-        counts[i] = numpy.count_nonzero(is_inside) - 1 # discount origin
+        is_inside = np.all([d <= c for (c, d) in zip(points[:, i], data)], axis=0)
+        counts[i] = np.count_nonzero(is_inside) - 1 # discount origin
 
     return counts
 
@@ -150,11 +93,50 @@ def getBoundingPoints(a_points, b_points):
     swap = num_b_points > num_a_points
     (first, second, num_first, num_second) = (b_points, a_points, num_b_points, num_a_points) if num_b_points > num_a_points else (a_points, b_points, num_a_points, num_b_points)
 
-    bounds = numpy.empty_like(first)
-    for (i, j) in numpy.broadcast(range(num_first), range(num_second)):
-        bounds[:, i] = numpy.maximum(first[:, i], second[:, j])
+    bounds = np.empty_like(first)
+    for (i, j) in np.broadcast(range(num_first), range(num_second)):
+        bounds[:, i] = np.maximum(first[:, i], second[:, j])
 
     return bounds
+    
+#------------------------------------------------------------------------------
+#Rank correlation testing
+
+def getInsidePNull(ranks):
+    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
+    ranks = np.asarray(ranks, dtype=float)
+    (_num_dims, num_points) = ranks.shape
+    counts = getInsideCount(ranks)
+
+    # For a point with ranks r, the probability of another point having a
+    # lower rank in all dimensions is `prod(r / r_max)` where r_max is the
+    # maximum rank, equal to the total number of points.
+    r_max = num_points - 1
+    p_inside = np.prod(ranks / r_max, axis=0)
+
+    # Statistical test counts
+    return binomOneTailedTest(counts, r_max, p_inside)
+
+def getOutsidePNull(ranks, inners):
+    """For each data point return the probability in uncorrelated data of having at least as high inner point count"""
+    ranks = np.asarray(ranks, dtype=float)
+    (_num_dims, num_points) = ranks.shape
+    outer_points = getBoundingPoints(ranks[:, inners], ranks)
+    counts = getOutsideCount(ranks, ranks[:, inners], outer_points=outer_points)
+
+    # For a pair of points r, s the probability of a point with all ranks
+    # at least as low as r and higher s is
+    # `prod(r / r_max) - prod(s / r_max)` where r_max is the highest rank,
+    # equal to the total number of points
+    r_max = num_points - 1
+    p_outside = np.prod(outer_points / r_max, axis=0) - np.prod(ranks[:, inners] / r_max, axis=0)
+
+    # Statistical test counts
+    return binomOneTailedTest(counts, r_max, p_outside)
+
+def binomOneTailedTest(counts, ns, ps):
+    """Test counts against one-tailed binomial distribution"""
+    return np.array([sp_stats.binom.sf(c-1, n, p) for (c, n, p) in np.broadcast(counts, ns, ps)])
 
 #------------------------------------------------------------------------------
 #Containment graph edges
@@ -170,16 +152,16 @@ class ContainmentFinder:
     the second.
     """
     def __init__(self, data):
-        data = numpy.asarray(data)
+        data = np.asarray(data)
 
-        sort_order = numpy.argsort(-data[0])
+        sort_order = np.argsort(-data[0])
         data = data[:, sort_order]
 
         # dummy point with highest value in all dimensions
-        dummy = numpy.reshape(numpy.max(data, axis=1)+1, (-1,1))
-        data = numpy.hstack((dummy, data))
+        dummy = np.reshape(np.max(data, axis=1)+1, (-1,1))
+        data = np.hstack((dummy, data))
 
-        self._index2data = numpy.concatenate(([None], sort_order))
+        self._index2data = np.concatenate(([None], sort_order))
         self._data = data
         self._size = data.shape[1]
         self._links = {}
@@ -194,7 +176,7 @@ class ContainmentFinder:
         dimension, which is guaranteed to form a containment pair with the original point.
         """
         for j in range(i, self._size):
-            if not is_contained[j] and numpy.all(self._data[:, j] < self._data[:, i]):
+            if not is_contained[j] and np.all(self._data[:, j] < self._data[:, i]):
                 return j
         return None
 
@@ -204,14 +186,14 @@ class ContainmentFinder:
         are none), we find another contained point if any exist, or we have covered all points
         inside the selected point.
         """
-        is_contained = numpy.zeros(self._size, dtype=bool)
+        is_contained = np.zeros(self._size, dtype=bool)
         links = []
         while(True):
             j = self._nextInside(i, is_contained)
             if j is None:
                 break # we're done
 
-            is_contained = numpy.logical_or(is_contained, self._recursiveGetContained(j))
+            is_contained = np.logical_or(is_contained, self._recursiveGetContained(j))
             links.append(self._index2data[j])
 
         self._links[self._index2data[i]] = links

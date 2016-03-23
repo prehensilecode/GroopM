@@ -26,7 +26,7 @@ __email__ = "tim.lamberton@gmail.com"
 
 # system imports
 from tools import assert_equal_arrays, assert_almost_equal_arrays
-import numpy
+import numpy as np
 import itertools
 from groopm.corre import (getInsideCount,
                           getBoundingPoints,
@@ -34,24 +34,21 @@ from groopm.corre import (getInsideCount,
                           binomOneTailedTest,
                           getInsidePNull,
                           getOutsidePNull,
-                          argrank,
                           ContainmentFinder)
 
 ###############################################################################
-#Utility functions
 ###############################################################################
-
-#------------------------------------------------------------------------------
-#Point counting
+###############################################################################
+###############################################################################
 
 def test_get_count():
     # Four point configuration
-    points = numpy.array([[1, 0, 3, 2], [3, 0, 2, 1]])
+    points = np.array([[1, 0, 3, 2], [3, 0, 2, 1]])
     assert_equal_arrays(getInsideCount(points),
                         [1, 0, 2, 1],
                         "count number of points inside each point bounds")
 
-    assert_equal_arrays(getInsideCount(points, points=numpy.array([[2], [3]])),
+    assert_equal_arrays(getInsideCount(points, points=np.array([[2], [3]])),
                         [2],
                         "return count of points inside `points` bounds")
 
@@ -67,8 +64,6 @@ def test_get_count():
                         [0, 0, 2, 1],
                         "return counts of points between each point and corresponding `points` bounds")
 
-#------------------------------------------------------------------------------
-#Rank correlation testing
 
 def test_binom_one_tailed_test():
 
@@ -86,15 +81,15 @@ def test_binom_one_tailed_test():
                                "return binomial probabilities for an array of trial successes")
 
     # inisde
-    points = numpy.array([[1, 0, 3, 2], [3, 0, 2, 1]])
-    p_in = numpy.array([3, 0, 6, 2], dtype=float) / 9
+    points = np.array([[1, 0, 3, 2], [3, 0, 2, 1]])
+    p_in = np.array([3, 0, 6, 2], dtype=float) / 9
     p_out = 1 - p_in
-    p_in_n_of_three = numpy.array([p_out*p_out*p_out,  # 0 of 3
+    p_in_n_of_three = np.array([p_out*p_out*p_out,  # 0 of 3
                                    3*p_in*p_out*p_out, # 1 of 3
                                    3*p_in*p_in*p_out,  # 2 of 3
                                    p_in*p_in*p_in])    # 3 of 3
 
-    counts = numpy.array([1, 0, 2, 1])
+    counts = np.array([1, 0, 2, 1])
     assert_almost_equal_arrays(binomOneTailedTest(counts, 3, p_in),
                                [sum(p_in_n_of_three[c:, i]) for (i, c) in enumerate(counts)],
                                "return binomial probabilities for an array of trial probabilties")
@@ -104,42 +99,19 @@ def test_binom_one_tailed_test():
                                "return binomial test probabilities of correlations of a set of ranks")
 
     # outside
-    points = numpy.array([[1, 0, 3, 2], [3, 0, 2, 1]])
-    bouding_points = numpy.array([[1, 1, 3, 2], [3, 3, 3, 3]])
-    p_between_0 = numpy.array([0, 0, 6, 3], dtype=float) / 9
-    counts = numpy.array([0, 0, 2, 1])
+    points = np.array([[1, 0, 3, 2], [3, 0, 2, 1]])
+    bouding_points = np.array([[1, 1, 3, 2], [3, 3, 3, 3]])
+    p_between_0 = np.array([0, 0, 6, 3], dtype=float) / 9
+    counts = np.array([0, 0, 2, 1])
     assert_almost_equal_arrays(getOutsidePNull(points, [0]),
                                binomOneTailedTest(counts, 3, p_between_0),
                                "return binomial test probabilities of correlations of a rank subrange")
 
-#------------------------------------------------------------------------------
-#Ranking
-
-def test_argrank():
-    assert_equal_arrays(argrank([5, 3, 4, 8]),
-                       [2, 0, 1, 3],
-                       "`argrank` returns integer rank of values in one-dimensional array")
-
-    assert_equal_arrays(argrank([5, 3, 8, 8]),
-                        [1, 0, 2.5, 2.5],
-                        "`argrank` returns mean of tied ranks")
-
-    arr2d = numpy.array([[1, 10, 5, 2], [1, 4, 6, 2], [5, 5, 3, 10]])
-    ranks2d = numpy.array([[0, 3, 2, 1], [0, 2, 3, 1], [1.5, 1.5, 0, 3]])
-    assert_equal_arrays(argrank(arr2d, axis=1),
-                        ranks2d,
-                        "`argrank(..,axis=1)` returns ranks along rows of 2-d array")
-    assert_equal_arrays(argrank(arr2d.T, axis=0),
-                        ranks2d.T,
-                        "`argrank(..,axis=0)` returns ranks along columns of 2-d array")
-
-#------------------------------------------------------------------------------
-#Containment graph edges
-
+                               
 def test_containment_finder():
 
     # 2D
-    data = numpy.array([[3, 2, 1, 4],
+    data = np.array([[3, 2, 1, 4],
                         [4, 1, 2, 3]])
     edges = [[None,0],
              [None,3],
@@ -154,7 +126,7 @@ def test_containment_finder():
                         "computes containment pairs in 2 dimensions")
 
     # 3D
-    data = numpy.array([[3,1,2,0],
+    data = np.array([[3,1,2,0],
                         [1,1,2,0],
                         [1,1,2,0]])
     edges = [[None,0],
@@ -167,7 +139,6 @@ def test_containment_finder():
     assert_equal_arrays(pairs,
                         edges,
                         "computes containment pairs in 3 dimensions")
-
 
 
 ###############################################################################

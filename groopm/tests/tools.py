@@ -23,52 +23,20 @@ __maintainer__ = "Tim Lamberton"
 __email__ = "tim.lamberton@gmail.com"
 
 ###############################################################################
-# system imports
 from nose.tools import assert_true
-import numpy
+import numpy as np
 
-#------------------------------------------------------------------------------
-#Utilities
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 
 def assert_equal_arrays(a, b, message):
-    return assert_true(numpy.all(numpy.asarray(a) == numpy.asarray(b)), message)
+    return assert_true(np.all(np.asarray(a) == np.asarray(b)), message)
 
+    
 def assert_almost_equal_arrays(a, b, message):
-    return assert_true(numpy.all(numpy.around(a, 6) == numpy.around(b, 6)), message)
-
-#------------------------------------------------------------------------------
-#Dummy classes
-
-class DummyProfileManager:
-    """Dummy profile values"""
-    def __init__(self,
-                 indices,
-                 covProfiles,
-                 kmerSigs,
-                 contigGCs,
-                 contigNames,
-                 contigLengths,
-                 binIds,
-                 stoitNames):
-
-        (numContigs, numStoits) = numpy.shape(covProfiles)
-        normCoverages = numpy.linalg.norm(covProfiles, axis=1)
-
-        self.indices = indices
-        self.covProfiles = covProfiles
-        self.kmerSigs = kmerSigs
-        self.normCoverages = normCoverages
-        self.contigGCs = contigGCs
-        self.contigNames = contigNames
-        self.contigLengths = contigLengths
-        self.binIds = binIds
-
-        self.numContigs = numContigs
-        self.stoitNames = stoitNames
-        self.numStoits = numStoits
-
-
-
+    return assert_true(np.all(np.around(a, 6) == np.around(b, 6)), message)
 
 ###############################################################################
 ###############################################################################

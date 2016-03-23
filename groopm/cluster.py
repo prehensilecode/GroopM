@@ -54,7 +54,7 @@ import operator
 
 # local imports
 import distance
-import corre
+import recruit
 from hierarchy import ClassificationCoherenceClusterTool
 from binManager import BinManager
 
@@ -231,7 +231,7 @@ class FeatureRankCorrelationClusterEngine(MediodsClusteringEngine):
         
     def recruit(self, origin, putative_members):
         (covRanks, kmerRanks) = tuple(distance.argrank(sp_distance.cdist(f[[origin]], f, metric="euclidean")[0]) for f in self._features)
-        return corre.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
+        return recruit.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
         
 
 ###############################################################################
