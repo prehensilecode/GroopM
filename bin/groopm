@@ -341,9 +341,7 @@ class plot_command_configure:
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", default=False, help="interatcive plot first bin or contig id")
-        parser.add_argument('--ranks', action="store_true", default=False, help="plot variable ranks")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
-        parser.add_argument('--highlight', default="cluster", choices=["cluster", "mergers"], help="choose how to highlight contigs")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
         parser.set_defaults(run=self)
 
@@ -358,10 +356,7 @@ class plot_command_configure:
                                   folder=None if options.interactive else options.out_folder)
         bplot.plot(timer,
                    bids=options.bids,
-                   origin_mode=options.origin,
-                   highlight_mode=options.highlight,
-                   threshold=0.5,
-                   plotRanks=options.ranks,
+                   origin=options.origin,
                    colorMap=options.colormap,
                    prefix=options.prefix)
                    

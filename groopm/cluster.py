@@ -130,8 +130,8 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         
     def setup(self):
         feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
-        weights = sp_distance.pdist(self._profile.contigLengths, operator.mul)
-        feature_ranks = distance.argrank_weighted(feature_distances, weights=weights, axis=1)
+        weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        feature_ranks = distance.argrank(feature_distances, weights=weights, axis=1)
         self._hybrid_ranks = np_linalg.norm(feature_ranks, axis=0)
         
     def distances(self):

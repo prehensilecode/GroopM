@@ -66,6 +66,132 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 
+class FeaturePlotter:
+    projection = None
+    
+    def plot(self, fileName=""):
+        # plot contigs in coverage space
+        fig = plt.figure()
+
+        ax = fig.add_subplot(111, projection=self.projection)
+        self.plotOnAx(ax)
+
+
+        if(fileName != ""):
+            try:
+                fig.set_size_inches(15,15)
+                plt.savefig(fileName,dpi=300)
+            except:
+                print "Error saving image:", fileName, sys.exc_info()[0]
+                raise
+        else:
+            print "Plotting contig features"
+            try:
+                plt.show()
+            except:
+                print "Error showing image", sys.exc_info()[0]
+                raise
+
+        plt.close(fig)
+        del fig
+        
+    def plotOnAx(self, ax):
+        pass
+
+
+class FeaturePlotter3D(FeaturePlotter):
+    projection = '3d'
+    
+    
+# Plot types
+class ScatterPlotterMixin:
+    x = None
+    y = None
+    z = None
+    colours = None
+    sizes = None
+    edgecolours = None
+    colourmap = None
+    xlabel = ""
+    ylabel = ""
+    zlabel = ""
+    
+    def plotOnAx(self, ax):
+        
+        coords = (self.x, self.y)
+        if self._z is not None:
+            coords += (self.z,)
+        sc = ax.scatter(*coords,
+                        c=self.colours, s=self.sizes,
+                        cmap=self.colourmap,
+                        vmin=0., vmax=1., marker='.')
+        sc.set_edgecolors(self.edgecolours)
+        sc.set_edgecolors = sc.set_facecolors = lambda *args:None
+        
+        ax.set_xlabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
+        if self.z is not None:
+            ax.set_zlabel(self.zlabel)
+        
+        
+class ScatterPlotter(ScatterPlotterMixin, FeaturePlotter): pass
+
+
+class ScatterPlotter3D(ScatterPlotterMixin, FeaturePlotter3D): pass
+  
+# Bin plotters
+class BinDistancePlotter:
+    def __init__(self, profile, colourmap='HSV'):
+        self._profile = profile
+        self._x = None
+        self._y = None
+        self._r = None
+        self._w = None
+        self._c = None
+        self._h = None
+        self._colourmap = getColorMap(colourmap)
+        
+    def setup(self):
+        x = sp_distance.pdist(self.pm.covProfiles, metric="euclidean")
+        y = sp_distance.pdist(self.pm.kmerPCs, metric="euclidean")
+        w = sp_distance.pdist(self.pm.contigLengths[:, None], operator.mul)
+        scale_factor = 1./w._sum()
+        self._x = distance.argrank(x, weights=w)*scale_factor
+        self._y = distance.argrank(y, weights=w)*scale_factor
+        self._w = w
+        self._c = sp_distance.pdist(self.pm.contigGCs[:, None], lambda a, b: (a+b)/2)
+        self._h = sp_distance.pdist(self.pm.binIds[:, None], lambda a, b: a!=0 and a==b).astype(bool)
+        
+    def plot(self,
+             bid,
+             origin,
+             fileName=""):
+        
+        n = self._profile.numContigs
+        bin_indices = BinManager(self._profile).getBinIndices(bid)
+        if origin=="mediod":
+            bin_squareform_indices = distance.pcoords(bin_indices, n)
+            origin = distance.mediod(np.linalg.norm((self._x[bin_squareform_indices], self._y[bin_squareform_indices]), axis=0))
+        elif origin=="max_coverage":
+            origin = np.argmax(self._profile.normCoverages[bin_indices])
+        elif origin=="max_length":
+            origin = np.argmax(self._profile.contigLengths[bin_indices])
+        else:
+            raise ValueError("Invalid `origin` argument parameter value: `%s`" % origin)
+        
+        indices = distance.ccoords(bin_indices[origin], np.arange(n), n)[0]
+        splot = ScatterPlotter()
+        splot.x = self._x[indices]
+        splot.y = self._y[indices]
+        splot.colours = self._c[indices]
+        splot.sizes = 20
+        splot.edgecolours = np.where(self._h[indices], 'r', 'k')
+        splot.colourmap = self._colourmap
+        splot.xlabel = "cov"
+        splot.ylabel = "kmer"
+        splot.plot(fileName)
+        
+        
 class BinPlotter:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, folder=None):
@@ -81,10 +207,7 @@ class BinPlotter:
     def plot(self,
              timer,
              bids=None,
-             origin_mode="mediod",
-             highlight_mode="mergers",
-             threshold=None,
-             plotRanks=False,
+             origin="mediod",
              colorMap="HSV",
              prefix="BIN"
             ):
@@ -97,220 +220,27 @@ class BinPlotter:
         else:
             bm.checkBids(bids)
 
-        fplot = FeaturePlotter(profile, colorMap=colorMap)
+        fplot = BinDistancePlotter(profile, colorMap=colorMap)
+        fplot.setup(timer)
+        print "    %s" % timer.getTimeStamp()
+        
         for bid in bids:
             fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
 
             fplot.plot(fileName=fileName,
-                       **makePlotArgs(pm=self._pm,
-                                      bid=bid,
-                                      origin_mode=origin_mode,
-                                      highlight_mode=highlight_mode,
-                                      threshold=threshold,
-                                      plotRanks=plotRanks))
+                       origin=origin,
+                       bid=bid)
+                       
             if fileName=="":
                 break
 
         print "    %s" % timer.getTimeStamp()
-        
-        
-class FeaturePlotter:
-    """Plot contigs in feature space"""
-    COLOURS = 'rbgcmyk'
-
-    def __init__(self, profile, colorMap="HSV"):
-        self._profile = profile
-        self._cm = getColorMap(colorMap)
-
-    def plot(self,
-             x, y,
-             x_label="", y_label="",
-             keep=None, highlight=None, divide=None,
-             plotContigLengths=False,
-             fileName=""
-            ):
-        """Plot contigs in measure space"""
-        fig = pyplot.figure()
-
-        ax = fig.add_subplot(111)
-        self.plotOnAx(ax, x, y,
-                      x_label=x_label, y_label=y_label,
-                      keep=keep, highlight=highlight,
-                      plotContigLengths=plotContigLengths)
-
-        if divide is not None:
-            for (clr, coords) in zip(self.COLOURS, divide):
-                fmt = '-'+clr
-                for (x_point, y_point) in zip(*coords):
-                    ax.plot([x_point, x_point], [0, y_point], fmt)
-                    ax.plot([0, x_point], [y_point, y_point], fmt)
-
-        if(fileName != ""):
-            try:
-                fig.set_size_inches(6,6)
-                pyplot.savefig(fileName,dpi=300)
-            except:
-                print "Error saving image:", fileName, sys.exc_info()[0]
-                raise
-        else:
-            print "Plotting contig features"
-            try:
-                pyplot.show()
-            except:
-                print "Error showing image", sys.exc_info()[0]
-                raise
-
-        pyplot.close(fig)
-        del fig
-
-    def plotSurface(self,
-                    x, y, z,
-                    x_label="", y_label="", z_label="",
-                    keep=None, highlight=None,
-                    plotContigLengths=False,
-                    elev=None, azim=None,
-                    fileName=""
-                   ):
-        """Plot a surface computed from coordinates in measure space"""
-        fig = pyplot.figure()
-
-        ax = fig.add_subplot(111, projection='3d')
-        self.plotOnAx(ax,
-                      x, y, z=z,
-                      x_label=x_label, y_label=y_label, z_label=label,
-                      keep=keep, highlight=highlight,
-                      plotContigLengths=plotContigLengths,
-                      elev=elev, azim=azim)
-
-        if(fileName != ""):
-            try:
-                fig.set_size_inches(6,6)
-                pyplot.savefig(fileName,dpi=300)
-            except:
-                print "Error saving image:", fileName, sys.exc_info()[0]
-                raise
-        else:
-            print "Plotting contig features"
-            try:
-                pyplot.show()
-            except:
-                print "Error showing image", sys.exc_info()[0]
-                raise
-
-        pyplot.close(fig)
-        del fig
-
-    def plotOnAx(self, ax,
-                 x, y, z=None,
-                 x_label="", y_label="", z_label="",
-                 keep=None, extents=None, highlight=None,
-                 plotContigLengths=False,
-                 elev=None, azim=None,
-                 colorMap="HSV"
-                ):
-
-        # display values
-        disp_vals = (x, y, z) if z is not None else (x, y)
-        disp_cols = self._profile.contigGCs
-
-        if highlight is not None:
-            edgecolors=numpy.full_like(disp_cols, 'k', dtype=str)
-            for (clr, hl) in zip(self.COLOURS, highlight):
-                edgecolors[hl] = clr
-            if keep is not None:
-                edgecolors = edgecolors[keep]
-        else:
-            edgecolors = 'k'
-
-        if plotContigLengths:
-            disp_lens = numpy.sqrt(self._profile.contigLengths)
-            if keep is not None:
-                disp_lens = disp_lens[keep]
-        else:
-            disp_lens=30
-
-        if keep is not None:
-            disp_vals = [v[keep] for v in disp_vals]
-            disp_cols = disp_cols[keep]
-
-        sc = ax.scatter(*disp_vals,
-                        c=disp_cols, s=disp_lens,
-                        cmap=self._cm,
-                        vmin=0.0, vmax=1.0,
-                        marker='.')
-        sc.set_edgecolors(edgecolors)
-        sc.set_edgecolors = sc.set_facecolors = lambda *args:None # disable depth transparency effect
-
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        if z is not None:
-            ax.set_zlabel(z_label)
-
-        if extents is not None:
-            ax.set_xlim([extents[0], extents[1]])
-            ax.set_ylim([extents[2], extents[3]])
-            if z is not None:
-                ax.set_zlim([extents[4], extents[5]])
-
-        if z is not None:
-            ax.view_init(elev=elev, azim=azim)
 
 
 ###############################################################################
 # Helpers
 ###############################################################################
-
-def makePlotArgs(pm, bid, origin_mode, highlight_mode, threshold, plotRanks):
-    """Compute plot feature values and labels"""
-
-    members = BinManager(pm).getBinIndices(bid)
-    origin = getOrigin(pm, origin_mode, members)
-    view = CoverageAndKmerView(pm, origin)
-    highlight = getHighlight(mode=highlight_mode,
-                             ranks=[view.covRanks, view.kmerRanks],
-                             threshold=threshold,
-                             members=members)
-    (x, y) = (view.covRanks, view.kmerRanks) if plotRanks else (view.covDists, view.kmerDists)
-    (x_label, y_label) = (view.covLabel, view.kmerLabel)
-    if plotRanks:
-        x_label += " rank"
-        y_label += " rank"
-
-    return {"x": x,
-            "y": y,
-            "x_label": x_label,
-            "y_label": y_label,
-            "highlight": highlight}
-
-
-def getHighlight(mode, ranks=None, threshold=None, members=None):
-    """"Get a tuple of sets of contigs to highlight.
-    """
-    if mode is None:
-        highlight = None
-    elif mode=="cluster":
-        highlight = (members,)
-    elif mode=="mergers":
-        highlight = (cluster.getMergers(ranks, threshold),)
-    else:
-        raise ValueError("Invalid mode: %s" % mode)
-
-    return highlight
-
-def getOrigin(pm, mode, members):
-    """Compute a view for a representative contig of a cluster"""
-
-    if mode=="mediod":
-        index = CoverageAndKmerDistanceTool(pm).getMediod(members)
-    elif mode=="max_coverage":
-        index = np.argmax(pm.normCoverages[members])
-    elif mode=="max_length":
-        index = np.argmax(pm.contigLengths[members])
-    else:
-        raise ValueError("Invalid mode: %s" % mode)
-
-    return members[index]
-
+    
 def getSurface(mode, ranks):
     """Computes derived surface in hybrid measure space"""
     if mode=="corr_inside":
