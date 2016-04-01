@@ -51,6 +51,7 @@ import sys
 
 # GroopM imports
 from mstore import GMDataManager as DataManager
+from utils import CSVReader
 
 np.seterr(all='raise')
 
@@ -58,8 +59,6 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-        
-        
 class Mapping:
     """Class for carrying gene mapping data around, constructed using
     ProfileManager class.
@@ -82,6 +81,7 @@ class Mapping:
         Corresponds to the lengths of above arrays.
     """
     pass
+        
         
 class Profile:
     """Class for carrying profile data around, construct using ProfileManager class.
@@ -165,7 +165,7 @@ class ProfileManager:
                 prof.stoitNames = np.array(self._dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
-            condition = getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
+            condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
             prof.indices = self._dm.getConditionalIndices(self.dbFileName,
                                                           condition=condition,
                                                           silent=silent)
@@ -228,25 +228,29 @@ class ProfileManager:
              
         if(loadMarkers):
             if verbose:
-                print "Loading marker data from:", self.markerFileName
+                print "    Loading marker data from:", self.markerFileName
             
             try:
                 markers = Mapping()
                 reader = MappingReader()
-                (con_names, con_markers, con_taxstrings) = reader.parse(markerFile, True)
-                
-                lookup = dict(zip(prof.contigNames, np.arange(prof.numContigs)))
-                rowIndices = np.array([lookup[name] for name in con_names])
-                
-                markers.rowIndices = rowIndices
-                markers.markerNames = np.asarray(con_markers)
-                markers.taxstrings = np.asarray(con_taxstrings)
-                markers.numMappings = len(con_names)
-                
-                prof.markers = markers
+                with open(self.markerFileName, "r") as f:
+                    try:
+                        (con_names, con_markers, con_taxstrings) = reader.parse(f, True)
+                    except:
+                        print "Error parsing marker data"
+                        raise
             except:
                 print "Error opening marker file:", self.markerFileName, sys.exc_info()[0]
                 raise
+                
+            lookup = dict(zip(prof.contigNames, np.arange(prof.numContigs)))
+            keep = np.in1d(con_names, prof.contigNames)
+            rowIndices = np.array([lookup[name] for name in np.asarray(con_names)[keep]])
+            markers.rowIndices = rowIndices
+            markers.markerNames = np.asarray(con_markers)[keep]
+            markers.taxstrings = np.asarray(con_taxstrings)[keep]
+            markers.numMappings = np.count_nonzero(keep)
+            prof.markers = markers
                 
 
         if(not silent):
@@ -267,7 +271,7 @@ class ProfileManager:
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""
-        if(self._dm.isClustered()):
+        if(self._dm.isClustered(self.dbFileName)):
             input_not_ok = True
             valid_responses = ['Y','N']
             vrs = ",".join([str.lower(str(x)) for x in valid_responses])
@@ -294,35 +298,31 @@ class ProfileManager:
 
 class MappingReader:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
-    def parse(self, infile, doclassifications=False):
+    def parse(self, fp, doclassifications=False):
         con_names = []
         con_markers = []
         if doclassifications:
             con_taxstrings = []
            
         reader = CSVReader()
-        with open(infile, "r") as f:
-            for l in f:
-                fields = reader.readCSV(f, "\t")
+        for l in reader.readCSV(fp, "\t"):
 
-                con_names.append(fields[0])
-                con_markers.append(fields[1])
-                if doclassifications:
-                    if len(fields) > 2:
-                        con_taxstrings.append(fields[2])
-                    else:
-                        con_taxstrings.append("")
+            con_names.append(l[0])
+            con_markers.append(l[1])
+            if doclassifications:
+                if len(l) > 2:
+                    con_taxstrings.append(l[2])
+                else:
+                    con_taxstrings.append("")
         
         if doclassifications:
             return (con_names, con_markers, con_taxstrings)
         else:
             return (con_names, con_markers)
         
-###############################################################################
-#Utility functions
-###############################################################################
-
-def getConditionString(minLength=None, maxLength=None, bids=None, removeBins=False):
+#------------------------------------------------------------------------------
+# Helpers
+def _getConditionString(minLength=None, maxLength=None, bids=None, removeBins=False):
     """Simple condition generation"""
 
     conds = []

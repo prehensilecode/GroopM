@@ -52,7 +52,7 @@ import scipy.spatial.distance as sp_distance
 
 # local imports
 import distance
-from import_ import CSVReader
+from utils import group_iterator
 
 np.seterr(all='raise')
 
@@ -65,20 +65,21 @@ class ClassificationManager:
     """
     def __init__(self, markers):
         self._mapping = markers
+        taxstrings = self._mapping.taxstrings
+        if taxstrings is not None:
+            self._classifications = [_Classification(s) for s in taxstrings]
         
     def makeDistances(self):
         """Condensed distance matrix between pairs of marker hits"""
-        taxstrings = self._mapping.taxstrings
-        if taxstrings is not None:
-            clist = [_Classification(s) for s in taxstrings]
-            return _classification_pdist(clist)
+        if self._classifications is not None:
+            return _classification_pdist(self._classifications)
         else:
             n = self._mapping.numMappings
             return np.zeros( n * (n - 1) // 2, dtype=np.double)
         
     def makeDisconnectivity(self, level):
         """Condensed disconnectivity matrix"""
-        n = self._mapping.numMarkers
+        n = self._mapping.numMappings
         dm = self.makeDistances() > level
         
         # disconnect members in the same group
@@ -91,19 +92,6 @@ class ClassificationManager:
     def itergroups(self):
         """Returns an iterator of marker names and indices."""
         return group_iterator(self._mapping.markerNames)
-
-
-# Utility
-def group_iterator(grouping):
-    """Returns an iterator of values and indices for a grouping variable."""
-    group_dist = {}
-    for (i, name) in enumerate(grouping):
-        try:
-            group_dist[name].append(i)
-        except KeyError:
-            group_dist[name] = [i]
-    
-    return group_dist.iteritems()
     
 
 class _Classification:
@@ -111,8 +99,8 @@ class _Classification:
     
     TAGS = ['d__', 'p__', 'c__', 'o__', 'f__', 'g__', 's__']
     
-    def parse_tag(self, string, tag):
-        if not field.startswith(prefix):
+    def parse_tag(self, string, prefix):
+        if not string.startswith(prefix):
             raise ValueError("Error parsing field: '%s'. Missing `%s` prefix." % (string, prefix))
         return string[len(prefix):].strip()
     
@@ -121,11 +109,11 @@ class _Classification:
         if fields[0]=="Root":
             fields = fields[1:]
         ranks = []
-        for (field, prefix) in zip(fields, TAGS):
+        for (field, prefix) in zip(fields, self.TAGS):
             try:
                 ranks.append(self.parse_tag(field, prefix))
-            except ValueError:
-                print "Skipping remaining fields"
+            except ValueError as e:
+                print e, "Skipping remaining fields"
                 break
         return ranks
     
@@ -155,7 +143,7 @@ class _Classification:
         return self.ranks[6]
         
     def tags(self):
-        for (t, s) in zip(TAGS, self.ranks):
+        for (t, s) in zip(self.TAGS, self.ranks):
             yield t++s
             
     def distance(self, other):

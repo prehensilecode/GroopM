@@ -50,6 +50,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import numpy.linalg as np_linalg
 import scipy.cluster.hierarchy as sp_hierarchy
+import scipy.spatial.distance as sp_distance
 import operator
 
 # local imports
@@ -57,6 +58,7 @@ import distance
 import recruit
 from hierarchy import ClassificationCoherenceClusterTool
 from binManager import BinManager
+from profileManager import ProfileManager
 
 ###############################################################################
 ###############################################################################
@@ -67,8 +69,8 @@ class CoreCreator:
     def __init__(self, dbFileName, markerFileName):
         self._pm = ProfileManager(dbFileName, markerFileName)
         
-    def loadProfile(timer, minLength):
-        return self._pm.loadData(timer, minLength=minLength)
+    def loadProfile(self, timer, minLength):
+        return self._pm.loadData(timer, minLength=minLength, loadMarkers=True)
         
     def run(self,
             timer,
@@ -81,12 +83,9 @@ class CoreCreator:
             return
             
         profile = self.loadProfile(timer, minLength)
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
         
-        # cluster and bin!
-        print "Create cores"
-        ce.makeBins(out_bins=profile.binIds)
-        print "    %s" % timer.getTimeStamp()
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
+        ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile, minSize=minSize, minBP=minBP)
         bm.unbinLowQualityAssignments(out_bins=profile.binIds)
@@ -97,18 +96,22 @@ class CoreCreator:
         print "    %s" % timer.getTimeStamp()
 
         
-class HybridHierachicalClusterEngine:
+class HybridHierarchicalClusterEngine:
     """Hybrid hierarchical clustering algorthm"""
-    def makeBins(self, out_bins):
+    def makeBins(self, timer, out_bins):
         """Run binning algorithm"""
         
-        self.setup()
-
+        print "Reticulating splines"
         dists = self.distances()
+        print "    %s" % timer.getTimeStamp()
+
+        print "Computing cluster hierarchy"
         Z = sp_hierarchy.average(dists)
+        print "    %s" % timer.getTimeStamp()
+        
+        print "Finding cores"
         out_bins[...] = self.fcluster(Z)
-            
-    def setup(self): pass #subclass to overrride
+        print "    %s" % timer.getTimeStamp()
             
     def distances(self):
         """computes pairwise distances of observations"""
@@ -124,18 +127,14 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
     def __init__(self, profile, threshold=1):
         self._profile = profile
         self._ct = ClassificationCoherenceClusterTool(profile.markers)
-        self._features = (profile.covProfile, profile.kmerSigs)
-        self._hybrid_ranks = None
+        self._features = (profile.covProfiles, profile.kmerSigs)
         self._threshold = threshold
         
-    def setup(self):
+    def distances(self):
         feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
         weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         feature_ranks = distance.argrank(feature_distances, weights=weights, axis=1)
-        self._hybrid_ranks = np_linalg.norm(feature_ranks, axis=0)
-        
-    def distances(self):
-        return self._hybrid_ranks
+        return np_linalg.norm(feature_ranks, axis=0)
         
     def fcluster(self, Z):
         return self._ct.cluster_classification(Z, self._threshold)
@@ -146,7 +145,7 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
 class MediodsClusterEngine:
     """Iterative mediod clustering algorithm"""
     
-    def makeBins(self, init, out_bins):
+    def makeBins(self, timer, init, out_bins):
         """Run binning algorithm
         
         Parameters
@@ -159,7 +158,6 @@ class MediodsClusterEngine:
             The bin id for the `i`th original observation will be stored in
             `out_bins[i]`.
         """
-        self.setup()
         
         bin_counter = np.max(out_bins)
         mediod = None
@@ -206,8 +204,7 @@ class MediodsClusterEngine:
                 mediod = new_mediod
 
         print " %d bins made." % bin_counter
-        
-    def setup(): pass #subclass to override
+        print "    %s" % timer.getTimeStamp()
         
     def recruit(self, mediod, putative_members):
         """recruit contigs close to a mediod contig"""
@@ -218,7 +215,7 @@ class MediodsClusterEngine:
         pass #subclass to override
         
         
-class FeatureRankCorrelationClusterEngine(MediodsClusteringEngine):
+class FeatureRankCorrelationClusterEngine(MediodsClusterEngine):
     """Cluster using mediod feature distance rank correlation"""
     def __init__(self, profile, threshold=0.5):
         self._profile = profile

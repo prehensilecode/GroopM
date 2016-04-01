@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    import_.py                                                               #
+#    utils.py                                                                 #
 #                                                                             #
-#    Data import                                                              #
+#    Utility classes                                                          #
 #                                                                             #
-#    Copyright (C) Tim Lamberton                                              #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -38,81 +38,93 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Tim Lamberton"
-__copyright__ = "Copyright 2016"
-__credits__ = ["Tim Lamberton"]
+__author__ = "Michael Imelfort, Tim Lamberton"
+__copyright__ = "Copyright 2012-2015"
+__credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
+__version__ = "0.2.11"
 __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
 __status__ = "Development"
 
 ###############################################################################
+import os
 import sys
+import errno
+import numpy as np
 
-from utils import CSVReader
-from profileManager import ProfileManager
+np.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class BinImporter:
-    """Used for importing bin assignments"""
-    def __init__(self,
-                 dbFileName):
-        self._pm = ProfileManager(dbFileName)
-        
-    def loadProfile(self, timer):
-        return self._pm.loadData(timer)
-        
-    def importBinAssignments(self,
-                             timer,
-                             infile,
-                             separator):
-        """Parse assignment file for bin contigs"""
-        
-        profile = self.loadProfile(timer)
-        br = BinReader()
-        # looks like cid->bid
-        contig_bins = {}
-        try:
+
+
+class CSVReader:
+    """Read tabular data from text files"""
+    def readCSV(self, fp, separator):
+        for l in fp:
+            yield l.rstrip().split(separator)
+
             
-            with open(infile, "r") as f:
-                try:
-                    (con_names, con_bins) = binReader.parse(f, separator)
-                    contig_bins = dict(zip(con_names, con_bins))
-                except:
-                    print "Error parsing bin assignments"
-                    raise
-        except:
-            print "Could not parse bin assignment file:",infile,sys.exc_info()[0]
+def makeSurePathExists(path):
+    try:
+        os.makedirs(path)
+    except OSError as exception:
+        if exception.errno != errno.EEXIST:
             raise
-
-        # now get the internal indices for contigs
-        for (i, cid) in enumerate(profile.contigNames):
-            try:
-                profile.binIds[i] = contig_bins[cid]
-            except KeyError:
-                pass
+            
+            
+def multi_apply_along_axis(func1d, axis, tup, *args, **kwargs):
+    """Multi-argument version of numpy's `apply_along_axis`. 
+    
+    Parameters
+    ----------
+    func1d : function
+        This function should accept a tuple of 1-D arrays. It is applied to a
+        tuple of 1D slices of arrays in `tup` along the specified axis.
+    axis : integer
+        Axis along which `tup` arrays are sliced.
+    tup : tuple of ndarrays
+        Tuple of input arrays. Arrays must have equal size in all dimensions
+        except along the `axis` dimension.
+    args : any
+        Additional arguments to `func1d`.
+    kwargs : any
+        Additional named arguments to `func1d`
         
-        # Now save all the stuff to disk!
-        print "Saving bins"
-        self._pm.setBinAssignments(profile, nuke=False)
-        print "    %s" % timer.getTimeStamp()
-
+    Returns
+    -------
+    outarr : ndarray
+        The output array. The shae of `outarr` is identical to the shapes of
+        `tup` arrays, except along the `axis` dimension, where the length of
+        `outarr` is equal to the size of the return value of `func1d`. If
+        `func1d` returns a scalar `outarr` will have one fewer dimensions than
+        `arr`.
+    """
+    tup = tuple(np.asarray(t) for t in tup)
+    ns = np.array([t.shape[axis] for t in tup])
+    a = np.concatenate(tup, axis=axis)
+    edges = np.concatenate(([0, ], ns.cumsum()))
+    
+    def multi_func1d(arr): 
+        splits = tuple([arr[s:e] for (s, e) in zip(edges[:-1], edges[1:])])
+        return func1d(splits, *args, **kwargs)
         
-class BinReader:   
-    """Read a file of tab separated contig name and bin groupings."""
-    def parse(self, fp, separator):
-        con_names = []
-        con_bins = []
-        
-        reader = CSVReader()
-        for (cid, bid) in reader.readCSV(f, separator):
-            con_names.append(cid)
-            con_bins.append(bid)
-        
-        return (con_names, con_bins)    
+    return np.apply_along_axis(multi_func1d, axis, a)
+    
+    
+def group_iterator(grouping):
+    """Returns an iterator of values and indices for a grouping variable."""
+    group_dist = {}
+    for (i, name) in enumerate(grouping):
+        try:
+            group_dist[name].append(i)
+        except KeyError:
+            group_dist[name] = [i]
+    
+    return group_dist.iteritems()
 
 ###############################################################################
 ###############################################################################

@@ -25,12 +25,15 @@ __email__ = "tim.lamberton@gmail.com"
 ###############################################################################
 
 from nose.tools import assert_equals
-from tools import assert_equal_arrays, assert_almost_equal_arrays
 import numpy as np
 import scipy.cluster.hierarchy as sp_hierarchy
+
+# local imports
+from tools import assert_equal_arrays, assert_almost_equal_arrays
 from groopm.hierarchy import (height,
                               maxcoeffs,
-                              filter_descendents)
+                              filter_descendents,
+                              ancestors)
 
 ###############################################################################
 ###############################################################################
@@ -123,7 +126,40 @@ def test_filter_descendents():
                         "`filter_descendents` removes nodes that are descendents")
     
     
+def test_ancestors():
+    """Z describes tree
+        0
+        |---7---+
+        1       |
+                |
+        2---+   |-8
+            |   |
+        3   |-6-+
+        |-5-+
+        4
+    """
+    Z = np.array([[3., 4., 1., 2.],
+                  [2., 5., 1., 3.],
+                  [0., 1., 3., 2.],
+                  [6., 7., 4., 5.]])
+                  
+    assert_equal_arrays(ancestors(Z, range(5)),
+                        [0, 1, 2, 3],
+                        "`ancestors` returns ancestors of all leaf clusters")
     
+    assert_equal_arrays(ancestors(Z, [1]),
+                        [2, 3],
+                        "`ancestors` returns ancestors of a single leaf cluster")
+    
+    print ancestors(Z, [5, 6, 8])
+    assert_equal_arrays(ancestors(Z, [5, 6, 8]),
+                        [1, 3],
+                        "`ancestors` returns union of ancestors for a path of nodes")
+                        
+    assert_equal_arrays(ancestors(Z, [5, 6, 8], inclusive=True),
+                        [0, 1, 3],
+                        "`ancestors` returns union of path nodes including nodes"
+                        " themselves when `inclusive` flag is set")
 
 ###############################################################################
 ###############################################################################

@@ -52,12 +52,10 @@ import sys
 import numpy as np
 
 # GroopM imports
-from extract import makeSurePathExists
+from utils import makeSurePathExists
 from binManager import BinManager
-from coverageAndKmerDistance import CoverageAndKmerDistanceTool, CoverageAndKmerView
 from mstore import ContigParser
 from corre import getInsidePNull
-from cluster import getNearPNull
 
 np.seterr(all='raise')
 
@@ -237,23 +235,8 @@ class BinPlotter:
         print "    %s" % timer.getTimeStamp()
 
 
-###############################################################################
+#------------------------------------------------------------------------------
 # Helpers
-###############################################################################
-    
-def getSurface(mode, ranks):
-    """Computes derived surface in hybrid measure space"""
-    if mode=="corr_inside":
-        z = np.log10(getInsidePNull(ranks))
-        z_label = "Inside correlation"
-    elif mode=="corr_near":
-        z = np.log10(getNearPNull(ranks))
-        z_label = "Outside correlation"
-    else:
-        raise ValueError("Invaild mode: %s" % mode)
-
-    return (z, z_label)
-    
     
 def getColorMap(colorMapStr):
     if colorMapStr == 'HSV':

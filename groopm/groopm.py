@@ -50,7 +50,9 @@ __email__ = "t.lamberton@uq.edu.au"
 # GroopM imports
 from mstore import GMDataManager as DataManager
 from cluster import CoreCreator
-from groopmUtils import BinExtractor, BinImporter, BinPlotter
+from extract import BinExtractor
+from import_ import BinImporter
+from plot import BinPlotter
 from groopmTimekeeper import TimeKeeper
 
     

@@ -50,6 +50,8 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 
+# local imports
+from utils import multi_apply_along_axis
 
 np.seterr(all='raise')
 
@@ -76,25 +78,20 @@ def mediod(Y):
 
     return index
 
-                
-def pcoords(idx, n):
-    (iu, ju) = np.triu_indices(len(idx), k=1)
-    return _squareform_index(idx[iu], idx[ju], n)
-  
-  
-def ccoords(idxA, idxB, n):
-    (rows, cols) = np.ix_(idxA, idxB)
-    return _squareform_index(rows, cols, n)
-
     
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if weights is None:
         return np.apply_along_axis(_rank_with_ties, axis, array)
     else:
-        return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, (array, weights))
+        array = np.asarray(array)
+        weights = np.asarray(weights)
+        indexer = [None]*len(array.shape)
+        indexer[axis] = slice(None)
+        return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
  
-     
+
+# helper
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asarray(a)
@@ -127,47 +124,19 @@ def _rank_with_ties(a, weights=None):
     return r
     
     
-# Utility
-def multi_apply_along_axis(func1d, axis, tup, *args, **kwargs):
-    """Multi-argument version of numpy's `apply_along_axis`. 
-    
-    Parameters
-    ----------
-    func1d : function
-        This function should accept a tuple of 1-D arrays. It is applied to a
-        tuple of 1D slices of arrays in `tup` along the specified axis.
-    axis : integer
-        Axis along which `tup` arrays are sliced.
-    tup : tuple of ndarrays
-        Tuple of input arrays. Arrays must have equal size in all dimensions
-        except along the `axis` dimension.
-    args : any
-        Additional arguments to `func1d`.
-    kwargs : any
-        Additional named arguments to `func1d`
-        
-    Returns
-    -------
-    outarr : ndarray
-        The output array. The shae of `outarr` is identical to the shapes of
-        `tup` arrays, except along the `axis` dimension, where the length of
-        `outarr` is equal to the size of the return value of `func1d`. If
-        `func1d` returns a scalar `outarr` will have one fewer dimensions than
-        `arr`.
-    """
-    tup = [np.asarray(t) for t in tup]
-    ns = np.array([t.shape[axis] for t in tup])
-    a = np.concatenate(tup, axis=axis)
-    edges = np.concatenate(([0, ], ns.cumsum()))
-    
-    def multi_func1d(arr): 
-        splits = tuple([arr[s:e] for (s, e) in zip(edges[:-1], edges[1:])])
-        return func1d(splits, *args, **kwargs)
-        
-    return np.apply_along_axis(multi_func1d, axis, a)
-        
-    
-# Utility
+def pcoords(idx, n):
+    idx = np.asarray(idx).ravel()
+    (iu, ju) = np.triu_indices(idx.size, k=1)
+    return _squareform_index(idx[iu], idx[ju], n)
+  
+  
+def ccoords(idxA, idxB, n):
+    idxA = np.asarray(idxA).ravel()
+    idxB = np.asarray(idxB).ravel()
+    (rows, cols) = np.ix_(idxA, idxB)
+    return _squareform_index(rows, cols, n)
+  
+  
 def _squareform_index(i, j, n):
     """Returns indices in a condensed matrix corresponding to input
     coordinates, or -1 for diagonal elements.

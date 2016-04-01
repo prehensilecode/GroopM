@@ -63,15 +63,35 @@ def test_argrank():
     ranks2d = np.array([[0, 3, 2, 1], [0, 2, 3, 1], [1.5, 1.5, 0, 3]])
     assert_equal_arrays(argrank(arr2d, axis=1),
                         ranks2d,
-                        "`argrank(..,axis=1)` returns ranks along rows of 2-d array")
+                        "`argrank(..,axis=1)` returns ranks along rows of 2D array")
     assert_equal_arrays(argrank(arr2d.T, axis=0),
                         ranks2d.T,
-                        "`argrank(..,axis=0)` returns ranks along columns of 2-d array")
+                        "`argrank(..,axis=0)` returns ranks along columns of 2D array")
                         
-    print argrank([5, 3, 4, 8], weights=[2, 2, 1, 3])
     assert_equal_arrays(argrank([5, 3, 4, 8], weights=[2, 2, 1, 3]),
-                        [3.5, 0.5, 2, 6],
+                        argrank([5, 3, 4, 8, 5, 3, 8, 8])[:4],
                         "`argrank` returns weighted ranks when weights parameter is passed")
+    
+    assert_equal_arrays(argrank([[1, 10, 5, 2],
+                                 [1,  4, 6, 2]
+                                ], weights=[5, 1, 1, 6], axis=1),
+                        argrank([[1, 10, 5, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+                                 [1,  4, 6, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2]
+                                ], axis=1)[:, :4],
+                        "`argrank` broadcasts weights vector along rows of 2D array")
+                        
+    assert_equal_arrays(argrank([[1, 10, 5, 2],
+                                 [1,  4, 6, 2]
+                                ], weights=[2, 5], axis=0),
+                        argrank([[1, 10, 5, 2],
+                                 [1,  4, 6, 2],
+                                 [1, 10, 5, 2],
+                                 [1,  4, 6, 2],
+                                 [1,  4, 6, 2],
+                                 [1,  4, 6, 2],
+                                 [1,  4, 6, 2]
+                                ], axis=0)[:2],
+                        "`argrank` broadcasts weights vector along columns of 2D array")
                         
 
 def test_squareform_index():

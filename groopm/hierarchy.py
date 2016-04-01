@@ -68,6 +68,7 @@ class ClassificationCoherenceClusterTool:
     """
     def __init__(self, markers):
         self._mapping = markers
+        self._cm = ClassificationManager(self._mapping)
         
     def cluster_classification(self, Z, t, greedy=False):
         Z = np.asarray(Z)
@@ -75,11 +76,9 @@ class ClassificationCoherenceClusterTool:
         H = height(Z)
         
         indices = self._mapping.rowIndices
-        classifier = ClassificationManager(self._mapping)
-        (rows, cols) = np.ix_(indices, indices)
-        idx = distance.squareform_coords(rows, cols, n)
-        mA = np.where(rows==cols, np.diag(indices), H[idx]+n)
-        mC = np.logical_not(sp_distance.squareform(classifier.makeDisconnectivity(t)))
+        idx = distance.ccoords(indices, indices, n)
+        mA = np.where(idx==-1, (idx==-1)*indices, H[idx]+n)
+        mC = np.logical_not(sp_distance.squareform(self._cm.makeDisconnectivity(t)))
         (mcc, mnodes) = connectivity_coeffs(mA, mC)
         
         cc = np.zeros(2*n - 1, dtype=np.dtype(mcc))
@@ -153,7 +152,7 @@ def connectivity_coeffs(A, C):
         
         qv = np.flatnonzero((A == k).any(axis=1)) # descendents of node i
         pv = qv[greedy_clique_by_elimination(C[np.ix_(qv, qv)])]
-        nv = qv[C[qv, pv].min(axis=1) < 0]
+        nv = qv[C[np.ix_(qv, pv)].min(axis=1) < 0]
         
         coeff = len(pv) - len(nv)
         coeffs[i] = coeff
@@ -213,8 +212,7 @@ def cluster_remove(Z, remove):
     
     sp_hierarchy.fcluster(Z, 0, criterion="monocrit", monocrit=remove)
 
-            
-        
+    
 def ancestors(Z, indices, inclusive=False):
     """Compute ancestor node indices.
     
@@ -223,7 +221,7 @@ def ancestors(Z, indices, inclusive=False):
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
     indices : ndarray
-        1-D array of non-singleton node indices
+        1-D array of node indices
     inclusive : boolean, optional
         If `True` indices are counted as their own ancestors.
         
@@ -239,8 +237,8 @@ def ancestors(Z, indices, inclusive=False):
     isancestor_or_index = isancestor.copy()
     isancestor_or_index[indices] = True
     for i in range(n-1):
-        isancestor[i+n] = isancestor_or_index[Z[i,:2].astype(int)].any()
-        isancestor_or_index[i+n] = isancestor[i+n]
+        isancestor[i+n] = isancestor[i+n] or isancestor_or_index[Z[i,:2].astype(int)].any()
+        isancestor_or_index[i+n] = isancestor_or_index[i+n] or isancestor[i+n]
         
     if inclusive:
         return np.flatnonzero(isancestor_or_index[n:])
