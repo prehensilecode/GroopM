@@ -81,42 +81,23 @@ class ClassificationCoherenceClusterTool:
         mC = np.logical_not(sp_distance.squareform(self._cm.makeDisconnectivity(t)))
         (mcc, mnodes) = connectivity_coeffs(mA, mC)
         
-        cc = np.zeros(2*n - 1, dtype=np.dtype(mcc))
-        cc[mnodes] = mcc
+        cc = np.zeros(2*n - 1, dtype=mcc.dtype)
+        cc[mnodes] = np.where(mcc < 0, 0, mcc)
         
-        # Algorithm traverses the cluster hierarchy three times.
-        
-        # The first time, we find nodes where the node coefficient is
-        # non-negative and equal to the maximum of all non-negative
-        # descendents. These are nodes where the coefficient maximum is
-        # non-decreasing along all leaf-to-root paths. 
-        maxcc = maxcoeffs(Z, np.where(cc < 0, 0, cc))
-        maxinds = np.flatnonzero(maxcc == cc[n:])
-        
-        # The second time, we descend from the root until a node identified in
-        # the first pass or a leaf node is encountered. These are nodes where
-        # the coefficient is greatest along any root-to-leaf path. 
-        maxinds = filter_descendents(Z, maxinds)
-        
-        # The root nodes of the flat clusters begin as nodes with maximum
-        # coefficient.
-        rootinds = maxinds
-        rootancestors = ancestors(Z, rootinds)
+        rootancestors = nondescendents_of_maxcoeff(Z, cc)
         
         if greedy:
             # Greedily extend clusters until a node with an actively lower
             # coefficient is reached. Requires an additional pass over
             # hierarchy.
-            rootinds = np.intersect1d(mnodes-n, rootancestors)
+            rootinds = np.intersect1d(mnodes, rootancestors)
             rootancestors = ancestors(Z, rootinds, inclusive=True)
             
         # Partition by finding the sets of leaves of the forest created by
         # removing ancestor nodes of forest root nodes.
-        remove = np.zeros(n-1, dtype=bool)
-        remove[rootancestors] = True
-        T = cluster_remove(Z, remove)
+        T = cluster_remove(Z, rootancestors)
         return T
-
+        
         
 def connectivity_coeffs(A, C):
     """Find connectivity coefficient for nodes in hierarchical clustering. The
@@ -135,24 +116,23 @@ def connectivity_coeffs(A, C):
     Returns
     -------
     coeffs : ndarray
-        `coeffs[i]` is the connectivity coefficient for the `nodes[i]`th non-
-        singleton cluster.
+        `coeffs[i]` is the connectivity coefficient for the `nodes[i]`th cluster.
     nodes : ndarray
         Sorted cluster node indices at which `coeffs` was computed.
     """
     
-    A = np.asarray(A)
+    A = np.asarray(A, dtype=int)
     C = np.asarray(C, dtype=bool)
     if A.shape != C.shape:
         raise ValueError("Condensed ancestor height and connectivity matrices must have the same shape.")
         
     nodes = np.unique(A)
-    coeffs = np.zeros(len(nodes), dtype=int)
+    coeffs = np.zeros(nodes.size, dtype=int)
     for (i, k) in enumerate(nodes):
         
         qv = np.flatnonzero((A == k).any(axis=1)) # descendents of node i
         pv = qv[greedy_clique_by_elimination(C[np.ix_(qv, qv)])]
-        nv = qv[C[np.ix_(qv, pv)].min(axis=1) < 0]
+        nv = qv[np.logical_not(C[np.ix_(qv, pv)].all(axis=1))]
         
         coeff = len(pv) - len(nv)
         coeffs[i] = coeff
@@ -185,7 +165,7 @@ def greedy_clique_by_elimination(C):
         which_min = counts.argmin()
         if counts[which_min] == nkeep:
             break
-        keep[which_min] = False
+        keep[keep] = np.arange(nkeep)!=which_min
         
     return np.flatnonzero(keep)
 
@@ -199,18 +179,68 @@ def cluster_remove(Z, remove):
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
     remove : ndarray
-        1D-array of booleans for each non-singleton clustering. `remove[i]` is
-        `True` if leaf descendents of node `i` are not all contained within a
-        single flat cluster. `remove` forms a monotonic array.
+        1-D array of node indices to "remove" from the cluster hierarchy before
+        forming flat clusters from the remaining forest.
         
     Returns
     -------
     T : ndarray
-        1D-array. `T[i]` is the flat cluster number to which original
+        1-D array. `T[i]` is the flat cluster number to which original
         observation `i` belongs.
     """
+    Z = np.asarray(Z)
+    n = Z.shape[0] + 1
     
-    sp_hierarchy.fcluster(Z, 0, criterion="monocrit", monocrit=remove)
+    monocrit = np.zeros(2*n-1, dtype=int)
+    monocrit[remove] = 1
+    # work around scipy 0.14 bug
+    Zz = Z.copy()
+    Zz[:, 2] = monocrit[n:]
+    T = sp_hierarchy.fcluster(Zz, 0, criterion="distance")
+    #T = sp_hierarchy.fcluster(Z, 0, criterion="monocrit", monocrit=monocrit[n:]) # should work in scipy 0.17
+    return T
+
+       
+def nondescendents_of_maxcoeff(Z, coeffs):
+    """Returns nodes which are not descended from a node with an equal or greater
+    coefficient score.
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    coeffs : ndarray
+        1-D array. `coeffs[i]` for `i<n` is the coefficient for the i-th
+        singleton node, and for `i>=n` is the coefficient for the cluster
+        encoded by the `(i-n)`-th row in `Z`.
+        
+    Returns
+    -------
+    nondescendents : ndarray
+        1-D array of node indices `i` where `coeffs[i] > coeffs[Q(j)].max()` for all
+        nodes `j` with `i` in `Q(j)` where `Q(j)` is the set of all node indices
+        below and including node j.
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0] + 1
+    
+    # Algorithm traverses the cluster hierarchy three times.
+    
+    # The first time, we find nodes where the node coefficient is
+    # non-negative and equal to the maximum of all non-negative
+    # descendents. These are nodes where the coefficient maximum is
+    # non-decreasing along all leaf-to-root paths. 
+    maxcc = maxcoeffs(Z, coeffs)
+    maxinds = np.flatnonzero(maxcc == coeffs)
+    
+    # The second time, we descend from the root until a node identified in
+    # the first pass or a leaf node is encountered. These are nodes where
+    # the coefficient is greatest along any root-to-leaf path. 
+    maxinds = filter_descendents(Z, maxinds)
+    
+    # The root nodes of the flat clusters begin as nodes with maximum
+    # coefficient.
+    return ancestors(Z, maxinds)
 
     
 def ancestors(Z, indices, inclusive=False):
@@ -221,15 +251,14 @@ def ancestors(Z, indices, inclusive=False):
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
     indices : ndarray
-        1-D array of node indices
+        1-D array of node indices.
     inclusive : boolean, optional
-        If `True` indices are counted as their own ancestors.
+        If `True`, indices are counted as their own ancestors.
         
     Returns
     -------
     ancestors : ndarray
-        1-D array of non-singleton node indices of the union of the sets of
-        ancestors of input nodes. 
+        1-D array of node indices of the union of the sets of ancestors of input nodes. 
     """
     Z = np.asarray(Z)
     n = Z.shape[0] + 1
@@ -241,9 +270,9 @@ def ancestors(Z, indices, inclusive=False):
         isancestor_or_index[i+n] = isancestor_or_index[i+n] or isancestor[i+n]
         
     if inclusive:
-        return np.flatnonzero(isancestor_or_index[n:])
+        return np.flatnonzero(isancestor_or_index)
     else:
-        return np.flatnonzero(isancestor[n:])
+        return np.flatnonzero(isancestor)
         
     
 def filter_descendents(Z, indices):
@@ -254,14 +283,14 @@ def filter_descendents(Z, indices):
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
     indices : ndarray
-        1-D array of cluster node indices.
+        1-D array of node indices.
         
     Returns
     -------
     nondescendents : ndarray
-        1-D array containing node indices `j` such that `j` is either `i` or
-        not in `Q(i)` for all `i` in `indices`, where `Q(i)` is the set of node
-        indices below and including node `i`.
+        1-D array of node indices `j` where `j` is either `i` or not in `Q(i)`
+        for all `i` in `indices`, where `Q(i)` is the set of nodes below and
+        including node i.
     """
     Z = np.asarray(Z)
     n = Z.shape[0] + 1
@@ -274,11 +303,10 @@ def filter_descendents(Z, indices):
         i = stack.pop()
         if i < n:
             continue
-        j = i-n
-        if j in indices:
-            outarr.append(j)
+        if i in indices:
+            outarr.append(i)
             continue
-        stack.extend(Z[j,:2].astype(int))
+        stack.extend(Z[i-n,:2].astype(int))
         
     return np.sort(outarr)
         
@@ -293,16 +321,16 @@ def maxcoeffs(Z, coeffs):
         Linkage matrix encoding hierarchical clustering.
     coeffs : ndarray
         1-D array of coefficients for each cluster node. `coeffs[i]` for `i<n`
-        is the coefficient for the `i`th leaf node, and for `i>=n` is the
-        coefficient for the cluster encoded by the `i-n`th row in `Z`.
+        is the coefficient for the i-th leaf node, and for `i>=n` is the
+        coefficient for the cluster encoded by the `(i-n)`-th row in `Z`.
         
     Returns
     -------
     maxcoeffs : ndarray
         `maxcoeffs[i]` is the maximum coefficient value of any cluster below and
-        including the node with index `i`. More specifically
-        `maxcoeffs[i] == coeff[Q(i)].max()` where `Q(i)` is the set of
-        all nodes below and including node `i`. 
+        including the node i. More specifically
+        `maxcoeffs[i] == coeff[Q(i)].max()` where `Q(i)` is the set of all nodes
+        below and including node i. 
     """
     
     Z = np.asarray(Z)  
@@ -316,7 +344,7 @@ def maxcoeffs(Z, coeffs):
     for i in range(n-1):
         outarr[n+i] = np.maximum(outarr[n+i], outarr[Z[i,:2].astype(int)].max())
     
-    return outarr[n:]
+    return outarr
     
     
 def height(Z):
@@ -324,7 +352,7 @@ def height(Z):
     """
     Z = np.copy(Z)
     Z[:, 2] = np.arange(Z.shape[0])
-    return sp_hierarchy.cophenet(Z)
+    return sp_hierarchy.cophenet(Z).astype(int)
 
 
 ###############################################################################

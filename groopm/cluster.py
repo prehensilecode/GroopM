@@ -111,6 +111,7 @@ class HybridHierarchicalClusterEngine:
         
         print "Finding cores"
         out_bins[...] = self.fcluster(Z)
+        print "    %s bins made." % (out_bins.max()-1)
         print "    %s" % timer.getTimeStamp()
             
     def distances(self):
@@ -176,10 +177,10 @@ class MediodsClusterEngine:
                 out_binds[mediod] = bin_counter
 
             round_counter += 1
-            print "Recruiting bin %d, round %d." % (bin_counter, round_counter)
+            print "    Recruiting bin %d, round %d." % (bin_counter, round_counter)
             
             is_unbinned = out_bins == 0
-            print "Found %d unbinned." % np.count_nonzero(is_unbinned)
+            print "    Found %d unbinned." % np.count_nonzero(is_unbinned)
 
             is_old_members = out_bins == bin_counter
             putative_members = np.flatnonzero(np.logical_and(is_unbinned, is_old_members))
@@ -188,7 +189,7 @@ class MediodsClusterEngine:
             out_bins[recruited] = bin_counter
             members = np.flatnonzero(out_bins == bin_counter)
             
-            print "Recruited %d members." % (members.size - old_members.size)
+            print "   Recruited %d members." % (members.size - old_members.size)
             
             if len(members)==1:
                 new_mediod = members
@@ -198,12 +199,12 @@ class MediodsClusterEngine:
 
 
             if new_mediod == mediod:
-                print "Mediod is stable after %d rounds." % round_counter
+                print "    Mediod is stable after %d rounds." % round_counter
                 mediod = None
             else:
                 mediod = new_mediod
 
-        print " %d bins made." % bin_counter
+        print "    %d bins made." % bin_counter
         print "    %s" % timer.getTimeStamp()
         
     def recruit(self, mediod, putative_members):

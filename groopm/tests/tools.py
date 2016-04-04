@@ -25,6 +25,7 @@ __email__ = "tim.lamberton@gmail.com"
 ###############################################################################
 from nose.tools import assert_true
 import numpy as np
+import scipy.cluster.hierarchy as sp_hierarchy
 
 ###############################################################################
 ###############################################################################
@@ -37,6 +38,10 @@ def assert_equal_arrays(a, b, message):
     
 def assert_almost_equal_arrays(a, b, message):
     return assert_true(np.all(np.around(a, 6) == np.around(b, 6)), message)
+    
+    
+def assert_isomorphic(T1, T2, message):
+    return assert_true(sp_hierarchy.is_isomorphic(T1, T2) and sp_hierarchy.is_isomorphic(T2, T1), message)
 
 ###############################################################################
 ###############################################################################

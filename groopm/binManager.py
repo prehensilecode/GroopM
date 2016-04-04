@@ -83,11 +83,11 @@ class BinManager:
         if np.any(is_not_bid):
             raise BinNotFoundException("ERROR: "+",".join([str(bid) for bid in bids[is_not_bid]])+" are not bin ids")
 
-    def unbinLowQualityAssignments(self, out_binIds):
+    def unbinLowQualityAssignments(self, out_bins):
         """Check bin assignment quality"""
         low_quality = []
-        for bid in self.getBids(out_binIds):
-            is_in_bin = out_binIds == bid
+        for bid in self.getBids(out_bins):
+            is_in_bin = out_bins == bid
             total_BP = np.sum(self._profile.contigLengths[is_in_bin])
             bin_size = np.count_nonzero(is_in_bin)
 
@@ -95,8 +95,8 @@ class BinManager:
                 # This partition is too small, ignore
                 low_quality.append(bid)
 
-        print " Found %d low quality bins." % len(low_quality)
-        out_bidIds[np.in1d(out_binIds, low_quality)] = 0
+        print "    Found %d low quality bins." % len(low_quality)
+        out_bins[np.in1d(out_bins, low_quality)] = 0
 
     def getBids(self, binIds=None):
         """Return a sorted list of bin ids"""
