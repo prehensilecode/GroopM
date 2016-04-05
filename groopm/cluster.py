@@ -126,11 +126,12 @@ class HybridHierarchicalClusterEngine:
         
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
-    def __init__(self, profile, threshold=1):
+    def __init__(self, profile, threshold=1, greedy=False):
         self._profile = profile
         self._ct = ClassificationCoherenceClusterTool(profile.markers)
         self._features = (profile.covProfiles, profile.kmerSigs)
         self._threshold = threshold
+        self._greedy = greedy
         
     def distances(self):
         feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
@@ -139,7 +140,7 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         return np_linalg.norm(feature_ranks, axis=0)
         
     def fcluster(self, Z):
-        return self._ct.cluster_classification(Z, self._threshold, True)
+        return self._ct.cluster_classification(Z, self._threshold, self._greedy)
         
     
             

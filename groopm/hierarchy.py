@@ -70,7 +70,7 @@ class ClassificationCoherenceClusterTool:
         self._mapping = markers
         self._cm = ClassificationManager(self._mapping)
         
-    def cluster_classification(self, Z, t, greedy=False):
+    def classification_coherence(self, Z, t):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
         H = height(Z)
@@ -79,12 +79,18 @@ class ClassificationCoherenceClusterTool:
         idx = distance.ccoords(indices, indices, n)
         mA = np.where(idx==-1, (idx==-1)*indices, H[idx]+n)
         mC = np.logical_not(sp_distance.squareform(self._cm.makeDisconnectivity(t)))
-        (mcc, mnodes) = connectivity_coeffs(mA, mC)
+        return connectivity_coeffs(mA, mC)
+        
+    def cluster_classification(self, Z, t, greedy=False):
+        (mcc, mnodes) = self.classification_coherence(Z, t)
         
         cc = np.zeros(2*n - 1, dtype=mcc.dtype)
         cc[mnodes] = np.where(mcc < 0, 0, mcc)
         
-        rootancestors = nondescendents_of_maxcoeff(Z, cc)
+        # The root nodes of the flat clusters begin as nodes with maximum
+        # coefficient.
+        rootinds = maxcoeff_roots(Z, cc)
+        rootancestors = ancestors(Z, rootinds)
         
         if greedy:
             # Greedily extend clusters until a node with an actively lower
@@ -201,9 +207,9 @@ def cluster_remove(Z, remove):
     return T
 
        
-def nondescendents_of_maxcoeff(Z, coeffs):
-    """Returns nodes which are not descended from a node with an equal or greater
-    coefficient score.
+def maxcoeff_roots(Z, coeffs):
+    """Returns nodes with highest coefficient of any parent node, and at least as 
+    high as any descendent.
     
     Parameters
     ----------
@@ -217,14 +223,15 @@ def nondescendents_of_maxcoeff(Z, coeffs):
     Returns
     -------
     nondescendents : ndarray
-        1-D array of node indices `i` where `coeffs[i] > coeffs[Q(j)].max()` for all
-        nodes `j` with `i` in `Q(j)` where `Q(j)` is the set of all node indices
-        below and including node j.
+        1-D array of node indices `i` where `coeffs[i] == coeffs[Q[i]].max` and 
+        `coeffs[i] > coeffs[Q(j)].max()` for all parent nodes `j`, i.e. with `i`
+        in `Q(j)`, where `Q(j)` is the set of all node indices below and
+        including node j.
     """
     Z = np.asarray(Z)
     n = Z.shape[0] + 1
     
-    # Algorithm traverses the cluster hierarchy three times.
+    # Algorithm traverses the cluster hierarchy twice times.
     
     # The first time, we find nodes where the node coefficient is
     # non-negative and equal to the maximum of all non-negative
@@ -238,9 +245,7 @@ def nondescendents_of_maxcoeff(Z, coeffs):
     # the coefficient is greatest along any root-to-leaf path. 
     maxinds = filter_descendents(Z, maxinds)
     
-    # The root nodes of the flat clusters begin as nodes with maximum
-    # coefficient.
-    return ancestors(Z, maxinds)
+    return maxinds
 
     
 def ancestors(Z, indices, inclusive=False):
@@ -301,12 +306,10 @@ def filter_descendents(Z, indices):
         if len(stack) == 0:
             break
         i = stack.pop()
-        if i < n:
-            continue
         if i in indices:
             outarr.append(i)
-            continue
-        stack.extend(Z[i-n,:2].astype(int))
+        elif i >= n:
+            stack.extend(Z[i-n,:2].astype(int))
         
     return np.sort(outarr)
         

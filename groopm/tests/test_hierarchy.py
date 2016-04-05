@@ -34,10 +34,10 @@ from groopm.hierarchy import (height,
                               maxcoeffs,
                               filter_descendents,
                               ancestors,
+                              maxcoeff_roots,
+                              cluster_remove,
                               greedy_clique_by_elimination,
-                              connectivity_coeffs,
-                              nondescendents_of_maxcoeff,
-                              cluster_remove)
+                              connectivity_coeffs,)
 
 ###############################################################################
 ###############################################################################
@@ -59,7 +59,8 @@ def test_height():
     assert_equal_arrays(height(Z),
                         [2, 2, 2, 1, 0, 1],
                         "`height` returns condensed matrix of lowest common ancestor indices")
-                        
+                
+                
 def test_maxcoeffs():
     """Z describes tree:
         0-------+
@@ -128,6 +129,60 @@ def test_filter_descendents():
     assert_equal_arrays(filter_descendents(Z, [5, 6, 7]),
                         [6, 7],
                         "`filter_descendents` removes nodes that are descendents")
+                        
+    assert_equal_arrays(filter_descendents(Z, [0, 1, 2, 3, 4, 5, 6]),
+                        [0, 1, 6],
+                        "`filter_descendents` returns internal and leaf nodes that are not descendents")
+    
+                        
+def test_maxcoeff_roots():
+    """Z describes tree:
+        0-------+
+        2---+   |-6
+        1   |-5-+
+        |-4-+
+        3
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 1., 3.],
+                  [0., 5., 2., 4.]])
+                  
+    """Assign coefficients:
+        1-------+
+        0---+   |-0
+        0   |-0-+
+        |-0-+
+        0    
+    """
+    print maxcoeff_roots(Z, [1, 0, 0, 0, 0, 0, 0])
+    assert_equal_arrays(maxcoeff_roots(Z, [1, 0, 0, 0, 0, 0, 0]),
+                        [0, 5],
+                        "`maxcoeff_roots` returns ancestors of a single "
+                        "non-zero coeff")
+                                
+    """Assign coefficients:
+        0-------+
+        1---+   |-0
+        1   |-2-+
+        |-0-+
+        0    
+    """
+    assert_equal_arrays(maxcoeff_roots(Z, [0, 1, 1, 0, 0, 2, 0]),
+                        [0, 5],
+                        "`maxcoeff_roots` returns ancestors of larger "
+                        "valued internal coeff")
+                                              
+    """Assign coefficients:
+        0-------+
+        0---+   |-0
+        0   |-1-+
+        |-2-+
+        0    
+    """
+    assert_equal_arrays(maxcoeff_roots(Z, [0, 0, 0, 0, 2, 1, 0]),
+                        [0, 2, 4],
+                        "`maxcoeff_roots` returns ancestors of larger "
+                        "valued internal coeff when a higher leaf is lower valued")
     
     
 def test_ancestors():
@@ -163,8 +218,31 @@ def test_ancestors():
                         [5, 6, 8],
                         "`ancestors` returns union of path nodes including nodes"
                         " themselves when `inclusive` flag is set")
-                        
-                        
+             
+
+def test_cluster_remove():
+    """Z describes tree:
+        0-------+
+        2---+   |-6
+        1   |-5-+
+        |-4-+
+        3
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 1., 3.],
+                  [0., 5., 2., 4.]])
+                                     
+    assert_isomorphic(cluster_remove(Z, [5, 6]),
+                      [0, 1, 2, 1],
+                      "`cluster_remove` computes flat cluster indices after removing "
+                      "internal indices")
+                
+    assert_isomorphic(cluster_remove(Z, [0, 6]),
+                      [0, 1, 1, 1],
+                      "`cluster_remove` computes flat cluster indices after removing "
+                     "a leaf and internal indices")                   
+               
+               
 def test_greedy_clique_by_elimination():
     C = np.array([[True , True , False],
                   [True , True , False],
@@ -231,79 +309,7 @@ def test_connectivity_coeffs():
     assert_equal_arrays(coeffs,
                         [1, 1, 1, 2, 1],
                         "`connectivity coeffs` computes correct coefficients")
-                        
-                        
-def test_nondescendents_of_maxcoeff():
-    """Z describes tree:
-        0-------+
-        2---+   |-6
-        1   |-5-+
-        |-4-+
-        3
-    """
-    Z = np.array([[1., 3., 1., 2.],
-                  [2., 4., 1., 3.],
-                  [0., 5., 2., 4.]])
-                  
-    """Assign coefficients:
-        1-------+
-        0---+   |-0
-        0   |-0-+
-        |-0-+
-        0    
-    """
-    print nondescendents_of_maxcoeff(Z, [1, 0, 0, 0, 0, 0, 0])
-    assert_equal_arrays(nondescendents_of_maxcoeff(Z, [1, 0, 0, 0, 0, 0, 0]),
-                        [6],
-                        "`nondescendents_of_maxcoeffs` returns ancestors of a single "
-                        "non-zero coeff")
-                                
-    """Assign coefficients:
-        0-------+
-        1---+   |-0
-        1   |-2-+
-        |-0-+
-        0    
-    """
-    assert_equal_arrays(nondescendents_of_maxcoeff(Z, [0, 1, 1, 0, 0, 2, 0]),
-                        [6],
-                        "`nondescendents_of_maxcoeffs` returns ancestors of larger "
-                        "valued internal coeff")
-                                              
-    """Assign coefficients:
-        0-------+
-        0---+   |-0
-        0   |-1-+
-        |-2-+
-        0    
-    """
-    assert_equal_arrays(nondescendents_of_maxcoeff(Z, [0, 0, 0, 0, 2, 1, 0]),
-                        [5, 6],
-                        "`nondescendents_of_maxcoeffs` returns ancestors of larger "
-                        "valued internal coeff when a higher leaf is lower valued")
-                        
-
-def test_cluster_remove():
-    """Z describes tree:
-        0-------+
-        2---+   |-6
-        1   |-5-+
-        |-4-+
-        3
-    """
-    Z = np.array([[1., 3., 1., 2.],
-                  [2., 4., 1., 3.],
-                  [0., 5., 2., 4.]])
-                                     
-    assert_isomorphic(cluster_remove(Z, [5, 6]),
-                      [0, 1, 2, 1],
-                      "`cluster_remove` computes flat cluster indices after removing "
-                      "internal indices")
                 
-    assert_isomorphic(cluster_remove(Z, [0, 6]),
-                      [0, 1, 1, 1],
-                      "`cluster_remove` computes flat cluster indices after removing "
-                     "a leaf and internal indices")
                         
 ###############################################################################
 ###############################################################################

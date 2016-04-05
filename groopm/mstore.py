@@ -317,26 +317,6 @@ class GMDataManager:
                     print "Error creating KMERSIG table:", exc_info()[0]
                     raise
 
-                # don't compute the PCA of the ksigs just store dummy data
-                #pc_ksigs, sumvariance = conParser.PCAKSigs(con_ksigs)
-                pc_ksigs = [tuple(i) for i in con_ksigs]
-                sumvariance = np.zeros(len(con_ksigs))
-
-                db_desc = []
-                for i in xrange(0, len(pc_ksigs[0])):
-                   db_desc.append(('pc' + str(i+1), float))
-
-                try:
-                    h5file.createTable(profile_group,
-                                       'kpca',
-                                       np.array(pc_ksigs, dtype=db_desc),
-                                       title='Kmer signature PCAs',
-                                       expectedrows=num_cons
-                                       )
-                except:
-                    print "Error creating KMERVALS table:", exc_info()[0]
-                    raise
-
                 #------------------------
                 # write cov profiles
                 #------------------------
@@ -516,31 +496,6 @@ class GMDataManager:
         print ""
         # the change in this version is that we'll be saving the first
         # two kmerSig PCA's in a separate table
-        print "    Calculating and storing the kmerSig PCAs"
-
-        # compute the PCA of the ksigs
-        ksigs = self.getKmerSigs(dbFileName)
-        CP = ContigParser()
-        pc_ksigs, sumvariance = CP.PCAKSigs(ksigs)
-        num_cons = len(pc_ksigs)
-
-        db_desc = [('pc1', float),
-                   ('pc2', float)]
-        try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/profile") as profile_group:
-                try:
-                    profile_group.createTable('/',
-                                              'kpca',
-                                              np.array(pc_ksigs, dtype=db_desc),
-                                              title='Kmer signature PCAs',
-                                              expectedrows=num_cons
-                                              )
-                except:
-                    print "Error creating KMERVALS table:", exc_info()[0]
-                    raise
-        except:
-            print "Error opening DB:",dbFileName, exc_info()[0]
-            raise
 
         # update the formatVersion field and we're done
         self.setGMDBFormat(dbFileName, 1)
@@ -555,44 +510,16 @@ class GMDataManager:
         print ""
         # the change in this version is that we'll be saving a variable number of kmerSig PCA's
         # and GC information for each contig
-        print "    Calculating and storing the kmer signature PCAs"
 
         # grab any data needed from database before opening if for modification
         bin_ids = self.getBins(dbFileName)
         orig_con_names = self.getContigNames(dbFileName)
-        ksigs = self.getKmerSigs(dbFileName)
-
+        
         # compute the PCA of the ksigs
         conParser = ContigParser()
-        pc_ksigs, sumvariance = conParser.PCAKSigs(ksigs)
-        num_cons = len(pc_ksigs)
-
-        db_desc = []
-        for i in xrange(0, len(pc_ksigs[0])):
-          db_desc.append(('pc' + str(i+1), float))
 
         try:
             with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
-                pg = h5file.getNode('/', name='profile')
-                try:
-                    try:
-                        h5file.removeNode(pg, 'tmp_kpca')
-                    except:
-                        pass
-
-                    h5file.createTable(pg,
-                                       'tmp_kpca',
-                                       np.array(pc_ksigs, dtype=db_desc),
-                                       title='Kmer signature PCAs',
-                                       expectedrows=num_cons
-                                      )
-
-                    h5file.renameNode(pg, 'kpca', 'tmp_kpca', overwrite=True)
-
-                except:
-                    print "Error creating kpca table:", exc_info()[0]
-                    raise
-
                 # Add GC
                 contigFile = raw_input('\nPlease specify fasta file containing the bam reference sequences: ')
                 with open(contigFile, "r") as f:
@@ -623,7 +550,8 @@ class GMDataManager:
                 self.setBinAssignments((h5file, mg),
                                image=zip(con_names,
                                          bin_ids,
-                                         con_lengths, con_gcs)
+                                         con_lengths,
+                                         con_gcs)
                                )
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -641,47 +569,6 @@ class GMDataManager:
         print "                            please be patient..."
         print ""
         # the change in this version is that we'll be saving the variance for each kmerSig PCA
-        print "    Calculating and storing variance of kmer signature PCAs"
-
-        # compute the PCA of the ksigs
-        conParser = ContigParser()
-        ksigs = self.getKmerSigs(dbFileName)
-        pc_ksigs, sumvariance = conParser.PCAKSigs(ksigs)
-
-        # calcualte variance of each PC
-        pc_var = [sumvariance[0]]
-        for i in xrange(1, len(sumvariance)):
-          pc_var.append(sumvariance[i]-sumvariance[i-1])
-        pc_var = tuple(pc_var)
-
-        db_desc = []
-        for i in xrange(0, len(pc_var)):
-          db_desc.append(('pc' + str(i+1) + '_var', float))
-
-        try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
-                meta = h5file.getNode('/', name='meta')
-                try:
-                    try:
-                        h5file.removeNode(meta, 'tmp_kpca_variance')
-                    except:
-                        pass
-
-                    h5file.createTable(meta,
-                                              'tmp_kpca_variance',
-                                              np.array([pc_var], dtype=db_desc),
-                                              title='Variance of kmer signature PCAs',
-                                              expectedrows=1
-                                              )
-
-                    h5file.renameNode(meta, 'kpca_variance', 'tmp_kpca_variance', overwrite=True)
-
-                except:
-                    print "Error creating kpca_variance table:", exc_info()[0]
-                    raise
-        except:
-            print "Error opening DB:", dbFileName, exc_info()[0]
-            raise
 
         # update the formatVersion field and we're done
         self.setGMDBFormat(dbFileName, 3)
@@ -761,7 +648,6 @@ class GMDataManager:
 
         # we need to get the raw coverage profiles and the kmerPCA1 data
         indices = self.getConditionalIndices(dbFileName, silent=False, checkUpgrade=False)
-        kPCA_1 = self.getKmerPCAs(dbFileName, indices=indices)[:,0]
         raw_coverages = self.getCoverageProfiles(dbFileName, indices=indices)
         norm_coverages = np.array([np.linalg.norm(raw_coverages[i]) for i in range(len(indices))])
 
@@ -802,34 +688,6 @@ class GMDataManager:
                 raise
 
             h5file.renameNode(profile_group, 'coverage', 'tmp_coverages', overwrite=True)
-
-            # transformed coverages
-            db_desc = [('x', float),
-                       ('y', float),
-                       ('z', float)]
-            try:
-                h5file.createTable(profile_group,
-                                   'transCoverage',
-                                   np.array(CT.transformedCP , dtype=db_desc),
-                                   title="Transformed coverage",
-                                   expectedrows=CT.numContigs)
-            except:
-                print "Error creating transformed coverage table:", exc_info()[0]
-                raise
-
-            # transformed coverage corners
-            db_desc = [('x', float),
-                       ('y', float),
-                       ('z', float)]
-            try:
-                h5file.createTable(meta_group,
-                                   'transCoverageCorners',
-                                   np.array(CT.corners , dtype=db_desc),
-                                   title="Transformed coverage corners",
-                                   expectedrows=CT.numStoits)
-            except:
-                print "Error creating transformed coverage corner table:", exc_info()[0]
-                raise
 
 
             # normalised coverages

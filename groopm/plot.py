@@ -65,6 +65,7 @@ from profileManager import ProfileManager
 from binManager import BinManager
 from mstore import ContigParser
 import distance
+import hierarchy
 
 np.seterr(all='raise')
 
@@ -101,7 +102,6 @@ class BinPlotter:
             bm.checkBids(bids)
 
         fplot = BinDistancePlotter(profile, colourmap=colorMap)
-        fplot.setup()
         print "    %s" % timer.getTimeStamp()
         
         for bid in bids:
@@ -285,21 +285,53 @@ class HierarchyAxisPlotter:
         
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
+        
+
+# Tree plotters
+class HierarchyRemovedPlotter:
+    def __init__(self, profile, threshold=1, greedy=False):
+        self._profile = profile
+        x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
+        y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
+        w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
+        self._Z = sp_hierarchy.average(rnorm)
+        ct = ClassificationCoherenceClusterTool(self._profile.markers)
+        (self._mcc, self._mnodes) = ct.classification_coherence(Z, threshold)
+        
+    def plot(self,
+             greedy=False,
+             fileName=""):
+        
+        n = self._Z.shape[1]
+        cc = np.zeros(2*n - 1, dtype=self._mcc.dtype)
+        cc[self._mnodes] = np.where(self._mcc < 0, 0, self._mcc)
+        rootinds = hierarchy.maxcoeff_roots(Z, cc)
+        rootancestors = ancestors(Z, rootinds)
+        
+        if greedy:
+            rootinds = np.intersect1d(mnodes, rootancestors)
+            rootancestors = hierarchy.ancestors(Z, rootinds, inclusive=True)
+            
+        rootancestors_set = set(rootancestors)
+        hplot = HierarchyPlotter(
+            self.Z,
+            link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
+            leaf_label_func=lambda k: jj,
+            xlabel="cov", ylabel="rnorm"
+        )
+        hplot.plot(fileName)
+        
+        
+        
+        
   
   
 # Bin plotters
 class BinDistancePlotter:
     def __init__(self, profile, colourmap='HSV'):
         self._profile = profile
-        self._x = None
-        self._y = None
-        self._r = None
-        self._w = None
-        self._c = None
-        self._h = None
         self._colourmap = getColorMap(colourmap)
-        
-    def setup(self):
         x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
