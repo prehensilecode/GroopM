@@ -55,6 +55,7 @@ import errno
 from profileManager import ProfileManager
 from binManager import BinManager
 from bamm.bamExtractor import BamExtractor as BMBE
+from mstore import ContigParser
 
 
 ###############################################################################
@@ -64,16 +65,16 @@ from bamm.bamExtractor import BamExtractor as BMBE
 
 class BinExtractor:
     """Used for extracting reads and contigs based on bin assignments"""
-    def __init__(self, dbFilename,
+    def __init__(self, dbFileName,
                  folder='',
                  ):
         self.dbFileName = dbFileName
-        self._pm = ProfileManager(self.dbFilename)
+        self._pm = ProfileManager(self.dbFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         makeSurePathExists(self._outDir)
 
-    def loadProfle(self, timer, bids=[], cutoff=0):
+    def loadProfile(self, timer, bids=[], cutoff=0):
         bids = [] if bids is None else bids
         return self._pm.loadData(timer,
                                  loadBins=True,

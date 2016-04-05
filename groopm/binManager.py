@@ -97,6 +97,9 @@ class BinManager:
 
         print "    Found %d low quality bins." % len(low_quality)
         out_bins[np.in1d(out_bins, low_quality)] = 0
+        (_, new_bins) = np.unique(out_bins, return_inverse=True)
+        out_bins[...] = new_bins
+        
 
     def getBids(self, binIds=None):
         """Return a sorted list of bin ids"""

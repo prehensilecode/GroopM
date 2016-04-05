@@ -317,12 +317,14 @@ class GMDataManager:
                     print "Error creating KMERSIG table:", exc_info()[0]
                     raise
 
-                # compute the PCA of the ksigs and store these too
-                pc_ksigs, sumvariance = conParser.PCAKSigs(con_ksigs)
+                # don't compute the PCA of the ksigs just store dummy data
+                #pc_ksigs, sumvariance = conParser.PCAKSigs(con_ksigs)
+                pc_ksigs = [tuple(i) for i in con_ksigs]
+                sumvariance = np.zeros(len(con_ksigs))
 
                 db_desc = []
                 for i in xrange(0, len(pc_ksigs[0])):
-                  db_desc.append(('pc' + str(i+1), float))
+                   db_desc.append(('pc' + str(i+1), float))
 
                 try:
                     h5file.createTable(profile_group,
@@ -347,24 +349,21 @@ class GMDataManager:
 
                 stoitColNames = np.array(stoitColNames)
 
-                # determine normalised cov profiles and shuffle the BAMs
+                # determine normalised cov profiles
                 norm_coverages = np.array([np.linalg.norm(cov_profiles[i]) for i in range(num_cons)])
-                CT = CoverageTransformer(num_cons,
-                                         len(stoitColNames),
-                                         norm_coverages,
-                                         np.array(pc_ksigs)[:,0],
-                                         cov_profiles,
-                                         stoitColNames)
-
-                CT.transformCP()
-                # these will need to be tupalized regardless...
                 cov_profiles = [tuple(i) for i in cov_profiles]
 
-                CT.transformedCP = [tuple(i) for i in CT.transformedCP]
-                CT.corners = [tuple(i) for i in CT.corners]
-                # now CT stores the transformed coverages and other important information
-                # the ordering of stoitColNames and cov_profiles should be fixed
-                # so we will write this to the database without further modification
+                # dummy CT, data not used anymore
+                CT = CoverageTransformer()
+                CT.numContigs = num_cons
+                CT.numStoits = len(stoitColNames)
+                CT.normCoverages = norm_coverages
+                CT.covProfiles = cov_profiles
+                CT.stoitColNames = stoitColNames
+                CT.indices = range(CT.numContigs)
+                CT.TCentre = None
+                CT.transformedCP = [tuple(i) for i in np.zeros((CT.numContigs, 3))]
+                CT.corners = [tuple(i) for i in np.zeros((CT.numStoits, 3))]
 
                 # raw coverages
                 db_desc = []
@@ -485,11 +484,11 @@ class GMDataManager:
 
                 try:
                     h5file.createTable(meta_group,
-                                            'kpca_variance',
-                                            np.array([pc_var], dtype=db_desc),
-                                            title='Variance of kmer signature PCAs',
-                                            expectedrows=1
-                                            )
+                                       'kpca_variance',
+                                       np.array([pc_var], dtype=db_desc),
+                                       title='Variance of kmer signature PCAs',
+                                       expectedrows=1
+                                      )
                 except:
                     print "Error creating tmp_kpca_variance table:", exc_info()[0]
                     raise
@@ -814,17 +813,15 @@ class GMDataManager:
         raw_coverages = self.getCoverageProfiles(dbFileName, indices=indices)
         norm_coverages = np.array([np.linalg.norm(raw_coverages[i]) for i in range(len(indices))])
 
-        CT = CoverageTransformer(len(indices),
-                                 self.getNumStoits(dbFileName),
-                                 norm_coverages,
-                                 kPCA_1,
-                                 raw_coverages,
-                                 np.array(self.getStoitColNames(dbFileName).split(",")))
-
-        CT.transformCP()
-        CT.transformedCP = [tuple(i) for i in CT.transformedCP]
-        CT.covProfiles = [tuple(i) for i in CT.covProfiles]
-        CT.corners = [tuple(i) for i in CT.corners]
+        
+        CT = CoverageTransformer()
+        CT.stoitColNames = np.array(self.getStoitColNames(dbFileName).split(","))
+        CT.normCoverages = norm_coverages
+        CT.numContigs = len(indices)
+        CT.numStoits = self.getNumStoits(dbFileName)
+        CT.transformedCP = [tuple(i) for i in np.zeros((CT.numContigs, 3))]
+        CT.covProfiles = [tuple(i) for i in raw_coverages]
+        CT.corners = [tuple(i) for i in np.zeros((CT.numStoits, 3))]
 
         # now CT stores the transformed coverages and other important information
         # we will write this to the database
@@ -1757,4 +1754,9 @@ class BamParser:
 def getBamDescriptor(fullPath, index_num):
     """AUX: Reduce a full path to just the file name minus extension"""
     return str(index_num) + '_' + op_splitext(op_basename(fullPath))[0]
-
+    
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+class CoverageTransformer: pass

@@ -96,6 +96,7 @@ class CoreCreator:
         print "    %s" % timer.getTimeStamp()
 
         
+# Hierarchical clustering
 class HybridHierarchicalClusterEngine:
     """Hybrid hierarchical clustering algorthm"""
     def makeBins(self, timer, out_bins):
@@ -138,7 +139,7 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         return np_linalg.norm(feature_ranks, axis=0)
         
     def fcluster(self, Z):
-        return self._ct.cluster_classification(Z, self._threshold)
+        return self._ct.cluster_classification(Z, self._threshold, True)
         
     
             
