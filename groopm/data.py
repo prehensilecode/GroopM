@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    mstore.py                                                                #
+#    data.py                                                                  #
 #                                                                             #
 #    GroopM - Low level data management and file parsing                      #
 #                                                                             #
-#    Copyright (C) Michael Imelfort                                           #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -39,11 +39,11 @@
 ###############################################################################
 
 __author__ = "Michael Imelfort"
-__copyright__ = "Copyright 2012-2015"
-__credits__ = ["Michael Imelfort"]
+__copyright__ = "Copyright 2012-2016"
+__credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
-__maintainer__ = "Michael Imelfort"
-__email__ = "mike@mikeimelfort.com"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
 
 __current_GMDB_version__ = 5
 
@@ -55,10 +55,9 @@ from string import maketrans as s_maketrans
 
 import tables
 import numpy as np
+import scipy.spatial.distance as sp_distance
 from scipy.spatial.distance import cdist, squareform
 
-# GroopM imports
-from PCA import PCA, Center
 
 # BamM imports
 try:
