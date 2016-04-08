@@ -280,7 +280,7 @@ class HierarchyAxisPlotter:
         self.ylabel = ylabel
     
     def __call__(self, ax):
-        sp_hierarchy.dendrogram(self.Z, ax=ax, p=1000,
+        sp_hierarchy.dendrogram(self.Z, ax=ax, p=4000,
                                 truncate_mode='lastp',
                                 distance_sort='ascending',
                                 color_threshold=0,
@@ -310,9 +310,14 @@ class HierarchyRemovedPlotter:
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)
         self._Z = sp_hierarchy.average(rnorm)
-        self._mcf = HierarchyCliqueFinder(self._Z,
-                                          self._mapping.rowIndices,
-                                          self._cm.makeConnectivity(self._threshold))
+        self._mcf = HierarchyCliqueFinder(self._Z, self._threshold, self._mapping)
+        
+        n = self._Z.shape[0] + 1
+        mcf = self._mcf
+        mcc = np.array([2*len(mcf.maxClique(i)) - len(i) for i in (mcf.indices(k) for k in mcf.nodes)])
+        cc = np.zeros(n * 2 - 1, dtype=mcc.dtype)
+        cc[mcf.nodes] = np.where(mcc < 0, 0, mcc)
+        self._coeffs = hierarchy.maxcoeffs(self._Z, cc)
         
         
     def plot(self,
@@ -321,14 +326,17 @@ class HierarchyRemovedPlotter:
          
         cct = ClassificationCoherenceClusterTool(self._mapping)
         T = cct.cluster_classification(self._Z, self._threshold, greedy)
+        #T = self._profile.binIds
         
-        (L, _M) = sp_hierarchy.leaders(Z, T)
-        rootancestors = hierarchy.ancestors(Z, L)
+        (L, M) = sp_hierarchy.leaders(self._Z, T)
+        #L = np.concatenate(L[M!=0], np.flatnonzero(T==0))
+        rootancestors = hierarchy.ancestors(self._Z, L)
         rootancestors_set = set(rootancestors)
         hplot = HierarchyPlotter(
             self._Z,
             link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
-            leaf_label_func=lambda k: '' if k in rootancestors_set else self._nodeConcensusTag(k),
+            #leaf_label_func=lambda k: '' if k in rootancestors_set else self._nodeConcensusTag(k),
+            leaf_label_func=lambda k: self._coeffs[k],
             xlabel="lineage", ylabel="rnorm"
         )
         hplot.plot(fileName)
@@ -338,63 +346,10 @@ class HierarchyRemovedPlotter:
         q = indices[self._mcf.maxClique(indices)]
         if len(q) == 0:
             return ""
-        tags = [[t for t in self._cm.tags[i]] for i in q]
+        tags = [[t for t in self._cm.tags(i)] for i in q]
         tag = tags[np.argmax([len(t) for t in tags])]
-        return tag[min(level, len(tag)-1)]
+        return tag[min(6 - self._threshold, len(tag)-1)]
 
-        
-class HierarchyRemovedPlotter_:
-    def __init__(self, profile, threshold=1):
-        self._profile = profile
-        self._threshold = threshold
-        x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
-        y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
-        w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
-        rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        
-        self._mapping = self._profile.markers
-        self._cm = ClassificationManager(self._mapping)
-        self._Z = sp_hierarchy.average(rnorm)
-        n = self._Z.shape[0]+1
-        H = hierarchy.height(self._Z)
-        
-        indices = self._mapping.rowIndices
-        idx = distance.ccoords(indices, indices, n)
-        self._mA = np.where(idx==-1, (idx==-1)*indices, H[idx]+n)
-        self._mC = np.logical_not(sp_distance.squareform(self._cm.makeDisconnectivity(self._threshold)))
-        (mcc, self._mnodes) = hierarchy.connectivity_coeffs(self._mA, self._mC)
-        self._cc = np.zeros(2*n - 1, dtype=mcc.dtype)
-        self._cc[self._mnodes] = np.where(mcc < 0, 0, mcc)
-        
-    def plot(self,
-             greedy=False,
-             fileName=""):
-                 
-        rootinds = hierarchy.maxcoeff_roots(self._Z, self._cc)
-        rootancestors = hierarchy.ancestors(self._Z, rootinds)
-        
-        if greedy:
-            rootinds = np.intersect1d(self._mnodes, rootancestors)
-            rootancestors = hierarchy.ancestors(self._Z, rootinds, inclusive=True)
-            
-        rootancestors_set = set(rootancestors)
-        hplot = HierarchyPlotter(
-            self._Z,
-            link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
-            leaf_label_func=lambda k: '' if k in rootancestor_set else self._nodeConcensusTag(k),
-            xlabel="lineage", ylabel="rnorm"
-        )
-        hplot.plot(fileName)
-        
-    def _nodeConcensusTag(self, k):
-        qv = np.flatnonzero(np.any(self._mA==k, axis=1))
-        if len(qv)==0:
-            return ""
-        pv = qv[hierarchy.greedy_clique_by_elimination(self._mC[np.ix_(qv, qv)])]
-        return self._cm.concensusTag(pv, self._threshold)
-        
-        
-  
   
 # Bin plotters
 class BinDistancePlotter:

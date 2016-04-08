@@ -72,7 +72,6 @@ class ClassificationManager:
         
     def makeConnectivity(self, level):
         """Condensed disconnectivity matrix"""
-        n = self._mapping.numMappings
         dm = sp_distance.squareform(self.makeDistances() <= level)
         
         # disconnect members in the same group
@@ -88,7 +87,7 @@ class ClassificationManager:
         
     def tags(self, index):
         """Return a classification tag iterator"""
-        return self._classifications[i].tags()
+        return self._classifications[index].tags()
     
 
 class _Classification:

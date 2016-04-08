@@ -54,52 +54,13 @@ import scipy.spatial.distance as sp_distance
 # local imports
 import distance
 from classification import ClassificationManager
-from utils import greedy_clique_by_elimination
 
 np.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
-###############################################################################
-class HierarchyCliqueFinder:
-    """Find fully connected subsets of descendents for nodes in hierarchical clustering.
-    
-    Parameters
-    ----------
-    Z: ndarray
-        Linkage matrix encoding hierarchical clustering.
-    indices: ndarray, shape (n,)
-        Indices of leaf nodes that map to observations.
-    Connectivity: ndarray, shape (n, n)
-        Matrix encoding connectivity between observations.
-    """
-    def __init__(self, Z, indices, C):
-        Z = np.asarray(Z)
-        n = Z.shape[0] + 1
-        H = height(Z)
-        
-        idx = distance.ccoords(indices, indices, n)
-        self._mA = np.where(idx==-1, (idx==-1)*indices, H[idx]+n)
-        self._mC = C
-        
-    def nodes(self):
-        """Nodes of Z that correspond to embedded hierarchy nodes."""
-        return np.unique(self._mA)
-        
-    def indices(self, node):
-        """Computes the original observations composing a node."""
-        return np.flatnonzero(np.any(self._mA==node, axis=1))
-        
-    def maxClique(self, indices):
-        """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
-        for all pairs `j`,`k` from `Q(i)"""
-        if len(indices)==0:
-            return np.array([], dtype=np.intp)
-        return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
-        
-        
-        
+###############################################################################        
 class ClassificationCoherenceClusterTool:
     """Partition a hierarchical clustering using the taxonomic classification
     distances of marker gene hits to identify clusters that maximise a measure
@@ -107,22 +68,15 @@ class ClassificationCoherenceClusterTool:
     """
     def __init__(self, markers):
         self._mapping = markers
-        self._cm = ClassificationManager(self._mapping)
         
     def cluster_classification(self, Z, t, greedy=False):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
-        H = height(Z)
         
-        indices = self._mapping.rowIndices
-        mct = HierarchyCliqueFinder(
-            Z,
-            indices=self._mapping.rowIndices,
-            C=self._cm.makeConnectivity(t)
-        )
-        mnodes = mct.nodes()
+        mct = HierarchyCliqueFinder(Z, t, self._mapping)
+        mnodes = mct.nodes
         #Size of maximal clique of `Q(k)`, minus number of non-clique elements of `Q(k)`
-        mcc = np.array([len(mct.maxClique(i)) - len(i) for i in (mct.indices(k) for k in mnodes)])
+        mcc = np.array([2*len(mct.maxClique(i)) - len(i) for i in (mct.indices(k) for k in mnodes)])
         
         cc = np.zeros(2*n - 1, dtype=mcc.dtype)
         cc[mnodes] = np.where(mcc < 0, 0, mcc)
@@ -214,6 +168,7 @@ def maxcoeff_roots(Z, coeffs):
     # the coefficient is greatest along any root-to-leaf path. 
     maxinds = filter_descendents(Z, maxinds)
     
+    print "maxcc=", maxcc[maxinds]
     return maxinds
 
     
@@ -325,6 +280,89 @@ def height(Z):
     Z = np.copy(Z)
     Z[:, 2] = np.arange(Z.shape[0])
     return sp_hierarchy.cophenet(Z).astype(int)
+    
+    
+def leaves(Z, k):
+    """Compute leaf nodes of a cluster"""
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    outarr = []
+    stack = [k]
+    while len(stack) > 0:
+        i = stack.pop()
+        if i < n:
+            outarr.append(i)
+        else:
+            stack.extend(Z[i-n, :2].astype(int))
+            
+    return np.sort(outarr)
+
+    
+class HierarchyCliqueFinder:
+    """Find fully connected subsets of descendents for nodes in hierarchical clustering.
+    
+    Parameters
+    ----------
+    Z: ndarray
+        Linkage matrix encoding hierarchical clustering.
+    markers: Markers instance
+        See ProfileManager class documentation
+    """
+    def __init__(self, Z, t, markers):
+        Z = np.asarray(Z)
+        n = Z.shape[0] + 1
+        H = height(Z)
+        
+        indices = np.asarray(markers.rowIndices)
+        idx = distance.ccoords(indices, np.arange(n), n)
+        self._mA = np.where(idx==-1, indices[:, None]*(idx==-1), H[idx]+n)
+        cm = ClassificationManager(markers)
+        self._mC = cm.makeConnectivity(t)
+        """Nodes of Z that correspond to embedded hierarchy nodes."""
+        self.nodes = np.unique(self._mA[:, indices])
+        
+    def indices(self, node):
+        """Computes the original observations composing a node."""
+        return np.flatnonzero(np.any(self._mA==node, axis=1))
+        
+    def maxClique(self, indices):
+        """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
+        for all pairs `j`,`k` from `Q(i)"""
+        if len(indices) == 0:
+            return np.array([], dtype=np.intp)
+        return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
+        
+
+def greedy_clique_by_elimination(C):
+    """Find clique from connectivity matrix by repeatedly removing least connected
+    nodes. Efficient and should generally be accurate enough for our purposes.
+    
+    Parameters
+    ----------
+    C : (N, N) ndarray
+        Connectivity matrix for graph with `N` nodes.
+        
+    Returns
+    -------
+    q : ndarray
+        1-D arrray of node indices of clique.
+    """
+    C = np.asarray(C, dtype=bool)
+    n = C.shape[0]
+    if C.shape[1] != n:
+        raise ValueError("Connectivity matrix must be square.")
+    keep = np.ones(n, dtype=bool)
+    while True:
+        nkeep = np.count_nonzero(keep)
+        if nkeep==0:
+            break
+        counts = np.sum(C[np.ix_(keep, keep)], axis=1)
+        which_min = counts.argmin()
+        if counts[which_min] == nkeep:
+            break
+        keep[keep] = np.arange(nkeep)!=which_min
+        
+    return np.flatnonzero(keep)
 
 
 ###############################################################################
