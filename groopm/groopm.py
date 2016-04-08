@@ -52,7 +52,7 @@ from mstore import GMDataManager as DataManager
 from cluster import CoreCreator
 from extract import BinExtractor
 from import_ import BinImporter
-from plot import BinPlotter
+from plot import BinPlotter, TreePlotter
 from groopmTimekeeper import TimeKeeper
 
     

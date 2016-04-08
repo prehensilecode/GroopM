@@ -65,33 +65,30 @@ class ClassificationManager:
     """
     def __init__(self, markers):
         self._mapping = markers
-        taxstrings = self._mapping.taxstrings
-        if taxstrings is not None:
-            self._classifications = [_Classification(s) for s in taxstrings]
+        self._classifications = [_Classification(s) for s in self._mapping.taxstrings]
         
     def makeDistances(self):
-        """Condensed distance matrix between pairs of marker hits"""
-        if self._classifications is not None:
-            return _classification_pdist(self._classifications)
-        else:
-            n = self._mapping.numMappings
-            return np.zeros( n * (n - 1) // 2, dtype=np.double)
+        return _classification_pdist(self._classifications)
         
-    def makeDisconnectivity(self, level):
+    def makeConnectivity(self, level):
         """Condensed disconnectivity matrix"""
         n = self._mapping.numMappings
-        dm = self.makeDistances() > level
+        dm = sp_distance.squareform(self.makeDistances() <= level)
         
         # disconnect members in the same group
         for (_, m) in self.itergroups():
-            idx = distance.pcoords(m, n)
-            dm[idx[idx != -1]] = True 
+            dm[np.ix_(m, m)] = False
+            dm[m, m] = True 
         
         return dm
         
     def itergroups(self):
         """Returns an iterator of marker names and indices."""
         return group_iterator(self._mapping.markerNames)
+        
+    def tags(self, index):
+        """Return a classification tag iterator"""
+        return self._classifications[i].tags()
     
 
 class _Classification:
@@ -120,35 +117,23 @@ class _Classification:
     def __init__(self, taxstring):
         self.original_string = taxstring
         self.ranks = self.parse(taxstring)
-        
-    def domain(self):
-        return self.ranks[0]
-        
-    def phylum(self):
-        return self.ranks[1]
-        
-    def class_(self):
-        return self.ranks[2]
-        
-    def order(self):
-        return self.ranks[3]
-        
-    def family(self):
-        return self.ranks[4]
-        
-    def genus(self):
-        return self.ranks[5]
-        
-    def species(self):
-        return self.ranks[6]
+    
+    def taxon(self, taxon):
+        try:
+            level = ["domain", "phylum", "class", "order", "family", "genus", "species"].index(taxon)
+        except ValueError:
+            raise ValueError("Unrecognised `taxon` parameter value: `%s`" % taxon)
+        if level >= len(self.ranks):
+            return None
+        return self.ranks[level]
         
     def tags(self):
-        for (t, s) in zip(self.TAGS, self.ranks):
-            yield t++s
+        for (t, d) in zip(self.TAGS, self.ranks):
+            yield t+d
             
     def distance(self, other):
         for (d, s, o) in zip(range(7, 0, -1), self.ranks, other.ranks):
-            if s=='' or o=='' or s!=0:
+            if s=='' or o=='' or s!=o:
                 return d
         return 0
         

@@ -126,6 +126,7 @@ class PrintHelpAction(argparse.Action):
         Plotting
         
     groopm plot         -> {plot}
+    groopm tree         -> {tree}
     
     USE: groopm OPTION -h to see detailed options
 '''.format(
@@ -135,7 +136,8 @@ class PrintHelpAction(argparse.Action):
             extract=extract_command_configure.description,
             dump=dump_command_configure.description,
             import_=import_command_configure.description,
-            plot=plot_command_configure.description
+            plot=plot_command_configure.description,
+            tree=tree_command_configure.description,
         )
 
 #------------------------------------------------------------------------------
@@ -340,7 +342,7 @@ class plot_command_configure:
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
-        parser.add_argument('-i', '--interactive', action="store_true", default=False, help="interatcive plot first bin or contig id")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
         parser.set_defaults(run=self)
@@ -358,6 +360,31 @@ class plot_command_configure:
                    bids=options.bids,
                    origin=options.origin,
                    colorMap=options.colormap,
+                   prefix=options.prefix)
+                   
+                   
+class tree_command_configure:
+    description="Plot cluster hierarchy tree"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
+        parser.add_argument('-p', '--prefix', default="TREE", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in tree plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        tplot = groopm.TreePlotter(options.dbname,
+                                   options.markerfile,
+                                   folder=None if options.interactive else options.out_folder)
+        tplot.plot(timer,
                    prefix=options.prefix)
                    
 
@@ -434,6 +461,14 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     plot_command_configure(plot_subparser)
+    
+    tree_subparser = subparsers.add_parser(
+        "tree",
+        description=tree_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    tree_command_configure(tree_subparser)
+    
             
 if __name__ == '__main__':
 

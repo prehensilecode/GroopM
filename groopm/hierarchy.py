@@ -54,6 +54,7 @@ import scipy.spatial.distance as sp_distance
 # local imports
 import distance
 from classification import ClassificationManager
+from utils import greedy_clique_by_elimination
 
 np.seterr(all='raise')
 
@@ -61,6 +62,44 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
+class HierarchyCliqueFinder:
+    """Find fully connected subsets of descendents for nodes in hierarchical clustering.
+    
+    Parameters
+    ----------
+    Z: ndarray
+        Linkage matrix encoding hierarchical clustering.
+    indices: ndarray, shape (n,)
+        Indices of leaf nodes that map to observations.
+    Connectivity: ndarray, shape (n, n)
+        Matrix encoding connectivity between observations.
+    """
+    def __init__(self, Z, indices, C):
+        Z = np.asarray(Z)
+        n = Z.shape[0] + 1
+        H = height(Z)
+        
+        idx = distance.ccoords(indices, indices, n)
+        self._mA = np.where(idx==-1, (idx==-1)*indices, H[idx]+n)
+        self._mC = C
+        
+    def nodes(self):
+        """Nodes of Z that correspond to embedded hierarchy nodes."""
+        return np.unique(self._mA)
+        
+    def indices(self, node):
+        """Computes the original observations composing a node."""
+        return np.flatnonzero(np.any(self._mA==node, axis=1))
+        
+    def maxClique(self, indices):
+        """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
+        for all pairs `j`,`k` from `Q(i)"""
+        if len(indices)==0:
+            return np.array([], dtype=np.intp)
+        return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
+        
+        
+        
 class ClassificationCoherenceClusterTool:
     """Partition a hierarchical clustering using the taxonomic classification
     distances of marker gene hits to identify clusters that maximise a measure
@@ -70,19 +109,20 @@ class ClassificationCoherenceClusterTool:
         self._mapping = markers
         self._cm = ClassificationManager(self._mapping)
         
-    def classification_coherence(self, Z, t):
+    def cluster_classification(self, Z, t, greedy=False):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
         H = height(Z)
         
         indices = self._mapping.rowIndices
-        idx = distance.ccoords(indices, indices, n)
-        mA = np.where(idx==-1, (idx==-1)*indices, H[idx]+n)
-        mC = np.logical_not(sp_distance.squareform(self._cm.makeDisconnectivity(t)))
-        return connectivity_coeffs(mA, mC)
-        
-    def cluster_classification(self, Z, t, greedy=False):
-        (mcc, mnodes) = self.classification_coherence(Z, t)
+        mct = HierarchyCliqueFinder(
+            Z,
+            indices=self._mapping.rowIndices,
+            C=self._cm.makeConnectivity(t)
+        )
+        mnodes = mct.nodes()
+        #Size of maximal clique of `Q(k)`, minus number of non-clique elements of `Q(k)`
+        mcc = np.array([len(mct.maxClique(i)) - len(i) for i in (mct.indices(k) for k in mnodes)])
         
         cc = np.zeros(2*n - 1, dtype=mcc.dtype)
         cc[mnodes] = np.where(mcc < 0, 0, mcc)
@@ -103,77 +143,6 @@ class ClassificationCoherenceClusterTool:
         # removing ancestor nodes of forest root nodes.
         T = cluster_remove(Z, rootancestors)
         return T
-        
-        
-def connectivity_coeffs(A, C):
-    """Find connectivity coefficient for nodes in hierarchical clustering. The
-    coefficient is defined for a node `i` as the difference of the number of
-    descendents `P(i)` such that `C[j,k] == True` for all pairs `j`,`k` from
-    `Q(i)`, minus the number of descendent `N(i)` such that `C[j,k] == False`
-    for any `k` from `P(i)` where `j` from `N(i)`.
-    
-    Parameters
-    ----------
-    A : ndarray, optional
-        Common ancestor node matrix for pairs of observations.
-    C : ndarray
-        Connectivity matrix for same pairs of observations.
-        
-    Returns
-    -------
-    coeffs : ndarray
-        `coeffs[i]` is the connectivity coefficient for the `nodes[i]`th cluster.
-    nodes : ndarray
-        Sorted cluster node indices at which `coeffs` was computed.
-    """
-    
-    A = np.asarray(A, dtype=int)
-    C = np.asarray(C, dtype=bool)
-    if A.shape != C.shape:
-        raise ValueError("Condensed ancestor height and connectivity matrices must have the same shape.")
-        
-    nodes = np.unique(A)
-    coeffs = np.zeros(nodes.size, dtype=int)
-    for (i, k) in enumerate(nodes):
-        
-        qv = np.flatnonzero((A == k).any(axis=1)) # descendents of node i
-        pv = qv[greedy_clique_by_elimination(C[np.ix_(qv, qv)])]
-        nv = qv[np.logical_not(C[np.ix_(qv, pv)].all(axis=1))]
-        
-        coeff = len(pv) - len(nv)
-        coeffs[i] = coeff
-        
-    return (coeffs, nodes)
-    
-
-def greedy_clique_by_elimination(C):
-    """Find clique from connectivity matrix by repeatedly removing least connected
-    nodes. Efficient and should generally be accurate enough for our purposes.
-    
-    Parameters
-    ----------
-    C : (N, N) ndarray
-        Connectivity matrix for graph with `N` nodes.
-        
-    Returns
-    -------
-    q : ndarray
-        1-D arrray of node indices of clique.
-    """
-    C = np.asarray(C, dtype=bool)
-    n = C.shape[0]
-    if C.shape[1] != n:
-        raise ValueError("Connectivity matrix must be square.")
-    keep = np.ones(n, dtype=bool)
-    while True:
-        nkeep = np.count_nonzero(keep)
-        counts = np.sum(C[np.ix_(keep, keep)], axis=1)
-        which_min = counts.argmin()
-        if counts[which_min] == nkeep:
-            break
-        keep[keep] = np.arange(nkeep)!=which_min
-        
-    return np.flatnonzero(keep)
 
     
 def cluster_remove(Z, remove):
