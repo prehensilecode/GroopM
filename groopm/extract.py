@@ -51,11 +51,17 @@ __status__ = "Development"
 import os
 import sys
 import errno
+import numpy as np
+import scipy.spatial.distance as sp_distance
+from bamm.bamExtractor import BamExtractor as BMBE
 
+# local imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from bamm.bamExtractor import BamExtractor as BMBE
+from classification import ClassificationManager
 from mstore import ContigParser
+from utils import makeSurePathExists
+import distance
 
 
 ###############################################################################
@@ -189,15 +195,76 @@ class BinExtractor:
 
         bam_parser.extract(threads=threads,
                            verbose=verbose)
+                           
+                           
+class MarkerExtractor:
+    def __init__(self,
+                 dbFileName,
+                 markerFileName=None,
+                 folder=''
+                 ):
+        self.dbFileName = dbFileName
+        self.markerFileName = markerFileName
+        self._pm = ProfileManager(self.dbFileName, self.markerFileName)
+        self._outDir = os.getcwd() if folder == "" else folder
+        # make the dir if need be
+        makeSurePathExists(self._outDir)
 
+    def loadProfile(self, timer, bids=[], cutoff=0):
+        bids = [] if bids is None else bids
+        return self._pm.loadData(timer,
+                                 loadBins=True,
+                                 loadMarkers=True,
+                                 bids=bids,
+                                 minLength=cutoff
+                                )
+        
+    def extractMappingInfo(self,
+                           timer,
+                           bids=[],
+                           prefix='',
+                           cutoff=0
+                           ):
+        """Extract markers from bins and write to file"""
+        if prefix is None or prefix == '':
+            prefix=os.path.basename(self.dbFileName) \
+                            .replace(".gm", "") \
+                            .replace(".sm", "")
+        
+        profile = self.loadProfile(timer, bids, cutoff)
+        bm = BinManager(profile)
+        dm = ClassificationManager(profile.markers).makeDistances()
+        
+        # load all the contigs which have been assigned to bins
 
-def makeSurePathExists(path):
-    try:
-        os.makedirs(path)
-    except OSError as exception:
-        if exception.errno != errno.EEXIST:
-            raise
-
+        # now print out the sequences
+        print "Writing files"
+        for bid in bm.getBids():
+            file_name = os.path.join(self._outDir, "%s_bin_%d.txt" % (prefix, bid))
+            
+            bin_indices = bm.getBinIndices([bid])
+            idx = np.flatnonzero(np.in1d(profile.markers.rowIndices, bin_indices))
+            
+            labels = profile.markers.markerNames[idx]
+            taxstrings = profile.markers.taxstrings[idx]
+            cnames = profile.contigNames[profile.markers.rowIndices[idx]]
+            dists = sp_distance.squareform(dm[distance.pcoords(idx, profile.markers.numMappings)])
+            
+            try:
+                with open(file_name, 'w') as f:
+                    #labels and lineages
+                    f.write('#info table\n%s\n' % '\t'.join(['label', 'taxonomy', 'contig_name']))
+                    for (label, tax, cname) in zip(labels, taxstrings, cnames):
+                        f.write('%s\n' % '\t'.join([label, '\'%s\'' % tax, cname]))
+                    
+                    #distance table
+                    f.write('\n#distance table\n')
+                    for row in dists:
+                        f.write('%s\n' % ' '.join(row.astype(int).astype(str)))
+            except:
+                print "Could not open file for writing:",file_name,sys.exc_info()[0]
+                raise
+    
 ###############################################################################
 ###############################################################################
 ###############################################################################

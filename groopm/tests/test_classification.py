@@ -48,6 +48,9 @@ def test_Classification():
     assert_equal_arrays([methanococcus.taxon(field) for field in ["domain", "phylum", "class", "order", "family", "genus"]],
                          ranks,
                          "`_Classifcation.taxon` reports specific taxonomic levels")
+                         
+    methanococcus2 = _Classification("d__Archaea; p__Euryarchaeota; c__Methanococci; o__Methanococcales; f__Methanococcaceae; g__Methanococcus")
+    assert_true(methanococcus.distance(methanococcus2)==0, "`_Classification.distance` for identical classifications is 0.")
     
     pyrococcus = _Classification("d__Archaea; p__Euryarchaeota; c__Thermococci; o__Thermococcales; f__Thermococcaceae; g__Pyrococcus")
     assert_true(methanococcus.distance(pyrococcus)==5, "`_Classification.distance` computes taxonomic rank of divergence for two genus level classifications")

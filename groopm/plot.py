@@ -142,7 +142,7 @@ class TreePlotter:
         fplot = HierarchyRemovedPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
-        for greedy in [False, True]:
+        for greedy in [True, False]:
             fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_GREEDY=%d.png" % (prefix, greedy))
             
             fplot.plot(fileName=fileName, greedy=greedy)
@@ -297,7 +297,6 @@ class HierarchyPlotter(Plotter2D):
         
 
 # Tree plotters
-
 class HierarchyRemovedPlotter:
     def __init__(self, profile, threshold=1):
         self._profile = profile
@@ -314,14 +313,10 @@ class HierarchyRemovedPlotter:
         
         n = self._Z.shape[0] + 1
         mcf = self._mcf
-        mcc = np.array([2*len(mcf.maxClique(i)) - len(i) for i in (mcf.indices(k) for k in mcf.nodes)])
-        cc = np.zeros(n * 2 - 1, dtype=mcc.dtype)
-        cc[mcf.nodes] = np.where(mcc < 0, 0, mcc)
-        self._coeffs = hierarchy.maxcoeffs(self._Z, cc)
-        
         
     def plot(self,
              greedy=False,
+             label="count",
              fileName=""):
          
         cct = ClassificationCoherenceClusterTool(self._mapping)
@@ -332,16 +327,33 @@ class HierarchyRemovedPlotter:
         #L = np.concatenate(L[M!=0], np.flatnonzero(T==0))
         rootancestors = hierarchy.ancestors(self._Z, L)
         rootancestors_set = set(rootancestors)
+        if label=="tag":
+            leaf_label_func=lambda k: '' if k in rootancestors_set else self.leaf_label_tag(k)
+        elif label=="count":
+            leaf_label_func=self.leaf_label_count
+        elif label=="coeff":
+            leaf_label_func=self.leaf_label_coeff
+        else:
+            raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
+        
         hplot = HierarchyPlotter(
             self._Z,
             link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
-            #leaf_label_func=lambda k: '' if k in rootancestors_set else self._nodeConcensusTag(k),
-            leaf_label_func=lambda k: self._coeffs[k],
+            leaf_label_func=leaf_label_func,
             xlabel="lineage", ylabel="rnorm"
         )
         hplot.plot(fileName)
         
-    def _nodeConcensusTag(self, k):
+    def leaf_label_coeff(self, k):
+        indices = self._mcf.indices(k)
+        coeff = 2*len(self._mcf.maxClique(indices)) - len(indices)
+        return '' if count <= 0 else str(coeff)
+        
+    def leaf_label_count(self, k):
+        count = len(self._mcf.indices(k))
+        return '' if count == 0 else str(count)
+        
+    def leaf_label_tag(self, k):
         indices = self._mcf.indices(k)
         q = indices[self._mcf.maxClique(indices)]
         if len(q) == 0:

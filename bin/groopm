@@ -121,6 +121,7 @@ class PrintHelpAction(argparse.Action):
         Import / Export
         
     groopm dump         -> {dump}
+    groopm markers      -> {markers}
     groopm import       -> {import_}
     
         Plotting
@@ -135,6 +136,7 @@ class PrintHelpAction(argparse.Action):
             core=core_command_configure.description,
             extract=extract_command_configure.description,
             dump=dump_command_configure.description,
+            markers=markers_command_configure.description,
             import_=import_command_configure.description,
             plot=plot_command_configure.description,
             tree=tree_command_configure.description,
@@ -268,6 +270,35 @@ class extract_command_configure:
         else:
             raise ExtractModeNotAppropriateException("mode: "+ options.mode + " is unknown")
 
+                        
+class markers_command_configure:
+    description="Print summary of binned contig marker information to text file"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
+        parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
+        parser.add_argument('-o', '--out_folder', default="", help="write to this folder (None for current dir)")
+        parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
+        parser.set_defaults(run=self)
+
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in marker summary mode..." % __version__
+        print "*******************************************************************************"
+        bids = []
+        if options.bids is not None:
+            bids = options.bids
+        mx = groopm.MarkerExtractor(options.dbname,
+                                    options.markerfile,
+                                    folder=options.out_folder
+                                    )
+        mx.extractMappingInfo(timer,
+                              bids=bids,
+                              prefix=options.prefix)
+            
             
 class dump_command_configure:
     description="Write database to text file"
@@ -442,6 +473,13 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     dump_command_configure(dump_subparser)
+    
+    markers_subparser = subparsers.add_parser(
+        "markers",
+        description=markers_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    markers_command_configure(markers_subparser)
     
     import_subparser = subparsers.add_parser(
         "import",

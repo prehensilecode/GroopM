@@ -69,7 +69,7 @@ class ClassificationCoherenceClusterTool:
     def __init__(self, markers):
         self._mapping = markers
         
-    def cluster_classification(self, Z, t, greedy=False):
+    def cluster_classification(self, Z, t, greedy=True):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
         
@@ -168,7 +168,6 @@ def maxcoeff_roots(Z, coeffs):
     # the coefficient is greatest along any root-to-leaf path. 
     maxinds = filter_descendents(Z, maxinds)
     
-    print "maxcc=", maxcc[maxinds]
     return maxinds
 
     
