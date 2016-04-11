@@ -84,7 +84,7 @@ class CoreCreator:
             
         profile = self.loadProfile(timer, minLength)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile, minSize=minSize, minBP=minBP)
@@ -126,7 +126,7 @@ class HybridHierarchicalClusterEngine:
         
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
-    def __init__(self, profile, threshold=1, greedy=False):
+    def __init__(self, profile, threshold, greedy):
         self._profile = profile
         self._ct = ClassificationCoherenceClusterTool(profile.markers)
         self._features = (profile.covProfiles, profile.kmerSigs)

@@ -69,7 +69,7 @@ class ClassificationCoherenceClusterTool:
     def __init__(self, markers):
         self._mapping = markers
         
-    def cluster_classification(self, Z, t, greedy=True):
+    def cluster_classification(self, Z, t, greedy):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
         
