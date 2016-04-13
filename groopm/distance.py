@@ -89,8 +89,70 @@ def argrank(array, weights=None, axis=0):
         indexer = [None]*len(array.shape)
         indexer[axis] = slice(None)
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
- 
 
+        
+def density_distance(Y, weights, minWt):
+    """Compute pairwise density distance, defined as the max of the pairwise
+    distance between two points and the minimum distance of the minPts
+    neighbours of the two points.
+
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix containing distances for pairs of
+        observations. See scipy's `squareform` function for details.
+    weights : ndarray
+        Condensed matrix containing pairwise weights.
+    minWt : int
+        Total cumulative neighbour weight used to compute density distance.
+        
+    Returns
+    -------
+    density_distance : ndarray
+        Condensed distance matrix of pairwise density distances.
+    """
+    n = sp_distance.num_obs_y(Y)
+    dm = sp_distance.squareform(Y)
+    wm = sp_distance.squareform(weights)
+    sorting_indices = dm.argsort(axis=1)
+    nn_dist = np.empty(n, dtype=dm.dtype)
+    for i in range(n):
+        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt) - 1)
+        nn_dist[i] = dm[i, sorting_indices[i, minPts]]
+    
+    inds = np.triu_indices(n, k=1)
+    dd = np.maximum(np.minimum(nn_dist[inds[0]], nn_dist[inds[1]]), Y)
+    return dd
+        
+        
+def density_distance_(Y, minPts):
+    """Compute pairwise density distance, defined as the max of the pairwise
+    distance between two points and the minimum distance of the minPts
+    neighbours of the two points.
+
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix containing distances for pairs of
+        observations. See scipy's `squareform` function for details.
+    minPts : int
+        Number of neighbours used to compute density distance.
+        
+    Returns
+    -------
+    density_distance : ndarray
+        Condensed distance matrix of pairwise density distances.
+    """
+    dm = sp_distance.squareform(Y)
+    dm.sort(axis=1)
+    nn_dist = dm[:, minPts]
+    
+    n = sp_distance.num_obs_y(Y)
+    inds = np.triu_indices(n, k=1)
+    dd = np.maximum(np.minimum(nn_dist[inds[0]], nn_dist[inds[1]]), Y)
+    return dd
+
+    
 # helper
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
@@ -127,17 +189,30 @@ def _rank_with_ties(a, weights=None):
 def pcoords(idx, n):
     idx = np.asarray(idx).ravel()
     (iu, ju) = np.triu_indices(idx.size, k=1)
-    return _squareform_index(idx[iu], idx[ju], n)
+    return condensed_index_(n, idx[iu], idx[ju])
   
   
 def ccoords(idxA, idxB, n):
     idxA = np.asarray(idxA).ravel()
     idxB = np.asarray(idxB).ravel()
     (rows, cols) = np.ix_(idxA, idxB)
-    return _squareform_index(rows, cols, n)
+    return condensed_index_(n, rows, cols)
+    
+    
+def condensed_index(n, i, j):
+    """
+    Calculate the condensed index of element (i, j) in an n x n condensed
+    matrix.
+    Based on scipy Cython function:
+    https://github.com/scipy/scipy/blob/v0.17.0/scipy/cluster/_hierarchy.pyx
+    """
+    if i < j:
+        return n * i - (i * (i + 1) // 2) + (j - i - 1)
+    elif i > j:
+        return n * j - (j * (j + 1) // 2) + (i - j - 1)
+    
   
-  
-def _squareform_index(i, j, n):
+def condensed_index_(n, i, j):
     """Returns indices in a condensed matrix corresponding to input
     coordinates, or -1 for diagonal elements.
     
@@ -171,14 +246,12 @@ def _squareform_index(i, j, n):
     x x + + + + ...
     - - - i + j ...
     """
-    if not np.all(i < n) or not np.all(j < n) or np.any(i < 0) or np.any(j < 0):
-        raise IndexError("Indices must be between 0 and %s." % n-1)
     
     # must have row < col
     ii = np.where(j < i, j, i)
     jj = np.where(i > j, i, j)
     #return np.where(ii==jj, -1, n*(n-1)//2 - (n-ii)*(n-ii-1)//2 + jj-ii-1)
-    return np.where(ii==jj, -1, n*ii - ii*(ii+1)//2 + jj-ii-1)
+    return n*ii - ii*(ii+1)//2 + jj-ii-1
 
     
 ###############################################################################
