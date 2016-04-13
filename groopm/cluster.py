@@ -84,7 +84,7 @@ class CoreCreator:
             
         profile = self.loadProfile(timer, minLength)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, 1e8)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile, minSize=minSize, minBP=minBP)
@@ -107,7 +107,7 @@ class HybridHierarchicalClusterEngine:
         print "    %s" % timer.getTimeStamp()
 
         print "Computing cluster hierarchy"
-        Z = sp_hierarchy.average(dists)
+        Z = sp_hierarchy.single(dists)
         print "    %s" % timer.getTimeStamp()
         
         print "Finding cores"
@@ -125,6 +125,27 @@ class HybridHierarchicalClusterEngine:
         
         
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
+    """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
+    def __init__(self, profile, threshold, greedy, k):
+        self._profile = profile
+        self._ct = ClassificationCoherenceClusterTool(profile.markers)
+        self._features = (profile.covProfiles, profile.kmerSigs)
+        self._threshold = threshold
+        self._greedy = greedy
+        self._k = k
+        
+    def distances(self):
+        feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
+        weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        feature_ranks = distance.argrank(feature_distances, weights=weights, axis=1)
+        rank_norms = np_linalg.norm(feature_ranks, axis=0)
+        return distance.density_distance(rank_norms, weights, self._k)
+        
+    def fcluster(self, Z):
+        return self._ct.cluster_classification(Z, self._threshold, self._greedy)
+        
+        
+class FeatureGlobalRankAndClassificationClusterEngine_(HybridHierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     def __init__(self, profile, threshold, greedy):
         self._profile = profile
