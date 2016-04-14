@@ -49,6 +49,7 @@ __email__ = "t.lamberton@uq.edu.au"
 
 import numpy as np
 import scipy.spatial.distance as sp_distance
+from Queue import PriorityQueue
 
 # local imports
 from utils import multi_apply_along_axis
@@ -153,37 +154,34 @@ def density_distance_(Y, minPts):
     return dd
 
     
-# helper
-def _rank_with_ties(a, weights=None):
-    """Return sorted of array indices with tied values averaged"""
-    a = np.asarray(a)
-    shape = a.shape
-    size = a.size
+def reachability_order(Y):
+    """Traverse collection of nodes by choosing the closest unvisited node to
+    a visited node at each step to produce a reachability plot.
     
-    if weights is not None:
-        weights = np.asarray(weights)
-        if weights.shape != shape:
-            raise ValueError('weights should have the same shape as a.')
-        weights = weights.ravel()
-    a = a.ravel()
-    
-    sorting_index = a.argsort()
-    sa = a[sorting_index]
-    flag = np.concatenate(([True], sa[1:] != sa[:-1], [True]))
-    if weights is None:
-        # counts up to 
-        cw = np.flatnonzero(flag)
-    else:
-        cw = np.concatenate(([0], weights[sorting_index].cumsum()))
-        cw = cw[flag]
-    cw = cw.astype(np.double)
-    sr = (cw[1:] + cw[:-1] - 1) / 2
-    
-    iflag = np.cumsum(flag[:-1]) - 1
-    r = np.empty(size, dtype=np.double)
-    r[sorting_index] = sr[iflag]
-    r = r.reshape(shape)
-    return r
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix
+        
+    Returns
+    -------
+    o : ndarray
+        1-D array of indices of leaf nodes in traversal order.
+    """
+    n = sp_distance.num_obs_y(Y)
+    dm = sp_distance.squareform(Y)
+    o = np.empty(n, dtype=np.intp)
+    closest = 0
+    o[0] = 0
+    to_visit = np.arange(1, n)
+    dists = dm[0, 1:]
+    for i in range(1, n):
+        closest = to_visit[dists.argmin()]
+        o[i] = closest
+        keep = to_visit != closest
+        to_visit = to_visit[keep]
+        dists = np.minimum(dists[keep], dm[closest, to_visit])
+    return o
     
     
 def pcoords(idx, n):
@@ -252,6 +250,39 @@ def condensed_index_(n, i, j):
     jj = np.where(i > j, i, j)
     #return np.where(ii==jj, -1, n*(n-1)//2 - (n-ii)*(n-ii-1)//2 + jj-ii-1)
     return n*ii - ii*(ii+1)//2 + jj-ii-1
+    
+      
+# helper
+def _rank_with_ties(a, weights=None):
+    """Return sorted of array indices with tied values averaged"""
+    a = np.asarray(a)
+    shape = a.shape
+    size = a.size
+    
+    if weights is not None:
+        weights = np.asarray(weights)
+        if weights.shape != shape:
+            raise ValueError('weights should have the same shape as a.')
+        weights = weights.ravel()
+    a = a.ravel()
+    
+    sorting_index = a.argsort()
+    sa = a[sorting_index]
+    flag = np.concatenate(([True], sa[1:] != sa[:-1], [True]))
+    if weights is None:
+        # counts up to 
+        cw = np.flatnonzero(flag)
+    else:
+        cw = np.concatenate(([0], weights[sorting_index].cumsum()))
+        cw = cw[flag]
+    cw = cw.astype(np.double)
+    sr = (cw[1:] + cw[:-1] - 1) / 2
+    
+    iflag = np.cumsum(flag[:-1]) - 1
+    r = np.empty(size, dtype=np.double)
+    r[sorting_index] = sr[iflag]
+    r = r.reshape(shape)
+    return r
 
     
 ###############################################################################

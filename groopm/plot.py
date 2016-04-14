@@ -134,21 +134,16 @@ class TreePlotter:
         
     def plot(self,
              timer,
-             prefix="TREE"
+             prefix="REACH"
             ):
         
         profile = self.loadProfile(timer)
 
-        fplot = HierarchyRemovedPlotter(profile)
+        fplot = HierarchyReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
-        for greedy in [True, False]:
-            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_GREEDY=%d.png" % (prefix, greedy))
-            
-            fplot.plot(fileName=fileName, greedy=greedy)
-            
-            if fileName=="":
-                break
+        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
+        fplot.plot(fileName=fileName)
         print "    %s" % timer.getTimeStamp()
 
         
@@ -295,9 +290,41 @@ class HierarchyPlotter(Plotter2D):
     def __init__(self, *args, **kwargs):
         self.plotOnAx = HierarchyAxisPlotter(*args, **kwargs)
         
+        
+class ReachabilityAxisPlotter:
+    def __init__(self,
+                 height,
+                 colors,
+                 edgecolors,
+                 tick_labels=None,
+                 xlabel="",
+                 ylabel=""):
+        self.y = height
+        self.colours = colours
+        self.edgecolours = edgecolours
+        self.xlabel = xlabel
+        self.ylabel = ylabel
+        self.tick_labels = tick_labels
+        
+    def __call__(self, ax):
+        y = self.y
+        x = np.arange(len(y))
+        ax.bar(x, y, width=1,
+               color=self.colours,
+               edgecolor=self.edgecolours)
+        ax.set_xlabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
+        ax.set_xticks(x+0.5*width)
+        ax.set_xticklabels(self.tick_labels)
+        
+        
+class ReachabilityPlotter(Plotter2D):
+    def __init__(self, *args, **kwargs):
+        self.plotOnAx = ReachabilityAxisPlotter(*args, **kwargs)
+        
 
 # Tree plotters
-class HierarchyRemovedPlotter:
+class HierarchyReachabilityPlotter:
     def __init__(self, profile, threshold=1):
         self._profile = profile
         self._threshold = threshold
@@ -305,34 +332,64 @@ class HierarchyRemovedPlotter:
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        
-        self._mapping = self._profile.markers
-        self._cm = ClassificationManager(self._mapping)
-        self._Z = sp_hierarchy.average(rnorm)
-        self._mcf = HierarchyCliqueFinder(self._Z, self._threshold, self._mapping)
-        
-        n = self._Z.shape[0] + 1
-        mcf = self._mcf
+        self._heights = distance.density_distance(rnorm)
+        self._Z = sp_hierarchy.single(self._heights)
+        self._order = distance.reachability_order(self._heights)
         
     def plot(self,
              greedy=False,
              label="count",
              fileName=""):
-         
-        cct = ClassificationCoherenceClusterTool(self._mapping)
-        T = cct.cluster_classification(self._Z, self._threshold, greedy)
-        #T = self._profile.binIds
         
-        (L, M) = sp_hierarchy.leaders(self._Z, T)
-        #L = np.concatenate(L[M!=0], np.flatnonzero(T==0))
+        mapping = self._profile.markers
+        cm = ClassificationManager(mapping)
+        tick_labels = ['']*len(self._order)
+        for (i, ix) in enumerate(mapping.rowIndices):
+            tick_labels[ix] = cm.tags(i)[-1]
+        
+        hplot = ReachabilityPlotter(
+            height=self._heights[self._order],
+            colours=np.where(self._profile.binIds[self._order] != 0, 'r', 'k'),
+            edgecolours='face',
+            xlabel="lineage",
+            ylabel="dendist",
+            tick_labels=tick_labels)
+        hplot.plot(fileName)
+        
+
+class HierarchyRemovedPlotter:
+    def __init__(self, profile, threshold=1):
+        self._profile = profile
+        self._threshold = threshold
+        self._mapping = self._profile.markers
+        self._cm = ClassificationManager(self._mapping)
+        x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
+        y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
+        w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
+        ddist = distance.density_distance(rnorm)
+        self._Z = sp_hierarchy.single(ddist)
+        self._mcf = HierarchyCliqueFinder(self._Z, self._threshold, self._mapping)
+
+        
+    def plot(self,
+             greedy=False,
+             label="count",
+             fileName=""):
+        
+        (L, M) = sp_hierarchy.leaders(self._Z, self._profile.binIds)
+        L = np.concatenate((L[M!=0], np.flatnonzero(T==0)))
         rootancestors = hierarchy.ancestors(self._Z, L)
         rootancestors_set = set(rootancestors)
         if label=="tag":
             leaf_label_func=lambda k: '' if k in rootancestors_set else self.leaf_label_tag(k)
+            xlabel="lineage"
         elif label=="count":
             leaf_label_func=self.leaf_label_count
+            xlabel="count"
         elif label=="coeff":
             leaf_label_func=self.leaf_label_coeff
+            xlabel="coeff"
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
         
@@ -340,7 +397,7 @@ class HierarchyRemovedPlotter:
             self._Z,
             link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
             leaf_label_func=leaf_label_func,
-            xlabel="lineage", ylabel="rnorm"
+            xlabel=xlabel, ylabel="dendist"
         )
         hplot.plot(fileName)
         

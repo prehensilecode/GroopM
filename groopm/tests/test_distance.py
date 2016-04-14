@@ -32,6 +32,7 @@ import scipy.spatial.distance as sp_distance
 import random
 from groopm.distance import (mediod,
                              density_distance,
+                             reachability_order,
                              argrank,
                              pcoords,
                              ccoords)
@@ -186,6 +187,28 @@ def test_density_distance():
     assert_equal_arrays(density_distance(Y, w, 30),
                         [97.1, 77.3, 97.1, 50.8, 121.6, 97.1, 82.1, 120.9, 77.3, 50.8],
                         "computes weighted `density_distance` at various limits")
+                        
+                        
+def test_reachability_order():
+    """
+    Y encodes weighted distances for pairs:
+    (0, 1) =  17.7
+    (0, 2) =  70.0
+    (0, 3) =  97.1
+    (0, 4) =  50.8
+    (1, 2) = 121.6
+    (1, 3) =  79.4
+    (1, 4) =  82.1
+    (2, 3) = 120.9
+    (2, 4) =  77.3
+    (3, 4) =  14.4
+    """
+    Y = np.array([17.7, 70., 97.1, 50.8, 121.6, 79.4, 82.1, 120.9, 77.3, 14.4])
+    print reachability_order(Y)
+    assert_equal_arrays(reachability_order(Y),
+                        [0, 1, 4, 3, 2],
+                        "`reachability_order` returns reachability traversal order")
+                        
     
 
 def test_condensed_index():
