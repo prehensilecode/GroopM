@@ -81,19 +81,13 @@ class BinExtractor:
         makeSurePathExists(self._outDir)
 
     def loadProfile(self, timer, bids=[], cutoff=0):
-        if bids is None or bids == []:
-            return self._pm.loadData(timer, 
-                                     loadBins=True,
-                                     bids=[0],
-                                     removeBins=True,
-                                     minLength=cutoff
-                                    )
-        else:
-            return self._pm.loadData(timer,
-                                     loadBins=True,
-                                     bids=bids,
-                                     minLength=cutoff
-                                    )
+        removeBins = bids is None or bids == []
+        return self._pm.loadData(timer, 
+                                 loadBins=True,
+                                 bids=[0] if removeBins else bids,
+                                 removeBins=removeBins,
+                                 minLength=cutoff
+                                )
 
     def extractContigs(self,
                        timer,
