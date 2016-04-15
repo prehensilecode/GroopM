@@ -107,6 +107,7 @@ class HybridHierarchicalClusterEngine:
         print "    %s" % timer.getTimeStamp()
 
         print "Computing cluster hierarchy"
+        print "Clustering 2^%f.2 pairs" % np.log2(len(dists))
         Z = sp_hierarchy.single(dists)
         print "    %s" % timer.getTimeStamp()
         

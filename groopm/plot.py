@@ -119,7 +119,7 @@ class BinPlotter:
         print "    %s" % timer.getTimeStamp()
 
         
-class TreePlotter:
+class ReachabilityPlotter:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, markerFileName, folder=None):
         self._pm = ProfileManager(dbFileName, markerFileName)
@@ -254,7 +254,7 @@ class SurfacePlotter(Plotter3D):
         self.plotOnAx = FeatureAxisPlotter(*args, **kwargs)
             
 
-class HierarchyAxisPlotter:
+class DendrogramAxisPlotter:
     def __init__(self, Z,
                  link_colour_func,
                  leaf_label_func,
@@ -286,22 +286,20 @@ class HierarchyAxisPlotter:
         ax.set_ylabel(self.ylabel)
         
     
-class HierarchyPlotter(Plotter2D):
+class DendrogramPlotter(Plotter2D):
     def __init__(self, *args, **kwargs):
-        self.plotOnAx = HierarchyAxisPlotter(*args, **kwargs)
+        self.plotOnAx = DendrogramAxisPlotter(*args, **kwargs)
         
         
-class ReachabilityAxisPlotter:
+class BarAxisPlotter:
     def __init__(self,
                  height,
-                 colors,
-                 edgecolors,
+                 colours,
                  tick_labels=None,
                  xlabel="",
                  ylabel=""):
         self.y = height
         self.colours = colours
-        self.edgecolours = edgecolours
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.tick_labels = tick_labels
@@ -309,18 +307,17 @@ class ReachabilityAxisPlotter:
     def __call__(self, ax):
         y = self.y
         x = np.arange(len(y))
-        ax.bar(x, y, width=1,
-               color=self.colours,
-               edgecolor=self.edgecolours)
+        bc = ax.bar(x, y, width=1,
+               color=self.colours)
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
-        ax.set_xticks(x+0.5*width)
+        ax.set_xticks(x+0.5)
         ax.set_xticklabels(self.tick_labels)
         
         
-class ReachabilityPlotter(Plotter2D):
+class BarPlotter(Plotter2D):
     def __init__(self, *args, **kwargs):
-        self.plotOnAx = ReachabilityAxisPlotter(*args, **kwargs)
+        self.plotOnAx = BarAxisPlotter(*args, **kwargs)
         
 
 # Tree plotters
@@ -332,25 +329,21 @@ class HierarchyReachabilityPlotter:
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        self._heights = distance.density_distance(rnorm)
-        self._Z = sp_hierarchy.single(self._heights)
+        self._heights = distance.density_distance(rnorm, w, 1e8)
         self._order = distance.reachability_order(self._heights)
         
     def plot(self,
-             greedy=False,
-             label="count",
              fileName=""):
         
         mapping = self._profile.markers
         cm = ClassificationManager(mapping)
         tick_labels = ['']*len(self._order)
         for (i, ix) in enumerate(mapping.rowIndices):
-            tick_labels[ix] = cm.tags(i)[-1]
+            tick_labels[ix] = "x"
         
-        hplot = ReachabilityPlotter(
+        hplot = BarPlotter(
             height=self._heights[self._order],
             colours=np.where(self._profile.binIds[self._order] != 0, 'r', 'k'),
-            edgecolours='face',
             xlabel="lineage",
             ylabel="dendist",
             tick_labels=tick_labels)
@@ -373,7 +366,6 @@ class HierarchyRemovedPlotter:
 
         
     def plot(self,
-             greedy=False,
              label="count",
              fileName=""):
         
@@ -393,7 +385,7 @@ class HierarchyRemovedPlotter:
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
         
-        hplot = HierarchyPlotter(
+        hplot = DendrogramPlotter(
             self._Z,
             link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
             leaf_label_func=leaf_label_func,

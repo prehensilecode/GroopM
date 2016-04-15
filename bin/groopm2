@@ -127,7 +127,7 @@ class PrintHelpAction(argparse.Action):
         Plotting
         
     groopm plot         -> {plot}
-    groopm tree         -> {tree}
+    groopm reach        -> {reach}
     
     USE: groopm OPTION -h to see detailed options
 '''.format(
@@ -139,7 +139,7 @@ class PrintHelpAction(argparse.Action):
             markers=markers_command_configure.description,
             import_=import_command_configure.description,
             plot=plot_command_configure.description,
-            tree=tree_command_configure.description,
+            reach=reach_command_configure.description,
         )
 
 #------------------------------------------------------------------------------
@@ -391,6 +391,31 @@ class plot_command_configure:
                    bids=options.bids,
                    origin=options.origin,
                    colorMap=options.colormap,
+                   prefix=options.prefix)
+                   
+                           
+class reach_command_configure:
+    description="Make cluster reachability plot"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
+        parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in reach plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        rplot = groopm.ReachabilityPlotter(options.dbname,
+                                    options.markerfile,
+                                    folder=None if options.interactive else options.out_folder)
+        rplot.plot(timer,
                    prefix=options.prefix)
                    
                    
