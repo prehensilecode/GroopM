@@ -145,6 +145,34 @@ class ReachabilityPlotter:
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
         fplot.plot(fileName=fileName)
         print "    %s" % timer.getTimeStamp()
+        
+        
+class TreePlotter:
+    """Plot and highlight contigs from a bin"""
+    def __init__(self, dbFileName, markerFileName, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName)
+        self._outDir = os.getcwd() if folder == "" else folder
+        # make the dir if need be
+        if self._outDir is not None:
+            makeSurePathExists(self._outDir)
+            
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer, loadBins=True, loadMarkers=True, minLength=0,
+                removeBins=True, bids=[0])
+        
+    def plot(self,
+             timer,
+             prefix="TREE"
+            ):
+        
+        profile = self.loadProfile(timer)
+
+        fplot = HierarchyRemovedPlotter(profile)
+        print "    %s" % timer.getTimeStamp()
+        
+        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
+        fplot.plot(fileName=fileName)
+        print "    %s" % timer.getTimeStamp()
 
         
 # Basic plotting tools

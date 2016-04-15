@@ -128,6 +128,7 @@ class PrintHelpAction(argparse.Action):
         
     groopm plot         -> {plot}
     groopm reach        -> {reach}
+    groopm tree         -> {tree}
     
     USE: groopm OPTION -h to see detailed options
 '''.format(
@@ -140,6 +141,7 @@ class PrintHelpAction(argparse.Action):
             import_=import_command_configure.description,
             plot=plot_command_configure.description,
             reach=reach_command_configure.description,
+            tree=tree_command_configure.description,
         )
 
 #------------------------------------------------------------------------------
@@ -531,6 +533,13 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     tree_command_configure(tree_subparser)
+    
+    reach_subparser = subparsers.add_parser(
+        "reach",
+        description=reach_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    reach_command_configure(reach_subparser)
     
             
 if __name__ == '__main__':
