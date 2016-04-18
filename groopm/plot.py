@@ -336,7 +336,8 @@ class BarAxisPlotter:
         y = self.y
         x = np.arange(len(y))
         bc = ax.bar(x, y, width=1,
-               color=self.colours)
+               color=self.colours,
+               linewidth=0)
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
         ax.set_xticks(x+0.5)
@@ -357,8 +358,8 @@ class HierarchyReachabilityPlotter:
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        self._heights = distance.density_distance(rnorm, w, 1e8)
-        self._order = distance.reachability_order(self._heights)
+        dd = distance.density_distance(rnorm, w, 1e8)
+        (self._order, self._heights) = distance.reachability_order(dd)
         
     def plot(self,
              fileName=""):
@@ -369,9 +370,16 @@ class HierarchyReachabilityPlotter:
         for (i, ix) in enumerate(mapping.rowIndices):
             tick_labels[ix] = "x"
         
+        binIds = self._profile.binIds[self._order]
+        (old_ids, binIds) = np.unique(binIds, return_inverse=True)
+        colour_list = np.tile(['r', 'g', 'c', 'b', 'm', 'y'], np.ceil(len(old_ids)*1./6))
+        colours = colour_list[binIds]
+        unbinned = np.flatnonzero(old_ids==0)
+        colours[binIds == unbinned] = 'k'
+        
         hplot = BarPlotter(
             height=self._heights[self._order],
-            colours=np.where(self._profile.binIds[self._order] != 0, 'r', 'k'),
+            colours=colours,
             xlabel="lineage",
             ylabel="dendist",
             tick_labels=tick_labels)

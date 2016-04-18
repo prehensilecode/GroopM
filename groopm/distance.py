@@ -94,8 +94,33 @@ def argrank(array, weights=None, axis=0):
         
 def density_distance(Y, weights, minWt):
     """Compute pairwise density distance, defined as the max of the pairwise
-    distance between two points and the minimum distance of the minPts
-    neighbours of the two points.
+    distance between two points and the minimum core distance of the two
+    points.
+
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix containing distances for pairs of
+        observations. See scipy's `squareform` function for details.
+    core_dists : ndarray
+        Core distances for individual observations.
+        
+    Returns
+    -------
+    density_distance : ndarray
+        Condensed distance matrix of pairwise density distances.
+    """
+    n = sp_distance.num_obs_y(Y)
+    core_dists = core_distance(Y, weights, minWt)
+    
+    inds = np.triu_indices(n, k=1)
+    dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
+    return dd
+        
+        
+def core_distance(Y, weights, minWt):
+    """Compute core distance for data points, defined as the distance to the furtherest
+    neighbour where the cumulative weight of closer points is less than minWt.
 
     Parameters
     ----------
@@ -104,29 +129,27 @@ def density_distance(Y, weights, minWt):
         observations. See scipy's `squareform` function for details.
     weights : ndarray
         Condensed matrix containing pairwise weights.
-    minWt : int
+    minWt : int or float
         Total cumulative neighbour weight used to compute density distance.
         
     Returns
     -------
-    density_distance : ndarray
-        Condensed distance matrix of pairwise density distances.
+    core_distance : ndarray
+        Core distances for data points.
     """
     n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
     wm = sp_distance.squareform(weights)
     sorting_indices = dm.argsort(axis=1)
-    nn_dist = np.empty(n, dtype=dm.dtype)
+    core_dist = np.empty(n, dtype=dm.dtype)
     for i in range(n):
         minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt) - 1)
-        nn_dist[i] = dm[i, sorting_indices[i, minPts]]
+        core_dist[i] = dm[i, sorting_indices[i, minPts]]
     
-    inds = np.triu_indices(n, k=1)
-    dd = np.maximum(np.minimum(nn_dist[inds[0]], nn_dist[inds[1]]), Y)
-    return dd
+    return core_dist
         
         
-def density_distance_(Y, minPts):
+def core_distance_(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
     neighbours of the two points.
@@ -141,17 +164,12 @@ def density_distance_(Y, minPts):
         
     Returns
     -------
-    density_distance : ndarray
-        Condensed distance matrix of pairwise density distances.
+    core_distance : ndarray
+        Core distances for observations.
     """
     dm = sp_distance.squareform(Y)
     dm.sort(axis=1)
-    nn_dist = dm[:, minPts]
-    
-    n = sp_distance.num_obs_y(Y)
-    inds = np.triu_indices(n, k=1)
-    dd = np.maximum(np.minimum(nn_dist[inds[0]], nn_dist[inds[1]]), Y)
-    return dd
+    return dm[:, minPts]
 
     
 def reachability_order(Y):
@@ -171,16 +189,50 @@ def reachability_order(Y):
     n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
     o = np.empty(n, dtype=np.intp)
+    to_visit = np.ones(n, dtype=bool)
     closest = 0
     o[0] = 0
+    to_visit[0] = False
+    d = dm[0].copy()
+    for i in range(1, n):
+        closest = np.flatnonzero(to_visit)[d[to_visit].argmin()]
+        o[i] = closest
+        to_visit[closest] = False
+        d[to_visit] = np.minimum(d[to_visit], dm[closest, to_visit])
+    return (o, d)
+    
+    
+def reachability_order_(Y):
+    """Traverse collection of nodes by choosing the closest unvisited node to
+    a visited node at each step to produce a reachability plot.
+    
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix
+        
+    Returns
+    -------
+    o : ndarray
+        1-D array of indices of leaf nodes in traversal order.
+    """
+    n = sp_distance.num_obs_y(Y)
+    dm = sp_distance.squareform(Y)
+    o = np.empty(n, dtype=np.intp)
+    d = np.empty(n, dtype=np.intp)
+    closest = 0
+    o[0] = 0
+    d[0] = 0
     to_visit = np.arange(1, n)
     dists = dm[0, 1:]
     for i in range(1, n):
-        closest = to_visit[dists.argmin()]
-        o[i] = closest
-        keep = to_visit != closest
+        closest_index = dists.argmin()
+        closest_node = to_visit[closest_index]
+        o[i] = closest_node
+        d[i] = dists[closest_index]
+        keep = to_visit != closest_node
         to_visit = to_visit[keep]
-        dists = np.minimum(dists[keep], dm[closest, to_visit])
+        dists = np.minimum(dists[keep], dm[closest_node, to_visit])
     return o
     
     
