@@ -376,6 +376,9 @@ class HierarchyReachabilityPlotter:
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
         dd = distance.density_distance(rnorm, w, 1e8)
         (self._order, self._heights) = distance.reachability_order(dd)
+        self._mapping = self._profile.markers
+        self._cm = ClassificationManager(self._mapping)
+        self._cf = ClassificationConsensusFinder(self._mapping, self._threshold)
         
     def plot(self,
              bid,
@@ -383,17 +386,11 @@ class HierarchyReachabilityPlotter:
              fileName=""):
         
         o = self._order
-        
         if label=="count":
-            mapping = self._profile.markers
-            cm = ClassificationManager(mapping)
-            (xticks, xticklabels) = zip(*[(o[i], len(indices)) for (i, indices) in cm.iterindices()])
+            (xticks, xticklabels) = zip(*[(o[i], len(indices)) for (i, indices) in self._cm.iterindices()])
             xlabel = "count"
         elif label=="tag":
-            mapping = self._profile.markers
-            cm = ClassificationManager(mapping)
-            cf = ClassificationConsensusFinder(mapping, self._threshold)
-            (xticks, xticklabels) = zip(*[(o[i], cf.consensusTag(indices)) for (i, indices) in cm.iterindices()])
+            (xticks, xticklabels) = zip(*[(o[i], self._cf.consensusTag(indices)) for (i, indices) in self._cm.iterindices()])
             xlabel = "lineage"
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
