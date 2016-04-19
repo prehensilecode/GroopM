@@ -65,10 +65,10 @@ from mpl_toolkits.mplot3d import axes3d, Axes3D
 from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
-from classification import ClassificationManager
+from classification import ClassificationManager, ClassificationConsensusFinder
 import distance
 import hierarchy
-from hierarchy import HierarchyCliqueFinder, ClassificationCoherenceClusterTool
+from hierarchy import ClassificationLeavesLister, ClassificationCoherenceClusterTool
 
 np.seterr(all='raise')
 
@@ -134,16 +134,29 @@ class ReachabilityPlotter:
         
     def plot(self,
              timer,
+             bids=None,
              prefix="REACH"
             ):
         
         profile = self.loadProfile(timer)
 
+        bm = BinManager(profile)
+        if bids is None or len(bids) == 0:
+            bids = bm.getBids()
+        else:
+            bm.checkBids(bids)
+            
         fplot = HierarchyReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
-        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
-        fplot.plot(fileName=fileName)
+        for bid in bids:
+            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
+            
+            fplot.plot(fileName=fileName,
+                       bid=bid)
+                       
+            if fileName=="":
+                break
         print "    %s" % timer.getTimeStamp()
         
         
@@ -323,14 +336,16 @@ class BarAxisPlotter:
     def __init__(self,
                  height,
                  colours,
-                 tick_labels=None,
+                 xticks=[],
+                 xticklabels=[],
                  xlabel="",
                  ylabel=""):
         self.y = height
         self.colours = colours
         self.xlabel = xlabel
         self.ylabel = ylabel
-        self.tick_labels = tick_labels
+        self.xticks = xticks
+        self.xticklabels = xticklabels
         
     def __call__(self, ax):
         y = self.y
@@ -340,8 +355,9 @@ class BarAxisPlotter:
                linewidth=0)
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
-        ax.set_xticks(x+0.5)
-        ax.set_xticklabels(self.tick_labels)
+        ax.set_xticks(self.xticks)
+        ax.set_xticklabels(self.xticklabels,
+                           rotation="horizontal")
         
         
 class BarPlotter(Plotter2D):
@@ -362,27 +378,37 @@ class HierarchyReachabilityPlotter:
         (self._order, self._heights) = distance.reachability_order(dd)
         
     def plot(self,
+             bid,
+             label="count",
              fileName=""):
         
-        mapping = self._profile.markers
-        cm = ClassificationManager(mapping)
-        tick_labels = ['']*len(self._order)
-        for (i, ix) in enumerate(mapping.rowIndices):
-            tick_labels[ix] = "x"
+        o = self._order
         
-        binIds = self._profile.binIds[self._order]
-        (old_ids, binIds) = np.unique(binIds, return_inverse=True)
-        colour_list = np.tile(['r', 'g', 'c', 'b', 'm', 'y'], np.ceil(len(old_ids)*1./6))
-        colours = colour_list[binIds]
-        unbinned = np.flatnonzero(old_ids==0)
-        colours[binIds == unbinned] = 'k'
+        if label=="count":
+            mapping = self._profile.markers
+            cm = ClassificationManager(mapping)
+            (xticks, xticklabels) = zip(*[(o[i], len(indices)) for (i, indices) in cm.iterindices()])
+            xlabel = "count"
+        elif label=="tag":
+            mapping = self._profile.markers
+            cm = ClassificationManager(mapping)
+            cf = ClassificationConsensusFinder(mapping, self._threshold)
+            (xticks, xticklabels) = zip(*[(o[i], cf.consensusTag(indices)) for (i, indices) in cm.iterindices()])
+            xlabel = "lineage"
+        else:
+            raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
+        
+        bin_indices = BinManager(self._profile).getBinIndices(bid)
+        colours = np.full(len(o), 'k', dtype='|S2')
+        colours[bin_indices] = 'r'
         
         hplot = BarPlotter(
-            height=self._heights[self._order],
-            colours=colours,
-            xlabel="lineage",
+            height=self._heights[o],
+            colours=colours[o],
+            xlabel=xlabel,
             ylabel="dendist",
-            tick_labels=tick_labels)
+            xticks=xticks,
+            xticklabels=xticklabels)
         hplot.plot(fileName)
         
 
@@ -398,7 +424,8 @@ class HierarchyRemovedPlotter:
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
         ddist = distance.density_distance(rnorm)
         self._Z = sp_hierarchy.single(ddist)
-        self._mcf = HierarchyCliqueFinder(self._Z, self._threshold, self._mapping)
+        self._mcf = ClassificiationConsensusFinder(self._mapping, self._threshold)
+        self._mll = ClassificationLeavesLister(self._Z, self._mapping)
 
         
     def plot(self,
@@ -430,22 +457,17 @@ class HierarchyRemovedPlotter:
         hplot.plot(fileName)
         
     def leaf_label_coeff(self, k):
-        indices = self._mcf.indices(k)
+        indices = self._mll.indices(k)
         coeff = 2*len(self._mcf.maxClique(indices)) - len(indices)
         return '' if count <= 0 else str(coeff)
         
     def leaf_label_count(self, k):
-        count = len(self._mcf.indices(k))
+        count = len(self._mll.indices(k))
         return '' if count == 0 else str(count)
         
     def leaf_label_tag(self, k):
-        indices = self._mcf.indices(k)
-        q = indices[self._mcf.maxClique(indices)]
-        if len(q) == 0:
-            return ""
-        tags = [[t for t in self._cm.tags(i)] for i in q]
-        tag = tags[np.argmax([len(t) for t in tags])]
-        return tag[min(6 - self._threshold, len(tag)-1)]
+        indices = self._mll.indices(k)
+        return self._mcf.consensusTag(indices)
 
   
 # Bin plotters

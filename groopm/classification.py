@@ -85,10 +85,75 @@ class ClassificationManager:
         """Returns an iterator of marker names and indices."""
         return group_iterator(self._mapping.markerNames)
         
+    def iterindices(self):
+        """Returns an iterator of profile and marker indices."""
+        return group_iterator(self._mapping.rowIndices)
+        
     def tags(self, index):
         """Return a classification tag iterator"""
         return self._classifications[index].tags()
     
+    
+class ClassificationConsensusFinder:
+    def __init__(self, markers, level):
+        self._mapping = markers
+        self._level = level
+        self._cm = ClassificationManager(self._mapping)
+        self._mC = self._cm.makeConnectivity(self._level)
+        
+    def maxClique(self, indices):
+        """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
+        for all pairs `j`,`k` from `Q(i)"""
+        if len(indices) == 0:
+            return np.array([], dtype=np.intp)
+        return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
+        
+    def consensusTag(self, indices):
+        indices = np.asarray(indices)
+        q = indices[self.maxClique(indices)]
+        consensus_tag = ""
+        level = 7
+        for i in q:
+            tags = [t for t in zip(range(7-self._level), self._cm.tags(i))]
+            if len(tags) > 0:
+                (o, t) = tags[-1]
+                if level > o:
+                    consensus_tag = t
+                    level = o
+        return consensus_tag
+        
+        
+def greedy_clique_by_elimination(C):
+    """Find clique from connectivity matrix by repeatedly removing least connected
+    nodes. Efficient and should generally be accurate enough for our purposes.
+    
+    Parameters
+    ----------
+    C : (N, N) ndarray
+        Connectivity matrix for graph with `N` nodes.
+        
+    Returns
+    -------
+    q : ndarray
+        1-D arrray of node indices of clique.
+    """
+    C = np.asarray(C, dtype=bool)
+    n = C.shape[0]
+    if C.shape[1] != n:
+        raise ValueError("Connectivity matrix must be square.")
+    keep = np.ones(n, dtype=bool)
+    while True:
+        nkeep = np.count_nonzero(keep)
+        if nkeep==0:
+            break
+        counts = np.sum(C[np.ix_(keep, keep)], axis=1)
+        which_min = counts.argmin()
+        if counts[which_min] == nkeep:
+            break
+        keep[keep] = np.arange(nkeep)!=which_min
+        
+    return np.flatnonzero(keep)
+        
 
 class _Classification:
     """Taxonomic classification for a contig based on a marker gene hit."""
