@@ -374,7 +374,7 @@ class HierarchyReachabilityPlotter:
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        dd = distance.density_distance(rnorm, w, 1e8)
+        dd = distance.density_distance(rnorm, w, 1e11)
         (self._order, self._heights) = distance.reachability_order(dd)
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)

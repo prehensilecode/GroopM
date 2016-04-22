@@ -48,6 +48,7 @@ __status__ = "Development"
 
 ###############################################################################
 import sys
+import numpy as np
 
 from utils import CSVReader
 from profileManager import ProfileManager
@@ -76,11 +77,12 @@ class BinImporter:
         # looks like cid->bid
         contig_bins = {}
         try:
-            
             with open(infile, "r") as f:
                 try:
-                    (con_names, con_bins) = binReader.parse(f, separator)
-                    contig_bins = dict(zip(con_names, con_bins))
+                    (con_names, con_bins) = br.parse(f, separator)
+                    (_, con_bid) = np.unique(con_bins, return_inverse=True)
+                    con_bid += 1 # bid zero is unbinned
+                    contig_bins = dict(zip(con_names, con_bid))
                 except:
                     print "Error parsing bin assignments"
                     raise
@@ -108,7 +110,7 @@ class BinReader:
         con_bins = []
         
         reader = CSVReader()
-        for (cid, bid) in reader.readCSV(f, separator):
+        for (cid, bid) in reader.readCSV(fp, separator):
             con_names.append(cid)
             con_bins.append(bid)
         
