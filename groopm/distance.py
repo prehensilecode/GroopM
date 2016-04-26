@@ -257,9 +257,9 @@ def condensed_index(n, i, j):
     https://github.com/scipy/scipy/blob/v0.17.0/scipy/cluster/_hierarchy.pyx
     """
     if i < j:
-        return n * i - (i * (i + 1) // 2) + (j - i - 1)
+        return int(n * i - (i * (i + 1) // 2) + (j - i - 1))
     elif i > j:
-        return n * j - (j * (j + 1) // 2) + (i - j - 1)
+        return int(n * j - (j * (j + 1) // 2) + (i - j - 1))
     
   
 def condensed_index_(n, i, j):

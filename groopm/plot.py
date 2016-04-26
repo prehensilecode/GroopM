@@ -262,7 +262,7 @@ class FeatureAxisPlotter:
         self.sizes = sizes
         self.colours = colours
         self.colourmap = colourmap
-        self.edgecolours = colours
+        self.edgecolours = edgecolours
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.zlabel = zlabel
@@ -490,8 +490,9 @@ class BinDistancePlotter:
         n = self._profile.numContigs
         bin_indices = BinManager(self._profile).getBinIndices(bid)
         if origin=="mediod":
-            bin_squareform_indices = distance.pcoords(bin_indices, n)
-            origin = distance.mediod(np.linalg.norm((self._x[bin_squareform_indices], self._y[bin_squareform_indices]), axis=0))
+            bin_condensed_indices = [distance.condensed_index(n, bi, bj) for (i, bi) in enumerate(bin_indices[:-1]) for bj in bin_indices[i+1:]]
+            #bin_squareform_indices = distance.pcoords(bin_indices, n)
+            origin = distance.mediod(np.linalg.norm((self._x[bin_condensed_indices], self._y[bin_condensed_indices]), axis=0))
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
         elif origin=="max_length":
@@ -499,12 +500,13 @@ class BinDistancePlotter:
         else:
             raise ValueError("Invalid `origin` argument parameter value: `%s`" % origin)
         
-        indices = distance.ccoords(bin_indices[origin], np.arange(n), n)[0]
-        fplot = FeaturePlotter(self._x[indices],
-                               self._y[indices],
-                               colours=self._c[indices],
+        bi = bin_indices[origin]
+        condensed_indices = [distance.condensed_index(n, bi, i) for i in range(n)]
+        fplot = FeaturePlotter(self._x[condensed_indices],
+                               self._y[condensed_indices],
+                               colours=self._c[condensed_indices],
                                sizes=20,
-                               edgecolours=np.where(self._h[indices], 'r', 'k'),
+                               edgecolours=np.where(self._h[condensed_indices], 'r', 'k'),
                                colourmap=self._colourmap,
                                xlabel="cov", ylabel="kmer")
         fplot.plot(fileName)
