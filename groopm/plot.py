@@ -492,7 +492,7 @@ class BinDistancePlotter:
         if origin=="mediod":
             bin_condensed_indices = [distance.condensed_index(n, bi, bj) for (i, bi) in enumerate(bin_indices[:-1]) for bj in bin_indices[i+1:]]
             #bin_squareform_indices = distance.pcoords(bin_indices, n)
-            origin = distance.mediod(np.linalg.norm((self._x[bin_condensed_indices], self._y[bin_condensed_indices]), axis=0))
+            origin = distance.mediod(np_linalg.norm((self._x[bin_condensed_indices], self._y[bin_condensed_indices]), axis=0))
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
         elif origin=="max_length":
@@ -501,7 +501,7 @@ class BinDistancePlotter:
             raise ValueError("Invalid `origin` argument parameter value: `%s`" % origin)
         
         bi = bin_indices[origin]
-        condensed_indices = [distance.condensed_index(n, bi, i) for i in range(n)]
+        condensed_indices = [distance.condensed_index(n, bi, i) for i in range(n) if i != bi]
         fplot = FeaturePlotter(self._x[condensed_indices],
                                self._y[condensed_indices],
                                colours=self._c[condensed_indices],

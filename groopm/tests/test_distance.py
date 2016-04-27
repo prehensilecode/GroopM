@@ -35,7 +35,8 @@ from groopm.distance import (mediod,
                              reachability_order,
                              argrank,
                              pcoords,
-                             ccoords)
+                             ccoords,
+                             condensed_index)
 
 ###############################################################################
 ###############################################################################
@@ -217,19 +218,17 @@ def test_reachability_order():
 
 def test_condensed_index():
     n = random.randint(3, 10)
-    indices = np.arange(n * (n - 1) // 2)
+    m = n * (n - 1) // 2
+    condensed_indices = [condensed_index(n, i, j) for i in range(n-1) for j in range(i+1, n)]
     
-    assert_equal_arrays(pcoords(np.arange(n), n),
-                        indices,
-                        "`pcoords` computes linear index of condensed distance matrix")
+    assert_equal_arrays(condensed_indices,
+                        np.arange(m),
+                        "`condensed_index` computes linear index of condensed distance matrix")
                         
-    yi = ccoords(np.arange(n), np.arange(n), n)
-    assert_equal_arrays(yi[np.triu_indices(n, k=1)],
-                        indices,
-                        "`ccoords` computes linear index correctly when row < col")
-    assert_equal_arrays(yi.T[np.triu_indices(n, k=1)],
-                        indices,
-                        "`ccoords` computes linear index correctly when row > col")
+    condensed_indices = [condensed_index(n, j, i) for i in range(n-1) for j in range(i+1, n)]
+    assert_equal_arrays(condensed_indices,
+                        np.arange(m),
+                        "`condensed_index` computes linear index correctly when row < col")
                         
 
 

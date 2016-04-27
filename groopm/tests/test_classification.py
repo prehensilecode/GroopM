@@ -28,7 +28,7 @@ __email__ = "tim.lamberton@gmail.com"
 from nose.tools import assert_true
 from tools import assert_equal_arrays, assert_almost_equal_arrays
 import numpy as np
-import random
+import numpy.random as np_random
 from groopm.classification import (_Classification,
                                    _classification_pdist,
                                    greedy_clique_by_elimination,

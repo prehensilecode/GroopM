@@ -84,7 +84,7 @@ class CoreCreator:
             
         profile = self.loadProfile(timer, minLength)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, 1e11)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, 1e10)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile, minSize=minSize, minBP=minBP)
