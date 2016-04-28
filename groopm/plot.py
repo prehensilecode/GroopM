@@ -149,14 +149,10 @@ class ReachabilityPlotter:
         fplot = HierarchyReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
-        for bid in bids:
-            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
+        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bids.join('_')))
+        fplot.plot(fileName=fileName,
+                   bids=bids)
             
-            fplot.plot(fileName=fileName,
-                       bid=bid)
-                       
-            if fileName=="":
-                break
         print "    %s" % timer.getTimeStamp()
         
         
@@ -339,13 +335,15 @@ class BarAxisPlotter:
                  xticks=[],
                  xticklabels=[],
                  xlabel="",
-                 ylabel=""):
+                 ylabel="",
+                 text=[]):
         self.y = height
         self.colours = colours
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.xticks = xticks
         self.xticklabels = xticklabels
+        self.text = text
         
     def __call__(self, ax):
         y = self.y
@@ -358,6 +356,9 @@ class BarAxisPlotter:
         ax.set_xticks(self.xticks)
         ax.set_xticklabels(self.xticklabels,
                            rotation="horizontal")
+        for (x, y, text) in self.text:
+            ax.text(x, y, text, ha='center', va='bottom')
+                           
         
         
 class BarPlotter(Plotter2D):
@@ -374,18 +375,19 @@ class HierarchyReachabilityPlotter:
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        dd = distance.density_distance(rnorm, w, 1e11)
+        dd = distance.density_distance(rnorm, w, 1e8, sf=1./self._profile.contigLengths)
         (self._order, self._heights) = distance.reachability_order(dd)
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)
         self._cf = ClassificationConsensusFinder(self._mapping, self._threshold)
         
     def plot(self,
-             bid,
+             bids,
              label="count",
              fileName=""):
         
         o = self._order
+        x = self._heights[o]
         if label=="count":
             (xticks, xticklabels) = zip(*[(o[i], len(indices)) for (i, indices) in self._cm.iterindices()])
             xlabel = "count"
@@ -395,17 +397,29 @@ class HierarchyReachabilityPlotter:
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
         
-        bin_indices = BinManager(self._profile).getBinIndices(bid)
-        colours = np.full(len(o), 'k', dtype='|S2')
-        colours[bin_indices] = 'r'
+        # alternate red and black stretches for different bins
+        binIds = self._profile.binIds[o]
+        flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
+        iflag = np.cumsum(flag[:-1])
+        colours = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
+        colours[binIds==0] = 'c'
+        
+        # label stretches with bin ids
+        group_ends = np.flatnonzero(flag[1:])
+        group_centers = np.concatenate(([group_ends[0]/2], (group_ends[1:]+group_ends[:-1]+1)/2))
+        group_heights = np.concatenate(([x[:group_ends[0]+1].max()], [x[s:e+1].max() for (s, e) in zip(group_ends[:-1]+1, group_ends[1:])]))
+        group_labels = binIds[group_ends].astype(str)
+        k = np.in1d(binIds[group_ends], bids)
         
         hplot = BarPlotter(
-            height=self._heights[o],
-            colours=colours[o],
+            height=x,
+            colours=colours,
             xlabel=xlabel,
             ylabel="dendist",
             xticks=xticks,
-            xticklabels=xticklabels)
+            xticklabels=xticklabels,
+            text=zip(group_centers[k], group_heights[k], group_labels[k]),
+            )
         hplot.plot(fileName)
         
 

@@ -92,7 +92,7 @@ def argrank(array, weights=None, axis=0):
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
 
         
-def density_distance(Y, weights, minWt):
+def density_distance(Y, weights, minWt, sf=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
     points.
@@ -111,14 +111,14 @@ def density_distance(Y, weights, minWt):
         Condensed distance matrix of pairwise density distances.
     """
     n = sp_distance.num_obs_y(Y)
-    core_dists = core_distance(Y, weights, minWt)
+    core_dists = core_distance(Y, weights, minWt, sf=sf)
     
     inds = np.triu_indices(n, k=1)
     dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
     return dd
         
         
-def core_distance(Y, weights, minWt):
+def core_distance(Y, weights, minWt, sf=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
 
@@ -140,6 +140,8 @@ def core_distance(Y, weights, minWt):
     n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
     wm = sp_distance.squareform(weights)
+    if sf is not None:
+        wm = wm * sf[:, None]
     sorting_indices = dm.argsort(axis=1)
     core_dist = np.empty(n, dtype=dm.dtype)
     for i in range(n):
