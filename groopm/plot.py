@@ -134,8 +134,9 @@ class ReachabilityPlotter:
         
     def plot(self,
              timer,
+             minBP,
              bids=None,
-             prefix="REACH"
+             prefix="REACH",
             ):
         
         profile = self.loadProfile(timer)
@@ -146,7 +147,7 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
-        fplot = HierarchyReachabilityPlotter(profile)
+        fplot = HierarchyReachabilityPlotter(profile, 1, minBP)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bids.join('_')))
@@ -368,14 +369,15 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, profile, threshold=1):
+    def __init__(self, profile, threshold, minBP):
         self._profile = profile
         self._threshold = threshold
         x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        dd = distance.density_distance(rnorm, w, 1e8, sf=1./self._profile.contigLengths)
+        minWt = minBP * self._profile.contigLengths
+        dd = distance.density_distance(rnorm, w, minWt)
         (self._order, self._heights) = distance.reachability_order(dd)
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)

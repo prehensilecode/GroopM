@@ -92,7 +92,7 @@ def argrank(array, weights=None, axis=0):
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
 
         
-def density_distance(Y, weights, minWt, sf=None):
+def density_distance(Y, weights, minWt):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
     points.
@@ -102,8 +102,10 @@ def density_distance(Y, weights, minWt, sf=None):
     Y : ndarray
         Condensed distance matrix containing distances for pairs of
         observations. See scipy's `squareform` function for details.
-    core_dists : ndarray
-        Core distances for individual observations.
+    weights : ndarray
+        Condensed matrix containing pairwise weights.
+    minWt : int or float or ndarray
+        Total cumulative neighbour weight used to compute density distance for individual points.
         
     Returns
     -------
@@ -111,14 +113,14 @@ def density_distance(Y, weights, minWt, sf=None):
         Condensed distance matrix of pairwise density distances.
     """
     n = sp_distance.num_obs_y(Y)
-    core_dists = core_distance(Y, weights, minWt, sf=sf)
+    core_dists = core_distance(Y, weights, minWt)
     
     inds = np.triu_indices(n, k=1)
     dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
     return dd
         
         
-def core_distance(Y, weights, minWt, sf=None):
+def core_distance(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
 
@@ -129,8 +131,8 @@ def core_distance(Y, weights, minWt, sf=None):
         observations. See scipy's `squareform` function for details.
     weights : ndarray
         Condensed matrix containing pairwise weights.
-    minWt : int or float
-        Total cumulative neighbour weight used to compute density distance.
+    minWt : int or float or ndarray
+        Total cumulative neighbour weight used to compute density distance for individual points.
         
     Returns
     -------
@@ -140,12 +142,10 @@ def core_distance(Y, weights, minWt, sf=None):
     n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
     wm = sp_distance.squareform(weights)
-    if sf is not None:
-        wm = wm * sf[:, None]
     sorting_indices = dm.argsort(axis=1)
     core_dist = np.empty(n, dtype=dm.dtype)
     for i in range(n):
-        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt) - 1)
+        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt[i]) - 1)
         core_dist[i] = dm[i, sorting_indices[i, minPts]]
     
     return core_dist
