@@ -212,11 +212,12 @@ class MarkerExtractor:
         makeSurePathExists(self._outDir)
 
     def loadProfile(self, timer, bids=[], cutoff=0):
-        bids = [] if bids is None else bids
+        removeBins = bids is None or bids == []
         return self._pm.loadData(timer,
                                  loadBins=True,
                                  loadMarkers=True,
-                                 bids=bids,
+                                 bids=[0] if removeBins else bids,
+                                 removeBins=removeBins,
                                  minLength=cutoff
                                 )
         

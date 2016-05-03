@@ -150,7 +150,7 @@ class ReachabilityPlotter:
         fplot = HierarchyReachabilityPlotter(profile, 1, minBP)
         print "    %s" % timer.getTimeStamp()
         
-        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bids.join('_')))
+        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
         fplot.plot(fileName=fileName,
                    bids=bids)
             
