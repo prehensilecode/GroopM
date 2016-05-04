@@ -55,6 +55,7 @@ import numpy as np
 import numpy.linalg as np_linalg
 import scipy.spatial.distance as sp_distance
 import scipy.cluster.hierarchy as sp_hierarchy
+import scipy.stats as sp_stats
 import matplotlib.pyplot as plt
 import matplotlib.colors as plt_colors
 import matplotlib.cm as plt_cm
@@ -134,7 +135,8 @@ class ReachabilityPlotter:
         
     def plot(self,
              timer,
-             minBP,
+             ks,
+             linear=False,
              bids=None,
              prefix="REACH",
             ):
@@ -147,13 +149,18 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
-        fplot = HierarchyReachabilityPlotter(profile, 1, minBP)
+        fplot = HierarchyReachabilityPlotter(profile, 1)
         print "    %s" % timer.getTimeStamp()
         
-        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
-        fplot.plot(fileName=fileName,
-                   bids=bids)
-            
+        for k in ks:
+            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, k))
+            fplot.plot(fileName=fileName,
+                       bids=bids,
+                       smooth=k,
+                       linear=linear)
+                       
+            if fileName == "":
+                break
         print "    %s" % timer.getTimeStamp()
         
         
@@ -369,27 +376,37 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, profile, threshold, minBP):
+    def __init__(self, profile, threshold):
         self._profile = profile
         self._threshold = threshold
-        x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
-        y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
-        w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        sorting_indices = np.flipud(self._profile.contigLengths.argsort())
+        x = sp_distance.pdist(self._profile.covProfiles[sorting_indices], metric="euclidean")
+        y = sp_distance.pdist(self._profile.kmerSigs[sorting_indices], metric="euclidean")
+        w = sp_distance.pdist(self._profile.contigLengths[sorting_indices, None], operator.mul)
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        minWt = minBP * self._profile.contigLengths
-        dd = distance.density_distance(rnorm, w, minWt)
-        (self._order, self._heights) = distance.reachability_order(dd)
+        self._dists = rnorm
+        self._weights = w
+        self._order = sorting_indices
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)
         self._cf = ClassificationConsensusFinder(self._mapping, self._threshold)
         
     def plot(self,
              bids,
+             smooth,
+             linear,
              label="count",
              fileName=""):
+                 
+        if linear:
+            minWt = smooth * self._profile.contigLengths
+        else:
+            minWt = np.full(self._profile.numContigs, smooth)
+        dd = distance.density_distance(self._dists, self._weights, minWt)
+        (o, x) = distance.reachability_order(dd)
         
-        o = self._order
-        x = self._heights[o]
+        x = x[o]
+        o = self._order[o]
         if label=="count":
             (xticks, xticklabels) = zip(*[(o[i], len(indices)) for (i, indices) in self._cm.iterindices()])
             xlabel = "count"

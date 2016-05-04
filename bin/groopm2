@@ -186,6 +186,8 @@ class core_command_configure:
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
         parser.add_argument('-s', '--size', type=int, default=10, help="minimum number of contigs which define a core")
         parser.add_argument('-b', '--bp', type=int, default=1000000, help="cumulative size of contigs which define a core regardless of number of contigs")
+        parser.add_argument('-k', type=int, default=1000000, help="cumulative bps density of contigs which define core distances")
+        parser.add_argument('-K', type=int, help="cumulative size of contigs which define core distances")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.set_defaults(run=self)
         
@@ -199,6 +201,8 @@ class core_command_configure:
                minSize=options.size,
                minBP=options.bp,
                minLength=options.cutoff,
+               k=options.K if options.K is not None else options.k,
+               linear=options.K is not None,
                force=options.force)
         
         
@@ -403,7 +407,8 @@ class reach_command_configure:
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
-        parser.add_argument('--bp', type=int, default=1000000, help="cumulative size of contigs which define a core regardless of number of contigs")
+        parser.add_argument('-k', nargs='+', type=int, default=[1000000], help="bps density used to define core distance")
+        parser.add_argument('-K', nargs='*', type=int, help="cumulative size of contigs which define core distances")
         parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
@@ -420,7 +425,8 @@ class reach_command_configure:
                                            options.markerfile,
                                            folder=None if options.interactive else options.out_folder)
         rplot.plot(timer,
-                   options.bp,
+                   options.K if options.K is not None else options.k,
+                   linear=options.K is not None,
                    bids=options.bids,
                    prefix=options.prefix)
                    

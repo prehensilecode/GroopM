@@ -92,7 +92,7 @@ def argrank(array, weights=None, axis=0):
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
 
         
-def density_distance(Y, weights, minWt):
+def density_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
     points.
@@ -113,7 +113,22 @@ def density_distance(Y, weights, minWt):
         Condensed distance matrix of pairwise density distances.
     """
     n = sp_distance.num_obs_y(Y)
-    core_dists = core_distance(Y, weights, minWt)
+    if weights is not None and minWt is not None:
+        weight_dists = core_distance(Y, weights, minWt)
+    else:
+        weight_dists = None
+    if minPts is not None:
+        pts_dists = core_distance_(Y, minPts)
+    else:
+        pts_dists = None
+    if weight_dists is not None and pts_dists is not None:
+        core_dists = mp.minimum(weight_dists, pts_dists)
+    elif weight_dists is not None:
+        core_dists = weight_dists
+    elif pts_dists is not None:
+        core_dists = pts_dists
+    else:
+        raise ValueError("Specify either 'weights' and 'minWt' or 'minPts' parameter values")
     
     inds = np.triu_indices(n, k=1)
     dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
@@ -146,6 +161,7 @@ def core_distance(Y, weights, minWt):
     core_dist = np.empty(n, dtype=dm.dtype)
     for i in range(n):
         minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt[i]) - 1)
+        #minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt) - 1)
         core_dist[i] = dm[i, sorting_indices[i, minPts]]
     
     return core_dist
@@ -169,9 +185,10 @@ def core_distance_(Y, minPts):
     core_distance : ndarray
         Core distances for observations.
     """
+    n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
     dm.sort(axis=1)
-    return dm[:, minPts]
+    return dm[:, np.minimum(n-1, minPts)]
 
     
 def reachability_order(Y):
