@@ -136,6 +136,7 @@ class ReachabilityPlotter:
     def plot(self,
              timer,
              ks,
+             pts,
              linear=False,
              bids=None,
              prefix="REACH",
@@ -152,11 +153,29 @@ class ReachabilityPlotter:
         fplot = HierarchyReachabilityPlotter(profile, 1)
         print "    %s" % timer.getTimeStamp()
         
-        for k in ks:
-            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, k))
+        if ks is None and pts is None:
+            pairs = [(None, None)]
+        elif ks is None:
+            pairs = [(p, None) for p in pts]
+        elif pts is None:
+            ks = [(None, k) for k in ks]
+        else:
+            pairs = [(p, k) for p in pts for k in ks]
+        for (p, k) in pairs:
+            if self._outDir is None:
+                fileName = ""
+            else:
+                file_str = prefix
+                if k is not None:
+                    file_str += "_k=%d" % k
+                if p is not None:
+                    file_str += "_p=%d" % p
+                file_str += ".png"
+                fileName = os.path.join(self._outDir, file_str)
             fplot.plot(fileName=fileName,
                        bids=bids,
                        smooth=k,
+                       minPts=p,
                        linear=linear)
                        
             if fileName == "":
@@ -394,15 +413,18 @@ class HierarchyReachabilityPlotter:
     def plot(self,
              bids,
              smooth,
+             minPts,
              linear,
              label="count",
              fileName=""):
                  
-        if linear:
-            minWt = smooth * self._profile.contigLengths
+        if smooth is None:
+            minWt = None
+        elif linear:
+            minWt = smooth * self._profile.contigLengths[self._order]
         else:
             minWt = np.full(self._profile.numContigs, smooth)
-        dd = distance.density_distance(self._dists, self._weights, minWt)
+        dd = distance.density_distance(self._dists, weights=self._weights, minWt=minWt, minPts=minPts)
         (o, x) = distance.reachability_order(dd)
         
         x = x[o]

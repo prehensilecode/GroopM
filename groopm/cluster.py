@@ -79,6 +79,7 @@ class CoreCreator:
             minBP,
             minLength,
             k,
+            minPts,
             linear=False,
             force=False):
         # check that the user is OK with nuking stuff...
@@ -87,7 +88,7 @@ class CoreCreator:
             
         profile = self.loadProfile(timer, minLength)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, smooth=k, linear=linear)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, smooth=k, minPts=minPts, linear=linear)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile, minSize=minSize, minBP=minBP)
@@ -130,25 +131,26 @@ class HybridHierarchicalClusterEngine:
         
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
-    def __init__(self, profile, threshold, greedy, smooth, linear):
+    def __init__(self, profile, threshold, greedy, smooth, minPts, linear):
         self._profile = profile
         self._ct = ClassificationCoherenceClusterTool(profile.markers)
         self._features = (profile.covProfiles, profile.kmerSigs)
         self._threshold = threshold
         self._greedy = greedy
-        self._smooth = smooth
-        self._linear = linear
+        self._minPts = minPts
+        if smooth is None:
+            self._minWt = None
+        elif linear:
+            self._minWt = smooth * self._profile.contigLengths
+        else:
+            self._minWt = np.full(self._profile.numContigs, smooth)
         
     def distances(self):
         feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
         weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         feature_ranks = distance.argrank(feature_distances, weights=weights, axis=1)
         rank_norms = np_linalg.norm(feature_ranks, axis=0)
-        if self._linear:
-            minWt = self._smooth * self._profile.contigLengths
-        else:
-            minWt = np.full(self._profile.numContigs, self._smooth)
-        return distance.density_distance(rank_norms, weights=weights, minWt=minWt)
+        return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._minPts)
         
     def fcluster(self, Z):
         return self._ct.cluster_classification(Z, self._threshold, self._greedy)
