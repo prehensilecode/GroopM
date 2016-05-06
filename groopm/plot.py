@@ -167,7 +167,7 @@ class ReachabilityPlotter:
             else:
                 file_str = prefix
                 if k is not None:
-                    file_str += "_k=%d" % k
+                    file_str += "_k=%g" % k
                 if p is not None:
                     file_str += "_p=%d" % p
                 file_str += ".png"

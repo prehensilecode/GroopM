@@ -122,7 +122,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     else:
         pts_dists = None
     if weight_dists is not None and pts_dists is not None:
-        core_dists = mp.minimum(weight_dists, pts_dists)
+        core_dists = np.minimum(weight_dists, pts_dists)
     elif weight_dists is not None:
         core_dists = weight_dists
     elif pts_dists is not None:
