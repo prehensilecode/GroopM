@@ -80,15 +80,21 @@ class ClassificationCoherenceClusterTool:
         #Size of maximal clique of `Q(k)`, minus number of non-clique elements of `Q(k)`
         mcc = np.array([2*len(mcf.maxClique(i)) - len(i) for i in (mll.leaves_list(k) for k in mnodes)])
         
-        cc = np.zeros(2*n - 1, dtype=mcc.dtype)
-        cc[mnodes] = np.where(mcc < 0, 0, mcc)
+        if greedy:
+            # In greedy mode, clusters are given an inherent weight of the log of the number of descendents
+            cc = np.log2(Z[:, 3]).astype(mcc.dtype)
+            cc[mnodes] += mcc
+            cc = np.where(cc < 0, 0, cc)
+        else:
+            cc = np.zeros(2*n - 1, dtype=mcc.dtype)
+            cc[mnode] = np.where(mcc < 0, 0, mcc)
         
         # The root nodes of the flat clusters begin as nodes with maximum
         # coefficient.
         rootinds = maxcoeff_roots(Z, cc)
         rootancestors = ancestors(Z, rootinds)
         
-        if greedy:
+        if False:
             # Greedily extend clusters until a node with an actively lower
             # coefficient is reached. Requires an additional pass over
             # hierarchy.
