@@ -189,6 +189,7 @@ class core_command_configure:
         parser.add_argument('--minPts', type=int, help="number of contigs which define core distances")
         parser.add_argument('-k', type=float, help="cumulative bps density of contigs which define core distances regardless of number of contigs")
         parser.add_argument('-K', type=float, help="cumulative size of contigs which define core distances regardless of number of contigs")
+        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.set_defaults(run=self)
         
@@ -205,7 +206,8 @@ class core_command_configure:
                k=int(options.K) if options.K is not None else int(options.k) if options.k is not None else None,
                minPts=options.minPts,
                linear=options.K is not None,
-               force=options.force)
+               force=options.force,
+               doWeight=options.W)
         
         
 class extract_command_configure:
@@ -382,6 +384,7 @@ class plot_command_configure:
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
         parser.set_defaults(run=self)
@@ -398,6 +401,7 @@ class plot_command_configure:
         bplot.plot(timer,
                    bids=options.bids,
                    origin=options.origin,
+                   doWeight=options.W,
                    colorMap=options.colormap,
                    prefix=options.prefix)
                    
@@ -412,6 +416,7 @@ class reach_command_configure:
         parser.add_argument('--minPts', nargs='*', type=int, help="number of contigs which define core distances")
         parser.add_argument('-k', nargs='*', type=float, help="cumulative bps density of contigs which define core distances regardless of number of contigs")
         parser.add_argument('-K', nargs='*', type=float, help="cumulative size of contigs which define core distances regardless of number of contigs")
+        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
         parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
@@ -431,6 +436,7 @@ class reach_command_configure:
                    [int(K) for K in options.K] if options.K is not None else [int(k) for k in options.k] if options.k is not None else None,
                    options.minPts,
                    linear=options.K is not None,
+                   doWeight=options.W,
                    bids=options.bids,
                    prefix=options.prefix)
                    
@@ -441,6 +447,7 @@ class tree_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
+        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
         parser.add_argument('-p', '--prefix', default="TREE", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
@@ -457,6 +464,7 @@ class tree_command_configure:
                                    options.markerfile,
                                    folder=None if options.interactive else options.out_folder)
         tplot.plot(timer,
+                   doWeight=options.W,
                    prefix=options.prefix)
                    
 

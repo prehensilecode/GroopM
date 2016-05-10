@@ -93,6 +93,7 @@ class BinPlotter:
              timer,
              bids=None,
              origin="mediod",
+             doWeight=True,
              colorMap="HSV",
              prefix="BIN"
             ):
@@ -105,7 +106,7 @@ class BinPlotter:
         else:
             bm.checkBids(bids)
 
-        fplot = BinDistancePlotter(profile, colourmap=colorMap)
+        fplot = BinDistancePlotter(profile, doWeight=doWeight, colourmap=colorMap)
         print "    %s" % timer.getTimeStamp()
         
         for bid in bids:
@@ -138,6 +139,7 @@ class ReachabilityPlotter:
              ks,
              pts,
              linear=False,
+             doWeight=True,
              bids=None,
              prefix="REACH",
             ):
@@ -150,7 +152,7 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
-        fplot = HierarchyReachabilityPlotter(profile, 1)
+        fplot = HierarchyReachabilityPlotter(profile, threshold=1, doWeight=doWeight)
         print "    %s" % timer.getTimeStamp()
         
         if ks is None and pts is None:
@@ -198,12 +200,13 @@ class TreePlotter:
         
     def plot(self,
              timer,
+             doWeight=True,
              prefix="TREE"
             ):
         
         profile = self.loadProfile(timer)
 
-        fplot = HierarchyRemovedPlotter(profile)
+        fplot = HierarchyRemovedPlotter(profile, threshold=1, doWeight=doWeight)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
@@ -395,13 +398,16 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, profile, threshold):
+    def __init__(self, profile, threshold, doWeight):
         self._profile = profile
         self._threshold = threshold
         sorting_indices = np.flipud(self._profile.contigLengths.argsort())
         x = sp_distance.pdist(self._profile.covProfiles[sorting_indices], metric="euclidean")
         y = sp_distance.pdist(self._profile.kmerSigs[sorting_indices], metric="euclidean")
-        w = sp_distance.pdist(self._profile.contigLengths[sorting_indices, None], operator.mul)
+        if doWeight:
+            weights = sp_distance.pdist(self._profile.contigLengths[sorting_indices, None], operator.mul)
+        else:
+            weights = None
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
         self._dists = rnorm
         self._weights = w
@@ -465,14 +471,17 @@ class HierarchyReachabilityPlotter:
         
 
 class HierarchyRemovedPlotter:
-    def __init__(self, profile, threshold=1):
+    def __init__(self, profile, threshold, doWeight):
         self._profile = profile
         self._threshold = threshold
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)
         x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
-        w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        if doWeight:
+            weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        else:
+            weights = None
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
         ddist = distance.density_distance(rnorm)
         self._Z = sp_hierarchy.single(ddist)
@@ -524,13 +533,17 @@ class HierarchyRemovedPlotter:
   
 # Bin plotters
 class BinDistancePlotter:
-    def __init__(self, profile, colourmap='HSV'):
+    def __init__(self, profile, doWeight, colourmap='HSV'):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
         x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
-        w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
-        scale_factor = 1./w.sum()
+        if doWeight:
+            w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+            scale_factor = 1./w.sum()
+        else:
+            w = None
+            scale_factor = 1./len(x)
         self._x = distance.argrank(x, weights=w)*scale_factor
         self._y = distance.argrank(y, weights=w)*scale_factor
         self._w = w
