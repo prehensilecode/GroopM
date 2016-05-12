@@ -99,7 +99,7 @@ class BinImporter:
         
         # Now save all the stuff to disk!
         print "Saving bins"
-        self._pm.setBinAssignments(profile, nuke=False)
+        self._pm.setBinAssignments(profile, nuke=True)
         print "    %s" % timer.getTimeStamp()
 
         

@@ -77,24 +77,18 @@ class ClassificationCoherenceClusterTool:
         mll = ClassificationLeavesLister(Z, self._mapping)
         #mct = HierarchyCliqueFinder(Z, t, self._mapping)
         mnodes = mll.nodes
-        #Size of maximal clique of `Q(k)`, minus number of non-clique elements of `Q(k)`
-        mcc = np.array([2*len(mcf.maxClique(i)) - len(i) for i in (mll.leaves_list(k) for k in mnodes)])
+        #Size difference between of 1st- and 2nd-maximal cliques of `Q(k)`
+        mcc = np.array([mcf.disagreement(i) for i in (mll.leaves_list(k) for k in mnodes)])
         
-        if greedy:
-            # In greedy mode, clusters are given an inherent weight of the log of the number of descendents
-            cc = np.log2(Z[:, 3]).astype(mcc.dtype)
-            cc[mnodes] += mcc
-            cc = np.where(cc < 0, 0, cc)
-        else:
-            cc = np.zeros(2*n - 1, dtype=mcc.dtype)
-            cc[mnode] = np.where(mcc < 0, 0, mcc)
+        cc = np.zeros(2*n - 1, dtype=mcc.dtype)
+        cc[mnodes] = np.where(mcc < 0, 0, mcc)
         
         # The root nodes of the flat clusters begin as nodes with maximum
         # coefficient.
         rootinds = maxcoeff_roots(Z, cc)
         rootancestors = ancestors(Z, rootinds)
         
-        if False:
+        if greedy:
             # Greedily extend clusters until a node with an actively lower
             # coefficient is reached. Requires an additional pass over
             # hierarchy.
@@ -321,8 +315,18 @@ class ClassificationLeavesLister:
         H = height(Z)
         
         indices = np.asarray(markers.rowIndices)
-        idx = distance.ccoords(indices, np.arange(n), n)
-        self._mA = np.where(idx==-1, indices[:, None]*(idx==-1), H[idx]+n)
+        #idx = distance.ccoords(indices, np.arange(n), n)
+        #self._mA = np.where(idx==-1, indices[:, None]*(idx==-1), H[idx]+n)
+        
+        mA = np.empty((len(indices), n), dtype=H.dtype)
+        for (i, ix) in enumerate(indices):
+            for j in range(n):
+                if ix == j:
+                    mA[i, j] = ix
+                else:
+                    mA[i, j] = H[distance.condensed_index(n, ix, j)]+n
+        self._mA = mA
+        
         """Nodes of Z that correspond to embedded hierarchy nodes."""
         self.nodes = np.unique(self._mA[:, indices])
         

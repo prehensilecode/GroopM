@@ -108,6 +108,17 @@ class ClassificationConsensusFinder:
             return np.array([], dtype=np.intp)
         return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
         
+    def disagreement(self, indices):
+        """Compute size difference between 2 largest maximal cliques"""
+        if len(indices) == 0:
+            return 0
+        first_clique = greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
+        remaining = np.ones(len(indices), dtype=bool)
+        remaining[first_clique] = False
+        remaining = indices[remaining]
+        second_clique = greedy_clique_by_elimination(self._mC[np.ix_(remaining, remaining)])
+        return abs(len(first_clique) - len(second_clique))
+        
     def consensusTag(self, indices):
         indices = np.asarray(indices)
         q = indices[self.maxClique(indices)]

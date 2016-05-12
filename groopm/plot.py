@@ -519,7 +519,7 @@ class HierarchyRemovedPlotter:
         
     def leaf_label_coeff(self, k):
         indices = self._mll.indices(k)
-        coeff = 2*len(self._mcf.maxClique(indices)) - len(indices)
+        coeff = self._mcf.disagreement(indices)
         return '' if count <= 0 else str(coeff)
         
     def leaf_label_count(self, k):
