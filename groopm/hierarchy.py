@@ -79,9 +79,11 @@ class ClassificationCoherenceClusterTool:
         mnodes = mll.nodes
         #Size difference between of 1st- and 2nd-maximal cliques of `Q(k)`
         mcc = np.array([mcf.disagreement(i) for i in (mll.leaves_list(k) for k in mnodes)])
+        #mcc = np.array([2*len(mcf.maxClique(i)) - len(i) for i in (mll.leaves_list(k) for k in mnodes)])
         
         cc = np.zeros(2*n - 1, dtype=mcc.dtype)
         cc[mnodes] = np.where(mcc < 0, 0, mcc)
+        
         
         # The root nodes of the flat clusters begin as nodes with maximum
         # coefficient.
@@ -130,6 +132,22 @@ def cluster_remove(Z, remove):
     T = sp_hierarchy.fcluster(Zz, 0, criterion="distance")
     #T = sp_hierarchy.fcluster(Z, 0, criterion="monocrit", monocrit=monocrit[n:]) # should work in scipy 0.17
     return T
+    
+    
+def flat_nodes(Z):
+    """Return node indices of the furtherest ancestor of each node (including itself) of equal height
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0] + 1
+    
+    node_ids = np.arange(n-1)
+    for i in range(n-2, -1, -1):
+        children = Z[i, :2].astype(int)
+        for c in children:
+            if c >= n and Z[i, 2] == Z[c - n, 2]:
+                node_ids[c - n] = i
+            
+    return node_ids
 
        
 def maxcoeff_roots(Z, coeffs):
@@ -312,12 +330,14 @@ class ClassificationLeavesLister:
     def __init__(self, Z, markers):
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
-        H = height(Z)
+        
+        height_map = flat_nodes(Z) # map of indices in Z to equal height ancestor
+        H = height_map[height(Z)]
         
         indices = np.asarray(markers.rowIndices)
-        #idx = distance.ccoords(indices, np.arange(n), n)
+        idx = distance.ccoords(indices, np.arange(n), n)
         #self._mA = np.where(idx==-1, indices[:, None]*(idx==-1), H[idx]+n)
-        
+
         mA = np.empty((len(indices), n), dtype=H.dtype)
         for (i, ix) in enumerate(indices):
             for j in range(n):
@@ -325,8 +345,8 @@ class ClassificationLeavesLister:
                     mA[i, j] = ix
                 else:
                     mA[i, j] = H[distance.condensed_index(n, ix, j)]+n
+                    
         self._mA = mA
-        
         """Nodes of Z that correspond to embedded hierarchy nodes."""
         self.nodes = np.unique(self._mA[:, indices])
         

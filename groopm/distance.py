@@ -319,8 +319,8 @@ def condensed_index_(n, i, j):
     # must have row < col
     ii = np.where(j < i, j, i)
     jj = np.where(i > j, i, j)
-    #return np.where(ii==jj, -1, n*(n-1)//2 - (n-ii)*(n-ii-1)//2 + jj-ii-1)
-    return n*ii - ii*(ii+1)//2 + jj-ii-1
+    return np.where(ii==jj, -1, n*(n-1)//2 - (n-ii)*(n-ii-1)//2 + jj-ii-1)
+    #return n*ii - ii*(ii+1)//2 + jj-ii-1
     
       
 # helper
