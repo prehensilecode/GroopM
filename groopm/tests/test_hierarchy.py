@@ -30,12 +30,14 @@ import numpy.random as np_random
 
 # local imports
 from tools import assert_equal_arrays, assert_isomorphic
+import groopm.distance as distance
 from groopm.hierarchy import (height,
                               maxcoeffs,
                               filter_descendents,
                               ancestors,
                               maxcoeff_roots,
                               cluster_remove,
+                              linkage_from_reachability,
                              )
 
 ###############################################################################
@@ -240,7 +242,43 @@ def test_cluster_remove():
                       [0, 1, 1, 1],
                       "`cluster_remove` computes flat cluster indices after removing "
                      "a leaf and internal indices")  
-                     
+
+
+def test_linkage_from_reachability():
+    """
+    Y encodes weighted distances for pairs:
+    (0, 1) =  17.7
+    (0, 2) =  70.0
+    (0, 3) =  97.1
+    (0, 4) =  50.8
+    (1, 2) = 121.6
+    (1, 3) =  79.4
+    (1, 4) =  82.1
+    (2, 3) = 120.9
+    (2, 4) =  77.3
+    (3, 4) =  14.4
+    
+    Corresponding tree is:
+        0
+        |-6-+
+        1   |
+            |-7-+
+        3   |   |
+        |-5-+   |-8
+        4       |
+        2-------+
+    """
+    
+    Y = np.array([17.7, 70., 97.1, 50.8, 121.6, 79.4, 82.1, 120.9, 77.3, 14.4])
+    Z = np.array([[3., 4., 14.4, 2.],
+                  [0., 1., 17.7, 2.],
+                  [5., 6., 50.8, 4.],
+                  [2., 7., 70.0, 5.]])
+                  
+    (o, d) = distance.reachability_order(Y)
+    assert_equal_arrays(linkage_from_reachability(o, d),
+                        Z,
+                        "`linkage_from_reachability` returns linkage corresponding to reachability ordering")
                         
 ###############################################################################
 ###############################################################################

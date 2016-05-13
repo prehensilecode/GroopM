@@ -50,6 +50,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.cluster.hierarchy as sp_hierarchy
 import scipy.spatial.distance as sp_distance
+from Queue import PriorityQueue
 
 # local imports
 import distance
@@ -335,7 +336,7 @@ class ClassificationLeavesLister:
         H = height_map[height(Z)]
         
         indices = np.asarray(markers.rowIndices)
-        idx = distance.ccoords(indices, np.arange(n), n)
+        #idx = distance.ccoords(indices, np.arange(n), n)
         #self._mA = np.where(idx==-1, indices[:, None]*(idx==-1), H[idx]+n)
 
         mA = np.empty((len(indices), n), dtype=H.dtype)
@@ -354,6 +355,43 @@ class ClassificationLeavesLister:
         """Computes the original observations composing a node."""
         return np.flatnonzero(np.any(self._mA==node, axis=1))
 
+        
+def linkage_from_reachability(o, d):
+    """Hierarchical clustering from reachability ordering and distances"""
+    o = np.asarray(o)
+    d = np.asarray(d)
+    n = len(o)
+    Z = np.empty((n - 1, 4), dtype=d.dtype)
+    
+    ordered_dists = d[o]
+    sorting_indices = np.hstack((ordered_dists[1:].argsort()+1, 0))
+    indices_dict = dict([(2*n-2, (0, n))])
+    
+    for i in range(n-2, -1, -1):
+        (low, high) = indices_dict.pop(n+i)
+        split = sorting_indices[i]
+        if split == low + 1:
+            left_node = o[low]
+        else:
+            left_node = np.flatnonzero(np.logical_and(low <= sorting_indices[:i], sorting_indices[:i] < split))[-1]+n
+            indices_dict[left_node] = (low, split)
+            
+        if split == high - 1:
+            right_node = o[split]
+        else:
+            right_node = np.flatnonzero(np.logical_and(split <= sorting_indices[:i], sorting_indices[:i] < high))[-1]+n
+            indices_dict[right_node] = (split, high)
+        
+        if left_node < right_node:
+            Z[i, :2] = np.array([left_node, right_node])
+        else:
+            Z[i, :2] = np.array([right_node, left_node])
+        Z[i, 2] = ordered_dists[split]
+        Z[i, 3] = high - low
+        
+    return Z
+        
+        
     
 ###############################################################################
 ###############################################################################

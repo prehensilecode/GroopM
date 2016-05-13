@@ -246,17 +246,17 @@ class GenericPlotter:
 class Plotter2D(GenericPlotter):
     def plotOnFig(self, fig):
         ax = fig.add_subplot(111)
-        self.plotOnAx(ax)
+        self.plotOnAx(ax, fig)
             
-    def plotOnAx(self, ax): pass
+    def plotOnAx(self, ax, fig): pass
 
     
 class Plotter3D(GenericPlotter):
     def plotOnFig(self, fig):
         ax = fig.add_subplot(111, projection='3d')
-        self.plotOnAx(ax)
+        self.plotOnAx(ax, fig)
         
-    def plotOnAx(self, ax): pass
+    def plotOnAx(self, ax, fig): pass
     
     
 # Plot types
@@ -293,7 +293,7 @@ class FeatureAxisPlotter:
         self.ylabel = ylabel
         self.zlabel = zlabel
     
-    def __call__(self, ax):
+    def __call__(self, ax, fig):
         
         coords = (self.x, self.y)
         if self.z is not None:
@@ -341,7 +341,7 @@ class DendrogramAxisPlotter:
         self.xlabel = xlabel
         self.ylabel = ylabel
     
-    def __call__(self, ax):
+    def __call__(self, ax, fig):
         sp_hierarchy.dendrogram(self.Z, ax=ax, p=4000,
                                 truncate_mode='lastp',
                                 distance_sort='ascending',
@@ -366,7 +366,8 @@ class BarAxisPlotter:
                  xticklabels=[],
                  xlabel="",
                  ylabel="",
-                 text=[]):
+                 text=[],
+                 colourbar=None):
         self.y = height
         self.colours = colours
         self.xlabel = xlabel
@@ -374,8 +375,9 @@ class BarAxisPlotter:
         self.xticks = xticks
         self.xticklabels = xticklabels
         self.text = text
+        self.colourbar = colourbar
         
-    def __call__(self, ax):
+    def __call__(self, ax, fig):
         y = self.y
         x = np.arange(len(y))
         bc = ax.bar(x, y, width=1,
@@ -389,6 +391,8 @@ class BarAxisPlotter:
         for (x, y, text) in self.text:
             ax.text(x, y, text, ha='center', va='bottom')
                            
+        if self.colourbar is not None:
+            fig.colorbar(self.colourbar, ax=ax)
         
         
 class BarPlotter(Plotter2D):
@@ -398,20 +402,21 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, profile, threshold, doWeight):
+    def __init__(self, profile, threshold, doWeight, colourmap="Spectral"):
         self._profile = profile
         self._threshold = threshold
-        sorting_indices = np.flipud(self._profile.contigLengths.argsort())
-        x = sp_distance.pdist(self._profile.covProfiles[sorting_indices], metric="euclidean")
-        y = sp_distance.pdist(self._profile.kmerSigs[sorting_indices], metric="euclidean")
+        self._colourmap = getColorMap(colourmap)
+        #sorting_indices = np.flipud(self._profile.contigLengths.argsort())
+        x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
+        y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         if doWeight:
-            weights = sp_distance.pdist(self._profile.contigLengths[sorting_indices, None], operator.mul)
+            w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         else:
-            weights = None
+            w = None
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
         self._dists = rnorm
         self._weights = w
-        self._order = sorting_indices
+        #self._order = sorting_indices
         self._mapping = self._profile.markers
         self._cm = ClassificationManager(self._mapping)
         self._cf = ClassificationConsensusFinder(self._mapping, self._threshold)
@@ -422,6 +427,7 @@ class HierarchyReachabilityPlotter:
              minPts,
              linear,
              label="count",
+             highlight="markers",
              fileName=""):
                  
         if smooth is None:
@@ -431,32 +437,60 @@ class HierarchyReachabilityPlotter:
         else:
             minWt = np.full(self._profile.numContigs, smooth)
         dd = distance.density_distance(self._dists, weights=self._weights, minWt=minWt, minPts=minPts)
-        (o, x) = distance.reachability_order(dd)
+        (o, d) = distance.reachability_order(dd)
         
-        x = x[o]
-        o = self._order[o]
+        x = d[o]
+        #o = self._order[o]
         if label=="count":
-            (xticks, xticklabels) = zip(*[(o[i], len(indices)) for (i, indices) in self._cm.iterindices()])
+            iloc = dict(zip(o, range(len(o))))
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._cm.iterindices()])
             xlabel = "count"
         elif label=="tag":
-            (xticks, xticklabels) = zip(*[(o[i], self._cf.consensusTag(indices)) for (i, indices) in self._cm.iterindices()])
+            iloc = dict(zip(o, range(len(o))))
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._cm.iterindices()])
             xlabel = "lineage"
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
         
-        # alternate red and black stretches for different bins
-        binIds = self._profile.binIds[o]
-        flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
-        iflag = np.cumsum(flag[:-1])
-        colours = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
-        colours[binIds==0] = 'c'
+        if highlight=="bins":
+            # alternate red and black stretches for different bins
+            binIds = self._profile.binIds[o]
+            flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
+            iflag = np.cumsum(flag[:-1])
+            colours = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
+            colours[binIds==0] = 'c'
+            
+            # label stretches with bin ids
+            group_ends = np.flatnonzero(flag[1:])
+            group_centers = np.concatenate(([group_ends[0]/2], (group_ends[1:]+group_ends[:-1]+1)/2))
+            group_heights = np.concatenate(([x[:group_ends[0]+1].max()], [x[s:e+1].max() for (s, e) in zip(group_ends[:-1]+1, group_ends[1:])]))
+            group_labels = binIds[group_ends].astype(str)
+            k = np.in1d(binIds[group_ends], bids)
+            text = zip(group_centers[k], group_heights[k], group_labels[k])
+            smap = None
+        elif highlight=="markers":
+            # color leaves by first non-zero ancestor coherence score
+            scores = np.zeros(self._profile.numContigs)
+            Z = hierarchy.linkage_from_reachability(o, d)
+            ll = ClassificationLeavesLister(Z, self._mapping)
+            (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
+            mnodes = ll.nodes
+            for k in mnodes:
+                ix = ll.leaves_list(k)
+                score = self._cf.disagreement(ix)
+                if score > 0:
+                    row_indices = np.array(node_dict[k].pre_order(lambda x: x.get_id()))
+                    scores[row_indices[scores[row_indices]==0]] = score
+            
+            scores = scores[o]
+            norm = plt_colors.Normalize(vmin=0, vmax=np.max(scores))
+            smap = plt_cm.ScalarMappable(norm=norm, cmap=self._colourmap)
+            smap.set_array(scores)
+            colours = smap.to_rgba(scores)
+            text = []
+        else:
+            raise ValueError("Invalid `highlight` argument parameter value: `%s`" % highlight)
         
-        # label stretches with bin ids
-        group_ends = np.flatnonzero(flag[1:])
-        group_centers = np.concatenate(([group_ends[0]/2], (group_ends[1:]+group_ends[:-1]+1)/2))
-        group_heights = np.concatenate(([x[:group_ends[0]+1].max()], [x[s:e+1].max() for (s, e) in zip(group_ends[:-1]+1, group_ends[1:])]))
-        group_labels = binIds[group_ends].astype(str)
-        k = np.in1d(binIds[group_ends], bids)
         
         hplot = BarPlotter(
             height=x,
@@ -465,7 +499,8 @@ class HierarchyReachabilityPlotter:
             ylabel="dendist",
             xticks=xticks,
             xticklabels=xticklabels,
-            text=zip(group_centers[k], group_heights[k], group_labels[k]),
+            text=text,
+            colourbar=smap,
             )
         hplot.plot(fileName)
         
@@ -479,9 +514,9 @@ class HierarchyRemovedPlotter:
         x = sp_distance.pdist(self._profile.covProfiles, metric="euclidean")
         y = sp_distance.pdist(self._profile.kmerSigs, metric="euclidean")
         if doWeight:
-            weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+            w = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         else:
-            weights = None
+            w = None
         rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
         ddist = distance.density_distance(rnorm)
         self._Z = sp_hierarchy.single(ddist)

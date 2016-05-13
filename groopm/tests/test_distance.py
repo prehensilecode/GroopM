@@ -206,7 +206,6 @@ def test_reachability_order():
     """
     Y = np.array([17.7, 70., 97.1, 50.8, 121.6, 79.4, 82.1, 120.9, 77.3, 14.4])
     (o, d) = reachability_order(Y)
-    print o, d
     assert_equal_arrays(o,
                         [0, 1, 4, 3, 2],
                         "`reachability_order` returns reachability traversal order")
