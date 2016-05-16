@@ -70,14 +70,10 @@ class BinStats:
         `sizes[i]` is the total BP for the `i`th bin.
     numContigs: ndarray
         `numContigs[i]` is the number of contigs in the `i`th bin.
-    lengthMeans: ndarray
-        `lengthMeans[i]` is the mean contig length in the `i`th bin.
-    lengthStdDevs: ndarray
-        `lengthStdDevs[i]` is the standard deviation in contig length in the `i`th bin.
-    coverageMeans: ndarray
-        `coverageMeans[i]` is the mean coverage in the `i`th bin.
-    coverageStdDevs: ndarray
-        `coverageStdDevs[i]` is the standard deviation in coverage of `i`th bin.
+    lengthMedians: ndarray
+        `lengthMedians[i]` is the median contig length in the `i`th bin.
+    lengthRanges: ndarray
+        `lengthRanges[i]` is a 2 element array of the min and max contig lengths in the `i`th bin.
     GCMeans: ndarray
         `GCMeans[i]` is the mean GC % in `i`th bin.
     GCStdDevs: ndarray
@@ -118,44 +114,36 @@ class BinManager:
         bids = self.getBids(binIds)
         sizes = []
         num_contigs = []
-        mean_length = []
-        std_length = []
-        mean_cov = []
-        std_cov = []
-        mean_gc = []
-        std_gc = []
+        length_medians = []
+        length_ranges = []
+        gc_means = []
+        gc_stds = []
         for bid in bids:
             row_indices = np.flatnonzero(binIds == bid)
             num_contigs.append(len(row_indices))
             
+            # contig lengths
             lengths = self.profile.contigLengths[row_indices]
-            coverages = self.profile.normCoverages[row_indices]
-            gcs = self.profile.contigGCs[row_indices]
-            
             sizes.append(lengths.sum())
-            mean_length.append(lengths.mean())
-            mean_cov.append(coverages.mean())
-            mean_gc.append(gcs.mean())
+            length_medians.append(np.median(lengths))
+            length_ranges.append([np.min(lengths), np.max(lengths)])
             
+            # GC %
+            gcs = self.profile.contigGCs[row_indices]
+            gc_means.append(gcs.mean())
             if len(row_indices) > 1:
-                std_length.append(lengths.std(ddof=1))
-                std_cov.append(coverages.std(ddof=1))
-                std_gc.append(gcs.std(ddof=1))
+                gc_stds.append(gcs.std(ddof=1))
             else:
-                std_length.append(np.nan)
-                std_cov.append(np.nan)
-                std_gc.append(np.nan)
+                gc_stds.append(np.nan)
             
         out = BinStats()
         out.bids = np.array(bids)
         out.sizes = np.array(sizes)
         out.numContigs = np.array(num_contigs)
-        out.lengthMeans = np.array(mean_length)
-        out.lengthStdDevs = np.array(std_length)
-        out.coverageMeans = np.array(mean_cov)
-        out.coverageStdDevs = np.array(std_cov)
-        out.GCMeans = np.array(mean_gc)
-        out.GCStdDevs = np.array(std_gc)
+        out.lengthMedians = np.array(length_medians)
+        out.lengthRanges = np.array(length_ranges)
+        out.GCMeans = np.array(gc_means)
+        out.GCStdDevs = np.array(gc_stds)
         
         return out
         

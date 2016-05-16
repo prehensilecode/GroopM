@@ -301,7 +301,14 @@ class BinStatsDumper:
         try:
             with open(outFile, 'w') as f:
                 if useHeaders:
-                    header = separator.join(['bid', 'num_contigs', 'size', 'length_mean', 'length_std', 'coverage_mean', 'coverage_std', 'gc_mean','gc_std']) + '\n'
+                    header = separator.join(['bid',
+                                             'num_contigs',
+                                             'size',
+                                             'length_min',
+                                             'length_median',
+                                             'length_max',
+                                             'gc_mean',
+                                             'gc_std']) + '\n'
                     f.write(header)
                 
                 num_rows = len(stats.bids)
@@ -309,13 +316,11 @@ class BinStatsDumper:
                     row = separator.join(['%d' % stats.bids[i],
                                           '%d' % stats.numContigs[i], 
                                           '%d' % stats.sizes[i],
-                                          '%.2f' % stats.lengthMeans[i],
-                                          '%.2f' % stats.lengthStdDevs[i],
-                                          '%.2f' % stats.coverageMeans[i],
-                                          '%.2f' % stats.coverageStdDevs[i],
+                                          '%d' % stats.lengthRanges[i, 0],
+                                          '%d' % stats.lengthMedians[i],
+                                          '%d' % stats.lengthRanges[i, 1],
                                           '%.2f' % stats.GCMeans[i],
-                                          '%.2f' % stats.GCStdDevs[i]
-                                          ])
+                                          '%.2f' % stats.GCStdDevs[i]])
                     f.write(row+'\n')
         except:
             print "Could not open file for writing:",outFile,sys.exc_info()[0]
