@@ -92,8 +92,8 @@ class CoreCreator:
         ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, smooth=k, minPts=minPts, linear=linear, doWeight=doWeight)
         ce.makeBins(timer, out_bins=profile.binIds)
         
-        bm = BinManager(profile, minSize=minSize, minBP=minBP)
-        bm.unbinLowQualityAssignments(out_bins=profile.binIds)
+        bm = BinManager(profile)
+        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minBP=minBP)
 
         # Now save all the stuff to disk!
         print "Saving bins"

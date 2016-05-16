@@ -347,6 +347,34 @@ class dump_command_configure:
                     options.outfile,
                     separator,
                     not options.no_headers)
+                    
+
+class binstat_command_configure:
+    description="Write bin stats to text file"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-o', '--outfile', default="binStats.csv", help="write data to this file")
+        parser.add_argument('-s', '--separator', default=",", help="data separator")
+        parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in bin stats dumping mode..." % __version__
+        print "*******************************************************************************"
+
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        bm = groopm.BinStatsDumper(options.dbname)
+        bm.dumpBinStats(timer,
+                        options.outfile,
+                        separator,
+                        not options.no_headers)
 
 
 class import_command_configure:
@@ -522,6 +550,13 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     dump_command_configure(dump_subparser)
+    
+    binstat_subparser = subparsers.add_parser(
+        "binstat",
+        description=binstat_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    binstat_command_configure(binstat_subparser)
     
     markers_subparser = subparsers.add_parser(
         "markers",

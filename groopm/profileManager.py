@@ -66,8 +66,6 @@ class Mapping:
     Fields
     ------
     # mapping data
-    profile: ndarray
-        Profile instance, see ProfileManager class.
     rowIndices: ndarray
         `rowIndices[i]` is the row index in `profile` of the `i`th mapping.
     markerNames: ndarray
@@ -77,6 +75,8 @@ class Mapping:
         mapping.
         
     #metadata
+    profile: ndarray
+        Profile instance, see ProfileManager class.
     numMappings: int
         Corresponds to the lengths of above arrays.
     """

@@ -134,7 +134,7 @@ class BinExtractor:
             file_name = os.path.join(self._outDir, "%s_bin_%d.fna" % (prefix, bid))
             try:
                 with open(file_name, 'w') as f:
-                    for cid in profile.contigNames[bm.getBinIndices(bid)]:
+                    for cid in bm.profile.contigNames[bm.getBinIndices(bid)]:
                         if(cid in contigs):
                             f.write(">%s\n%s\n" % (cid, contigs[cid]))
                         else:
@@ -175,7 +175,7 @@ class BinExtractor:
         for bid in bm.getBids():
             group_names.append("BIN_%d" % bid)
             row_indices = bm.getBinIndices(bid)
-            targets.append(list(profile.contigNames[row_indices]))
+            targets.append(list(bm.profile.contigNames[row_indices]))
 
         # get something to parse the bams with
         bam_parser = BMBE(targets,
@@ -196,7 +196,6 @@ class BinExtractor:
 
         bam_parser.extract(threads=threads,
                            verbose=verbose)
-                           
                            
 class MarkerExtractor:
     def __init__(self,
@@ -225,6 +224,7 @@ class MarkerExtractor:
                            timer,
                            bids=[],
                            prefix='',
+                           separator='\t',
                            cutoff=0
                            ):
         """Extract markers from bins and write to file"""
@@ -255,9 +255,9 @@ class MarkerExtractor:
             try:
                 with open(file_name, 'w') as f:
                     #labels and lineages
-                    f.write('#info table\n%s\n' % '\t'.join(['label', 'taxonomy', 'contig_name']))
+                    f.write('#info table\n%s\n' % separator.join(['label', 'taxonomy', 'contig_name']))
                     for (label, tax, cname) in zip(labels, taxstrings, cnames):
-                        f.write('%s\n' % '\t'.join([label, '\'%s\'' % tax, cname]))
+                        f.write('%s\n' % separator.join([label, '\'%s\'' % tax, cname]))
                     
                     #distance table
                     f.write('\n#distance table\n')
@@ -266,6 +266,60 @@ class MarkerExtractor:
             except:
                 print "Could not open file for writing:",file_name,sys.exc_info()[0]
                 raise
+    
+    
+                           
+class BinStatsDumper:
+    def __init__(self,
+                 dbFileName):
+        self.dbFileName = dbFileName
+        self._pm = ProfileManager(self.dbFileName)
+        
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer,
+                                 loadBins=True,
+                                 bids=[0],
+                                 removeBins=True,
+                                )
+                                
+    def dumpBinStats(self,
+                       timer,
+                       outFile,
+                       separator,
+                       useHeaders
+                       ):
+        """Compute bin statistics"""
+        
+        
+        # load all the contigs which have been assigned to bins
+        profile = self.loadProfile(timer)
+        bm = BinManager(profile)
+        
+        stats = bm.getBinStats()
+
+        # now print out the sequences
+        try:
+            with open(outFile, 'w') as f:
+                if useHeaders:
+                    header = separator.join(['bid', 'num_contigs', 'size', 'length_mean', 'length_std', 'coverage_mean', 'coverage_std', 'gc_mean','gc_std']) + '\n'
+                    f.write(header)
+                
+                num_rows = len(stats.bids)
+                for i in range(num_rows):
+                    row = separator.join(['%d' % stats.bids[i],
+                                          '%d' % stats.numContigs[i], 
+                                          '%d' % stats.sizes[i],
+                                          '%.2f' % stats.lengthMeans[i],
+                                          '%.2f' % stats.lengthStdDevs[i],
+                                          '%.2f' % stats.coverageMeans[i],
+                                          '%.2f' % stats.coverageStdDevs[i],
+                                          '%.2f' % stats.GCMeans[i],
+                                          '%.2f' % stats.GCStdDevs[i]
+                                          ])
+                    f.write(row+'\n')
+        except:
+            print "Could not open file for writing:",outFile,sys.exc_info()[0]
+            raise
     
 ###############################################################################
 ###############################################################################

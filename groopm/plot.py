@@ -402,7 +402,7 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, profile, threshold, doWeight, colourmap="Spectral"):
+    def __init__(self, profile, threshold, doWeight, colourmap="Blues"):
         self._profile = profile
         self._threshold = threshold
         self._colourmap = getColorMap(colourmap)

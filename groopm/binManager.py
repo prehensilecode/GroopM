@@ -57,25 +57,48 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
+class BinStats:
+    """Class for carrying bin summary statistics, constructed using BinManager
+    class.
+    
+    Fields
+    ------
+    # statistics
+    bids: ndarray
+        `bids[i]` is the bin id for the `i`th bin.
+    sizes: ndarray
+        `sizes[i]` is the total BP for the `i`th bin.
+    numContigs: ndarray
+        `numContigs[i]` is the number of contigs in the `i`th bin.
+    lengthMeans: ndarray
+        `lengthMeans[i]` is the mean contig length in the `i`th bin.
+    lengthStdDevs: ndarray
+        `lengthStdDevs[i]` is the standard deviation in contig length in the `i`th bin.
+    coverageMeans: ndarray
+        `coverageMeans[i]` is the mean coverage in the `i`th bin.
+    coverageStdDevs: ndarray
+        `coverageStdDevs[i]` is the standard deviation in coverage of `i`th bin.
+    GCMeans: ndarray
+        `GCMeans[i]` is the mean GC % in `i`th bin.
+    GCStdDevs: ndarray
+        `GCStdDevs[i]` is the standard deviation in GC % in `i`th bin.
+    """
+    pass
+    
+
 class BinManager:
     """Class used for manipulating bins
     
-    Wraps an array of bin ids
+    Wraps a Profile object (see profileManager.py)
     """
-    
     def __init__(self,
-                 profile,
-                 minSize=0,
-                 minBP=0):
-
-        self._profile = profile
-        self._minSize = minSize
-        self._minBP = minBP
+                 profile):
+        self.profile = profile
         
     def getBinIndices(self, bids):
         """Get indices for bins"""
         self.checkBids(bids)
-        return np.flatnonzero(np.in1d(self._profile.binIds, bids))
+        return np.flatnonzero(np.in1d(self.profile.binIds, bids))
         
     def checkBids(self, bids):
         """Check if bids are valid"""
@@ -83,15 +106,65 @@ class BinManager:
         if np.any(is_not_bid):
             raise BinNotFoundException("ERROR: "+",".join([str(bid) for bid in bids[is_not_bid]])+" are not bin ids")
 
-    def unbinLowQualityAssignments(self, out_bins):
+    def getBids(self, binIds=None):
+        """Return a sorted list of bin ids"""
+        if binIds is None:
+            binIds = self.profile.binIds
+        return sorted(set(binIds).difference([0]))
+        
+    def getBinStats(self, binIds=None):
+        if binIds is None:
+            binIds = self.profile.binIds
+        bids = self.getBids(binIds)
+        sizes = []
+        num_contigs = []
+        mean_length = []
+        std_length = []
+        mean_cov = []
+        std_cov = []
+        mean_gc = []
+        std_gc = []
+        for bid in bids:
+            row_indices = np.flatnonzero(binIds == bid)
+            num_contigs.append(len(row_indices))
+            
+            lengths = self.profile.contigLengths[row_indices]
+            coverages = self.profile.normCoverages[row_indices]
+            gcs = self.profile.contigGCs[row_indices]
+            
+            sizes.append(lengths.sum())
+            mean_length.append(lengths.mean())
+            mean_cov.append(coverages.mean())
+            mean_gc.append(gcs.mean())
+            
+            if len(row_indices) > 1:
+                std_length.append(lengths.std(ddof=1))
+                std_cov.append(coverages.std(ddof=1))
+                std_gc.append(gcs.std(ddof=1))
+            else:
+                std_length.append(np.nan)
+                std_cov.append(np.nan)
+                std_gc.append(np.nan)
+            
+        out = BinStats()
+        out.bids = np.array(bids)
+        out.sizes = np.array(sizes)
+        out.numContigs = np.array(num_contigs)
+        out.lengthMeans = np.array(mean_length)
+        out.lengthStdDevs = np.array(std_length)
+        out.coverageMeans = np.array(mean_cov)
+        out.coverageStdDevs = np.array(std_cov)
+        out.GCMeans = np.array(mean_gc)
+        out.GCStdDevs = np.array(std_gc)
+        
+        return out
+        
+    def unbinLowQualityAssignments(self, out_bins, minBP=0, minSize=0):
         """Check bin assignment quality"""
         low_quality = []
-        for bid in self.getBids(out_bins):
-            is_in_bin = out_bins == bid
-            total_BP = np.sum(self._profile.contigLengths[is_in_bin])
-            bin_size = np.count_nonzero(is_in_bin)
-
-            if not isGoodBin(total_BP, bin_size, minBP=self._minBP, minSize=self._minSize):
+        stats = self.getBinStats(out_bins)
+        for (i, bid) in enumerate(stats.bids):
+            if not isGoodBin(stats.sizes[i], stats.numContigs[i], minBP=minBP, minSize=minSize):
                 # This partition is too small, ignore
                 low_quality.append(bid)
 
@@ -99,20 +172,16 @@ class BinManager:
         out_bins[np.in1d(out_bins, low_quality)] = 0
         (_, new_bins) = np.unique(out_bins, return_inverse=True)
         out_bins[...] = new_bins
-        
-
-    def getBids(self, binIds=None):
-        """Return a sorted list of bin ids"""
-        if binIds is None:
-            binIds = self._profile.binIds
-        return sorted(set(binIds).difference([0]))
-
-
+        print "    %s bins after removing low quality bins." % (out_bins.max()-1)
+    
+    
+    
 def isGoodBin(totalBP, binSize, minBP, minSize):
     """Does this bin meet my exacting requirements?"""
 
     # contains enough bp or enough contigs
     return totalBP >= minBP or binSize >= minSize
+    
 
 ###############################################################################
 ###############################################################################
