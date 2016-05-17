@@ -284,7 +284,7 @@ def test_flat_nodes():
     
     assert_equal_arrays(flat_nodes(Z),
                         [1, 1, 2],
-                        "`flat_nodes` assigns nodes the indices of ancestor nodes of equal height")
+                        "`flat_nodes` assigns nodes the indices of direct parent of equal height")
                       
     """Z describes tree:
         5
@@ -307,11 +307,9 @@ def test_flat_nodes():
                   [ 7.,  8., 3., 4.],
                   [10., 11., 3., 7.]])
     
-    print '---'
-    nds = flat_nodes(Z)
-    assert_equal_arrays(nds,
+    assert_equal_arrays(flat_nodes(Z),
                         [0, 1, 5, 5, 5, 5],
-                        "`flat_nodes` assigns nodes the indices of ancestor nodes of equal height")
+                        "`flat_nodes` assigns nodes the indices of parents and grandparents of equal height")
                      
                      
 def test_linkage_from_reachability():
@@ -349,6 +347,28 @@ def test_linkage_from_reachability():
     assert_equal_arrays(linkage_from_reachability(o, d),
                         Z,
                         "`linkage_from_reachability` returns linkage corresponding to reachability ordering")
+                        
+                                      
+    """Z describes tree:
+        5
+        |-9-+
+        6   |-10-+
+        2---+    |
+                 |
+        1        |-12
+        |-8-+    |
+        0   |    |
+            |-11-+
+        3   |
+        |-7-+
+        4
+    """
+    Z = np.array([[ 3.,  4., 1., 2.],
+                  [ 0.,  1., 2., 2.],
+                  [ 5.,  6., 3., 2.],
+                  [ 2.,  9., 3., 3.],
+                  [ 7.,  8., 3., 4.],
+                  [10., 11., 3., 7.]])
                         
 ###############################################################################
 ###############################################################################

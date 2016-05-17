@@ -426,7 +426,7 @@ class HierarchyReachabilityPlotter:
              minPts,
              linear,
              label="count",
-             highlight="markers",
+             highlight="bins",
              fileName=""):
                  
         if smooth is None:
@@ -454,6 +454,12 @@ class HierarchyReachabilityPlotter:
         if highlight=="bins":
             # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
+            
+            Z = sp_hierarchy.single(dd)
+            ct = ClassificationCoherenceClusterTool(self._mapping)
+            binIds = ct.cluster_classification(Z, self._threshold, True)
+            binIds = binIds[o]
+            
             flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
             iflag = np.cumsum(flag[:-1])
             colours = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
@@ -461,7 +467,7 @@ class HierarchyReachabilityPlotter:
             
             # label stretches with bin ids
             group_ends = np.flatnonzero(flag[1:])
-            group_centers = np.concatenate(([group_ends[0]/2], (group_ends[1:]+group_ends[:-1]+1)/2))
+            group_centers = np.concatenate(([group_ends[0]+1*0.5], (group_ends[1:]+1+group_ends[:-1]+1)*0.5))
             group_heights = np.concatenate(([x[:group_ends[0]+1].max()], [x[s:e+1].max() for (s, e) in zip(group_ends[:-1]+1, group_ends[1:])]))
             group_labels = binIds[group_ends].astype(str)
             k = np.in1d(binIds[group_ends], bids)
@@ -470,7 +476,8 @@ class HierarchyReachabilityPlotter:
         elif highlight=="markers":
             # color leaves by maximum ancestor coherence score
             scores = np.zeros(self._profile.numContigs)
-            Z = hierarchy.linkage_from_reachability(o, d)
+            #Z = hierarchy.linkage_from_reachability(o, d)
+            Z = sp_hierarchy.single(dd)
             ll = ClassificationLeavesLister(Z, self._mapping)
             (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
             mnodes = ll.nodes
@@ -479,13 +486,25 @@ class HierarchyReachabilityPlotter:
                 score = self._cf.disagreement(ix)
                 if score > 0:
                     row_indices = np.array(node_dict[k].pre_order(lambda x: x.get_id()))
-                    scores[row_indices] = np.maximum(score, scores[row_indices])
+                    nnz_row_indices = row_indices[scores[row_indices] == 0]
+                    scores[nnz_row_indices] = score
             
             scores = scores[o]
             norm = plt_colors.Normalize(vmin=0, vmax=np.max(scores))
             smap = plt_cm.ScalarMappable(norm=norm, cmap=self._colourmap)
             smap.set_array(scores)
             colours = smap.to_rgba(scores)
+            text = []
+        elif highlight=="node500":
+            Z = sp_hierarchy.single(dd)
+            (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
+            n = self._profile.numContigs
+            height_map = hierarchy.flat_nodes(Z)
+            row_indices = np.array(node_dict[n+height_map[800]].pre_order(lambda x: x.get_id()))
+            colours = np.full(n, 'k', dtype='|S1')
+            colours[row_indices] = 'r'
+            colours = colours[o]
+            smap = None
             text = []
         else:
             raise ValueError("Invalid `highlight` argument parameter value: `%s`" % highlight)
