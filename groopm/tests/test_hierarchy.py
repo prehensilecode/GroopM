@@ -37,6 +37,7 @@ from groopm.hierarchy import (height,
                               ancestors,
                               maxcoeff_roots,
                               cluster_remove,
+                              flat_nodes,
                               linkage_from_reachability,
                              )
 
@@ -60,6 +61,31 @@ def test_height():
     assert_equal_arrays(height(Z),
                         [2, 2, 2, 1, 0, 1],
                         "`height` returns condensed matrix of lowest common ancestor indices")
+                        
+    """Z describes tree:
+        5
+        |-9-+
+        6   |-10-+
+        2---+    |
+                 |
+        1        |-12
+        |-8-+    |
+        0   |    |
+            |-11-+
+        3   |
+        |-7-+
+        4
+    """
+    Z = np.array([[ 3.,  4., 1., 2.],
+                  [ 0.,  1., 2., 2.],
+                  [ 5.,  6., 3., 2.],
+                  [ 2.,  9., 3., 3.],
+                  [ 7.,  8., 3., 4.],
+                  [10., 11., 3., 7.]])
+                  
+    assert_equal_arrays(height(Z),
+                        [1, 5, 4, 4, 5, 5, 5, 4, 4, 5, 5, 5, 5, 3, 3, 0, 5, 5, 5, 5, 2],
+                        "`height` returns condensed matrix of lowest common ancestor indices for moderately complex hierarchy")
                 
                 
 def test_maxcoeffs():
@@ -243,7 +269,51 @@ def test_cluster_remove():
                       "`cluster_remove` computes flat cluster indices after removing "
                      "a leaf and internal indices")  
 
-
+                     
+def test_flat_nodes():
+    """Z describes tree:
+        0-------+
+        2---+   |-6
+        1   |-5-+
+        |-4-+
+        3
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 1., 3.],
+                  [0., 5., 2., 4.]])
+    
+    assert_equal_arrays(flat_nodes(Z),
+                        [1, 1, 2],
+                        "`flat_nodes` assigns nodes the indices of ancestor nodes of equal height")
+                      
+    """Z describes tree:
+        5
+        |-9-+
+        6   |-10-+
+        2---+    |
+                 |
+        1        |-12
+        |-8-+    |
+        0   |    |
+            |-11-+
+        3   |
+        |-7-+
+        4
+    """
+    Z = np.array([[ 3.,  4., 1., 2.],
+                  [ 0.,  1., 2., 2.],
+                  [ 5.,  6., 3., 2.],
+                  [ 2.,  9., 3., 3.],
+                  [ 7.,  8., 3., 4.],
+                  [10., 11., 3., 7.]])
+    
+    print '---'
+    nds = flat_nodes(Z)
+    assert_equal_arrays(nds,
+                        [0, 1, 5, 5, 5, 5],
+                        "`flat_nodes` assigns nodes the indices of ancestor nodes of equal height")
+                     
+                     
 def test_linkage_from_reachability():
     """
     Y encodes weighted distances for pairs:

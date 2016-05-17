@@ -131,8 +131,7 @@ class ReachabilityPlotter:
             makeSurePathExists(self._outDir)
             
     def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, loadMarkers=True, minLength=0,
-                removeBins=True, bids=[0])
+        return self._pm.loadData(timer, loadBins=True, loadMarkers=True, minLength=1500)
         
     def plot(self,
              timer,
@@ -160,7 +159,7 @@ class ReachabilityPlotter:
         elif ks is None:
             pairs = [(p, None) for p in pts]
         elif pts is None:
-            ks = [(None, k) for k in ks]
+            pairs = [(None, k) for k in ks]
         else:
             pairs = [(p, k) for p in pts for k in ks]
         for (p, k) in pairs:
@@ -402,7 +401,7 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, profile, threshold, doWeight, colourmap="Blues"):
+    def __init__(self, profile, threshold, doWeight, colourmap="Sequential"):
         self._profile = profile
         self._threshold = threshold
         self._colourmap = getColorMap(colourmap)
@@ -433,7 +432,7 @@ class HierarchyReachabilityPlotter:
         if smooth is None:
             minWt = None
         elif linear:
-            minWt = smooth * self._profile.contigLengths[self._order]
+            minWt = smooth * self._profile.contigLengths
         else:
             minWt = np.full(self._profile.numContigs, smooth)
         dd = distance.density_distance(self._dists, weights=self._weights, minWt=minWt, minPts=minPts)
@@ -469,7 +468,7 @@ class HierarchyReachabilityPlotter:
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
         elif highlight=="markers":
-            # color leaves by first non-zero ancestor coherence score
+            # color leaves by maximum ancestor coherence score
             scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, d)
             ll = ClassificationLeavesLister(Z, self._mapping)
@@ -480,7 +479,7 @@ class HierarchyReachabilityPlotter:
                 score = self._cf.disagreement(ix)
                 if score > 0:
                     row_indices = np.array(node_dict[k].pre_order(lambda x: x.get_id()))
-                    scores[row_indices[scores[row_indices]==0]] = score
+                    scores[row_indices] = np.maximum(score, scores[row_indices])
             
             scores = scores[o]
             norm = plt_colors.Normalize(vmin=0, vmax=np.max(scores))
@@ -629,6 +628,8 @@ def getColorMap(colorMapStr):
         return plt_cm.get_cmap('Blues')
     elif colorMapStr == 'Spectral':
         return plt_cm.get_cmap('spectral')
+    elif colorMapStr == 'Sequential':
+        return plt_cm.get_cmap('gist_heat')
     elif colorMapStr == 'Grayscale':
         return plt_cm.get_cmap('gist_yarg')
     elif colorMapStr == 'Discrete':

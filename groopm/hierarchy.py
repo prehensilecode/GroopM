@@ -133,22 +133,6 @@ def cluster_remove(Z, remove):
     T = sp_hierarchy.fcluster(Zz, 0, criterion="distance")
     #T = sp_hierarchy.fcluster(Z, 0, criterion="monocrit", monocrit=monocrit[n:]) # should work in scipy 0.17
     return T
-    
-    
-def flat_nodes(Z):
-    """Return node indices of the furtherest ancestor of each node (including itself) of equal height
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0] + 1
-    
-    node_ids = np.arange(n-1)
-    for i in range(n-2, -1, -1):
-        children = Z[i, :2].astype(int)
-        for c in children:
-            if c >= n and Z[i, 2] == Z[c - n, 2]:
-                node_ids[c - n] = i
-            
-    return node_ids
 
        
 def maxcoeff_roots(Z, coeffs):
@@ -332,7 +316,7 @@ class ClassificationLeavesLister:
         Z = np.asarray(Z)
         n = Z.shape[0] + 1
         
-        height_map = flat_nodes(Z) # map of indices in Z to equal height ancestor
+        height_map = flat_nodes(Z) # map indices in Z to equal height ancestor
         H = height_map[height(Z)]
         
         indices = np.asarray(markers.rowIndices)
@@ -348,6 +332,7 @@ class ClassificationLeavesLister:
                     mA[i, j] = H[distance.condensed_index(n, ix, j)]+n
                     
         self._mA = mA
+        
         """Nodes of Z that correspond to embedded hierarchy nodes."""
         self.nodes = np.unique(self._mA[:, indices])
         
@@ -355,6 +340,22 @@ class ClassificationLeavesLister:
         """Computes the original observations composing a node."""
         return np.flatnonzero(np.any(self._mA==node, axis=1))
 
+        
+def flat_nodes(Z):
+    """Return node indices of the furtherest ancestor of each node (including itself) of equal height
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0] + 1
+    
+    node_ids = np.arange(n-1)
+    for i in range(n-2, -1, -1):
+        children = Z[i, :2].astype(int)
+        for c in children:
+            if c >= n and Z[i, 2] == Z[c - n, 2]:
+                node_ids[c - n] = node_ids[i]
+            
+    return node_ids
+        
         
 def linkage_from_reachability(o, d):
     """Hierarchical clustering from reachability ordering and distances"""
