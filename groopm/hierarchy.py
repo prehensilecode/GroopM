@@ -50,71 +50,98 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.cluster.hierarchy as sp_hierarchy
 import scipy.spatial.distance as sp_distance
-from Queue import PriorityQueue
 
 # local imports
 import distance
-from classification import ClassificationManager, ClassificationConsensusFinder
+import classification
 
 np.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
-###############################################################################        
-class ClassificationCoherenceClusterTool:
-    """Partition a hierarchical clustering using the taxonomic classification
-    distances of marker gene hits to identify clusters that maximise a measure
-    of taxonomic coherence. 
-    """
-    def __init__(self, markers):
-        self._mapping = markers
-        
-    def cluster_classification(self, Z, t, greedy):
-        Z = np.asarray(Z)
-        n = Z.shape[0] + 1
-        
-        mcf = ClassificationConsensusFinder(self._mapping, t)
-        mll = ClassificationLeavesLister(Z, self._mapping)
-        #mct = HierarchyCliqueFinder(Z, t, self._mapping)
-        mnodes = mll.nodes
-        #Size difference between of 1st- and 2nd-maximal cliques of `Q(k)`
-        mcc = np.array([mcf.disagreement(i) for i in (mll.leaves_list(k) for k in mnodes)])
-        #mcc = np.array([2*len(mcf.maxClique(i)) - len(i) for i in (mll.leaves_list(k) for k in mnodes)])
-        
-        cc = np.zeros(2*n - 1, dtype=mcc.dtype)
-        cc[mnodes] = np.where(mcc < 0, 0, mcc)
-        
-        
-        # The root nodes of the flat clusters begin as nodes with maximum
-        # coefficient.
-        rootinds = maxcoeff_roots(Z, cc)
-        rootancestors = ancestors(Z, rootinds)
-        
-        if greedy:
-            # Greedily extend clusters until a node with an actively lower
-            # coefficient is reached. Requires an additional pass over
-            # hierarchy.
-            rootinds = np.intersect1d(mnodes, rootancestors)
-            rootancestors = ancestors(Z, rootinds, inclusive=True)
-            
-        # Partition by finding the sets of leaves of the forest created by
-        # removing ancestor nodes of forest root nodes.
-        T = cluster_remove(Z, rootancestors)
-        return T
+############################################################################### 
+def fcluster_classification(Z, classification, level):
+    """Run the flat clustering process"""
+    (coeffs, num_markers) = coherence_coefficients(Z, classification, level)
+    ids = flatten_nodes(Z)
+    return fcluster_coeffs(Z, coeffs[ids], num_markers[ids])
 
-    
-def cluster_remove(Z, remove):
-    """Form flat clusters from hierarchical clustering defined by linkage matrix
-    `Z` .
+
+def coherence_coefficients(Z, classification, level):
+    """Compute measure of taxonomic coherence for hierarchical clustering.
     
     Parameters
     ----------
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
-    remove : ndarray
-        1-D array of node indices to "remove" from the cluster hierarchy before
-        forming flat clusters from the remaining forest.
+    classification : Classification object
+        See ProfileManager.py.
+    level : int
+        Taxonomic level at which to define clusters.
+        
+    Returns
+    -------
+    coeffs : ndarray
+        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
+        the `i`th singleton node, and for `i>=n` is the value for the cluster
+        encoded by the `(i-n)`-th row in `Z`.
+    num_markers : ndarray
+        `num_markers[i]` is the number of taxonomic assignments made to contigs
+        in cluster `i`, where `i<n` corresponds to singleton clusters.
+    """
+    cfinder = classification.ClassificationConsensusFinder(classification, level)
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    
+    markers = dict(classification.iterindices())
+    num_markers = np.zeros(2*n-1, dtype=int)
+    for (i, row_indices) in markers.iteritems():
+        num_markers[i] = len(row_indices)
+    coeffs = np.zeros(2*n-1, dtype=int)
+        
+    # Bottom-up traversal
+    for i in range(n-1):
+        left_child = int(Z[i, 0])
+        left_num_markers = num_markers[left_child]
+        right_child = int(Z[i, 1])
+        right_num_markers = num_markers[right_child]
+        current_node = n+i
+        current_num_markers = left_num_markers + right_num_markers
+        num_markers[current_node] = current_num_markers
+        
+        # update leaf cache
+        current_markers = markers[left_child] + markers[right_child]
+        del markers[left_child]
+        del markers[right_child]
+        markers[current_node] = current_markers
+        
+        # We only need to compute a new coefficient for new sets of markers, i.e. if
+        # both left and right child clusters have markers.
+        merge = left_num_markers != 0 and right_num_markers != 0
+        if merge:
+            coeffs[current_node] = cfinder.disagreement(markers)
+        else:
+            coeffs[current_node] = np.maximum(coeffs[left_child], coeffs[right_child])
+
+    return (coeffs, num_markers)
+            
+
+def fcluster_coeffs(Z, coeffs, num_markers):
+    """Partition a hierarchical clustering by identifying clusters that
+    maximise a measure of taxonomic coherence.
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    coeffs : ndarray
+        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
+        the `i`th singleton node, and for `i>=n` is the value for the cluster
+        encoded by the `(i-n)`-th row in `Z`.
+    num_markers : ndarray
+        `num_markers[i]` is the number of taxonomic assignments made to contigs
+        in cluster `i`, where `i<n` corresponds to singleton clusters.
         
     Returns
     -------
@@ -123,226 +150,53 @@ def cluster_remove(Z, remove):
         observation `i` belongs.
     """
     Z = np.asarray(Z)
-    n = Z.shape[0] + 1
-    
-    monocrit = np.zeros(2*n-1, dtype=int)
-    monocrit[remove] = 1
-    # work around scipy 0.14 bug
-    Zz = Z.copy()
-    Zz[:, 2] = monocrit[n:]
-    T = sp_hierarchy.fcluster(Zz, 0, criterion="distance")
-    #T = sp_hierarchy.fcluster(Z, 0, criterion="monocrit", monocrit=monocrit[n:]) # should work in scipy 0.17
-    return T
-
-       
-def maxcoeff_roots(Z, coeffs):
-    """Returns nodes with highest coefficient of any parent node, and at least as 
-    high as any descendent.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    coeffs : ndarray
-        1-D array. `coeffs[i]` for `i<n` is the coefficient for the i-th
-        singleton node, and for `i>=n` is the coefficient for the cluster
-        encoded by the `(i-n)`-th row in `Z`.
-        
-    Returns
-    -------
-    nondescendents : ndarray
-        1-D array of node indices `i` where `coeffs[i] == coeffs[Q[i]].max` and 
-        `coeffs[i] > coeffs[Q(j)].max()` for all parent nodes `j`, i.e. with `i`
-        in `Q(j)`, where `Q(j)` is the set of all node indices below and
-        including node j.
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0] + 1
-    
-    # Algorithm traverses the cluster hierarchy twice times.
-    
-    # The first time, we find nodes where the node coefficient is
-    # non-negative and equal to the maximum of all non-negative
-    # descendents (including itself). These are nodes where the coefficient
-    # maximum is non-decreasing along all leaf-to-root paths. 
-    maxcc = maxcoeffs(Z, coeffs)
-    maxinds = np.flatnonzero(maxcc == coeffs)
-    
-    # The second time, we descend from the root until a node identified in
-    # the first pass or a leaf node is encountered. These are nodes where
-    # the coefficient is greatest along any root-to-leaf path. 
-    maxinds = filter_descendents(Z, maxinds)
-    
-    return maxinds
-
-    
-def ancestors(Z, indices, inclusive=False):
-    """Compute ancestor node indices.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    indices : ndarray
-        1-D array of node indices.
-    inclusive : boolean, optional
-        If `True`, indices are counted as their own ancestors.
-        
-    Returns
-    -------
-    ancestors : ndarray
-        1-D array of node indices of the union of the sets of ancestors of input nodes. 
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0] + 1
-    isancestor = np.zeros(2*n-1, dtype=bool)
-    isancestor_or_index = isancestor.copy()
-    isancestor_or_index[indices] = True
-    for i in range(n-1):
-        isancestor[i+n] = isancestor[i+n] or isancestor_or_index[Z[i,:2].astype(int)].any()
-        isancestor_or_index[i+n] = isancestor_or_index[i+n] or isancestor[i+n]
-        
-    if inclusive:
-        return np.flatnonzero(isancestor_or_index)
-    else:
-        return np.flatnonzero(isancestor)
-        
-    
-def filter_descendents(Z, indices):
-    """Find nodes that are not descendents of other nodes.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    indices : ndarray
-        1-D array of node indices.
-        
-    Returns
-    -------
-    nondescendents : ndarray
-        1-D array of node indices `j` where `j` is either `i` or not in `Q(i)`
-        for all `i` in `indices`, where `Q(i)` is the set of nodes below and
-        including node i.
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0] + 1
-    indices = set(indices)
-    outarr = []
-    stack = [2*n - 2]
-    while True:
-        if len(stack) == 0:
-            break
-        i = stack.pop()
-        if i in indices:
-            outarr.append(i)
-        elif i >= n:
-            stack.extend(Z[i-n,:2].astype(int))
-        
-    return np.sort(outarr)
-        
-
-def maxcoeffs(Z, coeffs):
-    """Compute the maximum coefficient of any descendent for nodes in
-    hierarchical clustering.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    coeffs : ndarray
-        1-D array of coefficients for each cluster node. `coeffs[i]` for `i<n`
-        is the coefficient for the i-th leaf node, and for `i>=n` is the
-        coefficient for the cluster encoded by the `(i-n)`-th row in `Z`.
-        
-    Returns
-    -------
-    maxcoeffs : ndarray
-        `maxcoeffs[i]` is the maximum coefficient value of any cluster below and
-        including the node i. More specifically
-        `maxcoeffs[i] == coeff[Q(i)].max()` where `Q(i)` is the set of all nodes
-        below and including node i. 
-    """
-    
-    Z = np.asarray(Z)  
-    n = Z.shape[0] + 1
-    coeffs = np.asarray(coeffs)
-    if coeffs.shape[0] != 2*n - 1:
-        raise ValueError("Number of coefficients must equal the number of"
-                         "clusters encoded by linkage matrix")
-                       
-    outarr = coeffs.copy()
-    for i in range(n-1):
-        outarr[n+i] = np.maximum(outarr[n+i], outarr[Z[i,:2].astype(int)].max())
-    
-    return outarr
-    
-    
-def height(Z):
-    """Generate a condensed matrix of common ancestor node heights.
-    """
-    Z = np.copy(Z)
-    Z[:, 2] = np.arange(Z.shape[0])
-    return sp_hierarchy.cophenet(Z).astype(int)
-    
-    
-def leaves(Z, k):
-    """Compute leaf nodes of a cluster"""
-    Z = np.asarray(Z)
     n = Z.shape[0]+1
-    outarr = []
-    stack = [k]
-    while len(stack) > 0:
-        i = stack.pop()
-        if i < n:
-            outarr.append(i)
-        else:
-            stack.extend(Z[i-n, :2].astype(int))
-            
-    return np.sort(outarr)
-
+    num_markers = np.asarray(num_markers)
+    max_coeffs = np.copy(coeffs)
     
-class ClassificationLeavesLister:
-    """Find descendents for nodes in hierarchical clustering.
+    #leaf_max_coeffs = np.zeros(n, dtype=int)
+    leaf_max_nodes = np.range(n)
+    leaves = dict([(i, [i]) for i in range(n-1)])
     
-    Parameters
-    ----------
-    Z: ndarray
-        Linkage matrix encoding hierarchical clustering.
-    markers: Markers instance
-        See ProfileManager class documentation
-    """
-    def __init__(self, Z, markers):
-        Z = np.asarray(Z)
-        n = Z.shape[0] + 1
+    # Bottom-up traversal
+    for i in range(n-1):
+        left_child = int(Z[i, 0])
+        left_num_markers = num_markers[left_child]
+        left_max_coeff = max_coeffs[left_child]
+        right_child = int(Z[i, 1])
+        right_num_markers = num_markers[right_child]
+        right_max_coeff = max_coeffs[right_child]
+        current_node = n+i
+        current_coeff = max_coeffs[current_node]
+        current_max_coeff = np.max([current_coeff, left_max_coeff, right_max_coeff])
+        max_coeffs[current_node] = current_max_coeff
         
-        height_map = flat_nodes(Z) # map indices in Z to equal height ancestor
-        H = height_map[height(Z)]
+        # update leaf cache
+        current_leaves = leaves[left_child] + leaves[right_child]
+        del leaves[left_child]
+        del leaves[right_child]
+        leaves[current_node] = current_leaves
         
-        indices = np.asarray(markers.rowIndices)
-        #idx = distance.ccoords(indices, np.arange(n), n)
-        #self._mA = np.where(idx==-1, indices[:, None]*(idx==-1), H[idx]+n)
-
-        mA = np.empty((len(indices), n), dtype=H.dtype)
-        for (i, ix) in enumerate(indices):
-            for j in range(n):
-                if ix == j:
-                    mA[i, j] = ix
-                else:
-                    mA[i, j] = H[distance.condensed_index(n, ix, j)]+n
-                    
-        self._mA = mA
-        
-        """Nodes of Z that correspond to embedded hierarchy nodes."""
-        self.nodes = np.unique(self._mA[:, indices])
-        
-    def leaves_list(self, node):
-        """Computes the original observations composing a node."""
-        return np.flatnonzero(np.any(self._mA==node, axis=1))
-
-        
-def flat_nodes(Z):
-    """Return node indices of the furtherest ancestor of each node (including itself) of equal height
+        # merge cases:
+        # left_num_markers == 0 or right_num_markers == 0
+        #   No new information taxonomy in one branch, we'll greedily add the clusters
+        #   together.
+        #   
+        # current_max_coeff == current_coeff
+        #   The merged cluster is at least as coherent taxonomically any descendent
+        #   cluster.
+        merge = left_num_markers == 0 or right_num_markers == 0 or current_coeff == current_max_coeff
+        if merge:
+            #leaf_max_coeffs[current_leaves] = current_coeff
+            leaf_max_nodes[current_leaves] = n+i
+    
+    (_nodes, T) = np.unique(leaf_max_nodes, return_inverse=True)
+    return T
+    
+     
+def flatten_nodes(Z):
+    """Collapse nested clusters of equal height by mapping descendent nodes to their highest
+    ancestor of equal height
     """
     Z = np.asarray(Z)
     n = Z.shape[0] + 1
@@ -355,8 +209,8 @@ def flat_nodes(Z):
                 node_ids[c - n] = node_ids[i]
             
     return node_ids
-        
-        
+
+
 def linkage_from_reachability(o, d):
     """Hierarchical clustering from reachability ordering and distances"""
     o = np.asarray(o)
@@ -392,8 +246,6 @@ def linkage_from_reachability(o, d):
         
     return Z
         
-        
-    
 ###############################################################################
 ###############################################################################
 ###############################################################################

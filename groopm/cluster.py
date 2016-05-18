@@ -57,7 +57,7 @@ import operator
 # local imports
 import distance
 import recruit
-from hierarchy import ClassificationCoherenceClusterTool
+import hierarchy
 from binManager import BinManager
 from profileManager import ProfileManager
 
@@ -71,7 +71,10 @@ class CoreCreator:
         self._pm = ProfileManager(dbFileName, markerFileName)
         
     def loadProfile(self, timer, minLength):
-        return self._pm.loadData(timer, minLength=minLength, loadMarkers=True)
+        return self._pm.loadData(timer, minLength=minLength)
+        
+    def loadMarkers(self, timer, profile):
+        return self._pm.loadMarkers(timer, profile, loadClassification=True)
         
     def run(self,
             timer,
@@ -88,8 +91,9 @@ class CoreCreator:
             return
             
         profile = self.loadProfile(timer, minLength)
+        (markers, classification) = self.loadClassification(timer, profile)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile, 1, True, smooth=k, minPts=minPts, linear=linear, doWeight=doWeight)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(classification, level=1, smooth=k, minPts=minPts)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile)
@@ -130,55 +134,36 @@ class HybridHierarchicalClusterEngine:
         pass #subclass to override
         
         
+def feature_global_ranks(profile):
+    """Feature distance ranks scaled by contig lengths"""
+    features = (profile.covProfiles, profile.kmerSigs)
+    raw_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in features)
+    weights = sp_distance.pdist(profile.contigLengths[:, None], operator.mul)
+    scale_factor = 1. / weights.sum()
+    distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1)*scale_factor
+    return (distance_ranks, weights)
+        
+        
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
-    def __init__(self, profile, threshold, greedy, smooth, minPts, linear, doWeight):
-        self._profile = profile
-        self._ct = ClassificationCoherenceClusterTool(profile.markers)
-        self._features = (profile.covProfiles, profile.kmerSigs)
-        self._threshold = threshold
-        self._greedy = greedy
+    def __init__(self, classification, level, smooth, minPts):
+        self._classification = classification
+        self._markers = self._classification.mapping
+        self._profile = self._markers.profile
+        self._level = level
         self._minPts = minPts
-        self._doWeight = doWeight
         if smooth is None:
             self._minWt = None
-        elif linear:
-            self._minWt = smooth * self._profile.contigLengths
         else:
-            self._minWt = np.full(self._profile.numContigs, smooth)
+            self._minWt = (smooth - self._profile.contigLengths) * self._profile.contigLengths
         
     def distances(self):
-        feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
-        if self._doWeight:
-            weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
-        else:
-            weights = None
-        feature_ranks = distance.argrank(feature_distances, weights=weights, axis=1)
+        (feature_ranks, weights) = feature_global_ranks(self._profile)
         rank_norms = np_linalg.norm(feature_ranks, axis=0)
         return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._minPts)
         
     def fcluster(self, Z):
-        return self._ct.cluster_classification(Z, self._threshold, self._greedy)
-        
-        
-class FeatureGlobalRankAndClassificationClusterEngine_(HybridHierarchicalClusterEngine):
-    """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
-    def __init__(self, profile, threshold, greedy):
-        self._profile = profile
-        self._ct = ClassificationCoherenceClusterTool(profile.markers)
-        self._features = (profile.covProfiles, profile.kmerSigs)
-        self._threshold = threshold
-        self._greedy = greedy
-        
-    def distances(self):
-        feature_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in self._features)
-        weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
-        feature_ranks = distance.argrank(feature_distances, weights=weights, axis=1)
-        return np_linalg.norm(feature_ranks, axis=0)
-        
-    def fcluster(self, Z):
-        return self._ct.cluster_classification(Z, self._threshold, self._greedy)
-        
+        return hierarchy.fcluster_classification(Z, self._classification, level=self._level)
     
             
 # Mediod clustering

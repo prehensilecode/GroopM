@@ -50,18 +50,56 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 
+# local imports
+import distance
+from utils import group_iterator
+
 np.seterr(all='raise')
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
+class ClassificationManager:
+    """Class for managing marker gene hits for contigs.
+    """
+    def __init__(self, markers):
+        self._mapping = markers
+        self._classifications = [_Classification(s) for s in self._mapping.taxstrings]
+        
+    def makeDistances(self):
+        return _classification_pdist(self._classifications)
+        
+    def makeConnectivity(self, level):
+        """Condensed disconnectivity matrix"""
+        dm = sp_distance.squareform(self.makeDistances() <= level)
+        
+        # disconnect members in the same group
+        for (_, m) in self.itergroups():
+            dm[np.ix_(m, m)] = False
+            dm[m, m] = True 
+        
+        return dm
+        
+    def itergroups(self):
+        """Returns an iterator of marker names and indices."""
+        return group_iterator(self._mapping.markerNames)
+        
+    def iterindices(self):
+        """Returns an iterator of profile and marker indices."""
+        return group_iterator(self._mapping.rowIndices)
+        
+    def tags(self, index):
+        """Return a classification tag iterator"""
+        return self._classifications[index].tags()
+    
+    
 class ClassificationConsensusFinder:
-    def __init__(self, classification, level):
-        self._classification = classification
+    def __init__(self, markers, level):
+        self._mapping = markers
         self._level = level
-        self._mC = _make_connectivity(self._classification, self._level)
+        self._cm = ClassificationManager(self._mapping)
+        self._mC = self._cm.makeConnectivity(self._level)
         
     def maxClique(self, indices):
         """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
@@ -87,25 +125,13 @@ class ClassificationConsensusFinder:
         consensus_tag = ""
         level = 7
         for i in q:
-            tags = [t for t in zip(range(7-self._level), self._classification.tags(i))]
+            tags = [t for t in zip(range(7-self._level), self._cm.tags(i))]
             if len(tags) > 0:
                 (o, t) = tags[-1]
                 if level > o:
                     consensus_tag = t
                     level = o
         return consensus_tag
-                
-                
-def _make_connectivity(classification, level):
-    """Connectivity matrix to specified taxonomic level"""
-    dm = sp_distance.squareform(classification.distances() <= level)
-    
-    # disconnect mappings to the same single copy marker
-    for (_, m) in classification.mapping.itergroups():
-        dm[np.ix_(m, m)] = False
-        dm[m, m] = True 
-    
-    return dm
         
         
 def greedy_clique_by_elimination(C):
@@ -138,6 +164,78 @@ def greedy_clique_by_elimination(C):
         keep[keep] = np.arange(nkeep)!=which_min
         
     return np.flatnonzero(keep)
+        
+
+class _Classification:
+    """Taxonomic classification for a contig based on a marker gene hit."""
+    
+    TAGS = ['d__', 'p__', 'c__', 'o__', 'f__', 'g__', 's__']
+    
+    def parse_tag(self, string, prefix):
+        if not string.startswith(prefix):
+            raise ValueError("Error parsing field: '%s'. Missing `%s` prefix." % (string, prefix))
+        return string[len(prefix):].strip()
+    
+    def parse(self, taxstring):
+        fields = taxstring.split('; ')
+        if fields[0]=="Root":
+            fields = fields[1:]
+        ranks = []
+        for (field, prefix) in zip(fields, self.TAGS):
+            try:
+                ranks.append(self.parse_tag(field, prefix))
+            except ValueError as e:
+                print e, "Skipping remaining fields"
+                break
+        return ranks
+    
+    def __init__(self, taxstring):
+        self.original_string = taxstring
+        self.ranks = self.parse(taxstring)
+    
+    def taxon(self, taxon):
+        try:
+            level = ["domain", "phylum", "class", "order", "family", "genus", "species"].index(taxon)
+        except ValueError:
+            raise ValueError("Unrecognised `taxon` parameter value: `%s`" % taxon)
+        if level >= len(self.ranks):
+            return None
+        return self.ranks[level]
+        
+    def tags(self):
+        for (t, d) in zip(self.TAGS, self.ranks):
+            yield t+d
+            
+    def distance(self, other):
+        for (d, s, o) in zip(range(7, 0, -1), self.ranks, other.ranks):
+            if s=='' or o=='' or s!=o:
+                return d
+        return 0
+        
+
+def _classification_pdist(clist):
+    """Pairwise distances between classifications.
+    
+    Parameters
+    ----------
+    clist : list
+        list of _Classification objects
+        
+    Returns
+    -------
+    Y : ndarray
+        Condensed distance matrix for pairs of classifications.
+    """
+    n = len(clist)
+    dm = np.zeros(n * (n - 1) // 2, dtype=np.double)
+    
+    k = 0
+    for i in range(n-1):
+        for j in range(i+1, n):
+            dm[k] = clist[i].distance(clist[j])
+            k = k + 1
+            
+    return dm
     
 
 ###############################################################################
