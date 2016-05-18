@@ -451,14 +451,34 @@ class HierarchyReachabilityPlotter:
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
         
-        if highlight=="bins":
+        
+        if highlight=="bins_":
+            Z = sp_hierarchy.single(dd)
+            ll = ClassificationLeavesLister(Z, self._mapping)
+            n = self._profile.numContigs
+            
+            mnodes = ll.nodes
+            mcc = np.array([self._cf.disagreement(i) for i in (ll.leaves_list(k) for k in mnodes)])
+            cc = np.zeros(2*n - 1, dtype=mcc.dtype)
+            cc[mnodes] = np.where(mcc < 0, 0, mcc)
+            
+            rootinds = hierarchy.maxcoeff_roots(Z, cc)
+            (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
+            cindices = np.zeros(n, dtype=int)
+            for (i, k) in enumerate(rootinds):
+                row_indices = np.array(node_dict[k].pre_order(lambda x: x.get_id()))
+                if np.any(cindices[row_indices] != 0):
+                    print "????"
+                cindices[row_indices] = i+1
+            
+            colours = np.array(['r', 'g', 'b', 'c', 'y', 'm'], dtype='|S1')[cindices % 6]
+            colours[cindices == 0] = 'k'
+            smap = None
+            text = []
+            
+        elif highlight=="bins":
             # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
-            
-            Z = sp_hierarchy.single(dd)
-            ct = ClassificationCoherenceClusterTool(self._mapping)
-            binIds = ct.cluster_classification(Z, self._threshold, True)
-            binIds = binIds[o]
             
             flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
             iflag = np.cumsum(flag[:-1])
@@ -466,11 +486,13 @@ class HierarchyReachabilityPlotter:
             colours[binIds==0] = 'c'
             
             # label stretches with bin ids
-            group_ends = np.flatnonzero(flag[1:])
-            group_centers = np.concatenate(([group_ends[0]+1*0.5], (group_ends[1:]+1+group_ends[:-1]+1)*0.5))
-            group_heights = np.concatenate(([x[:group_ends[0]+1].max()], [x[s:e+1].max() for (s, e) in zip(group_ends[:-1]+1, group_ends[1:])]))
-            group_labels = binIds[group_ends].astype(str)
-            k = np.in1d(binIds[group_ends], bids)
+            last_indices = np.flatnonzero(flag[1:])
+            first_indices = np.concatenate(([0], last_indices[:-1]+1))
+            group_centers = (first_indices+last_indices+1)*0.5
+            #group_centers = np.concatenate(([group_ends[0]+1*0.5], (group_ends[1:]+1+group_ends[:-1]+1)*0.5))
+            group_heights = np.array([x[s:e+1].max() for (s, e) in zip(first_indices, last_indices)])
+            group_labels = binIds[first_indices].astype(str)
+            k = np.in1d(binIds[first_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
         elif highlight=="markers":
@@ -500,10 +522,24 @@ class HierarchyReachabilityPlotter:
             (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
             n = self._profile.numContigs
             height_map = hierarchy.flat_nodes(Z)
-            row_indices = np.array(node_dict[n+height_map[800]].pre_order(lambda x: x.get_id()))
-            colours = np.full(n, 'k', dtype='|S1')
-            colours[row_indices] = 'r'
-            colours = colours[o]
+            node = node_dict[n+height_map[800]]
+            cindex = np.zeros(n, dtype=int)
+            
+            # colour subtrees of descendent nodes up to a maximum depth of 3
+            stack = [(2, node)]
+            counter = 0
+            while len(stack) > 0:
+                (d, cnode) = stack.pop()
+                if cnode.is_leaf() or d == 0:
+                    counter += 1
+                    cindex[cnode.pre_order(lambda x: x.get_id())] = counter
+                elif d > 0:
+                    stack.append((d-1, cnode.get_left()))
+                    stack.append((d-1, cnode.get_right()))
+            cindex = cindex[o]
+            
+            colours = np.array(['r', 'g', 'b', 'c', 'y', 'm'], dtype='|S1')[cindex % 6]
+            colours[cindex == 0] = 'k'
             smap = None
             text = []
         else:

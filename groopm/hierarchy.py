@@ -163,8 +163,8 @@ def maxcoeff_roots(Z, coeffs):
     
     # The first time, we find nodes where the node coefficient is
     # non-negative and equal to the maximum of all non-negative
-    # descendents. These are nodes where the coefficient maximum is
-    # non-decreasing along all leaf-to-root paths. 
+    # descendents (including itself). These are nodes where the coefficient
+    # maximum is non-decreasing along all leaf-to-root paths. 
     maxcc = maxcoeffs(Z, coeffs)
     maxinds = np.flatnonzero(maxcc == coeffs)
     
