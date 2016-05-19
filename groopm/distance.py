@@ -106,6 +106,8 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
         Condensed matrix containing pairwise weights.
     minWt : int or float or ndarray
         Total cumulative neighbour weight used to compute density distance for individual points.
+    minPts : int
+        Number of neighbours used to compute density distance.
         
     Returns
     -------
@@ -114,11 +116,11 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     """
     n = sp_distance.num_obs_y(Y)
     if weights is not None and minWt is not None:
-        weight_dists = core_distance(Y, weights, minWt)
+        weight_dists = core_distance_weighted(Y, weights, minWt)
     else:
         weight_dists = None
     if minPts is not None:
-        pts_dists = core_distance_(Y, minPts)
+        pts_dists = core_distance(Y, minPts)
     else:
         pts_dists = None
     if weight_dists is not None and pts_dists is not None:
@@ -135,7 +137,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     return dd
         
         
-def core_distance(Y, weights, minWt):
+def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
 
@@ -165,6 +167,30 @@ def core_distance(Y, weights, minWt):
         core_dist[i] = dm[i, sorting_indices[i, minPts]]
     
     return core_dist
+            
+        
+def core_distance(Y, minPts):
+    """Compute pairwise density distance, defined as the max of the pairwise
+    distance between two points and the minimum distance of the minPts
+    neighbours of the two points.
+
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix containing distances for pairs of
+        observations. See scipy's `squareform` function for details.
+    minPts : int
+        Number of neighbours used to compute density distance.
+        
+    Returns
+    -------
+    core_distance : ndarray
+        Core distances for observations.
+    """
+    n = sp_distance.num_obs_y(Y)
+    dm = sp_distance.squareform(Y)
+    dm.sort(axis=1)
+    return dm[:, np.minimum(n-1, minPts)]
 
     
 def reachability_order(Y):

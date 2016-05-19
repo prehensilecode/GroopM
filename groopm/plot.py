@@ -77,15 +77,15 @@ np.seterr(all='raise')
 ###############################################################################
 class BinPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, folder=None):
-        self._pm = ProfileManager(dbFileName)
+    def __init__(self, dbFileName, markerFileName=None, paramsFileName=None, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
 
     def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, minLength=0, removeBins=True, bids=[0])
+        return self._pm.loadData(timer, loadBins=True, removeBins=True, bids=[0])
 
     def plot(self,
              timer,
@@ -120,8 +120,8 @@ class BinPlotter:
         
 class ReachabilityPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName, markerFileName, paramsFileName=None, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
@@ -144,7 +144,7 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
-        fplot = HierarchyReachabilityPlotter(profile, level=1)
+        fplot = HierarchyReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
@@ -155,15 +155,15 @@ class ReachabilityPlotter:
         
 class TreePlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName, markerFileName, paramsFileName=None, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
             
     def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, loadMarkers=True, minLength=0,
+        return self._pm.loadData(timer, loadBins=True, loadMarkers=True,
                 removeBins=True, bids=[0])
         
     def plot(self,
@@ -173,7 +173,7 @@ class TreePlotter:
         
         profile = self.loadProfile(timer)
 
-        fplot = HierarchyRemovedPlotter(profile, level=1)
+        fplot = HierarchyRemovedPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
@@ -371,7 +371,6 @@ class BarPlotter(Plotter2D):
 class HierarchyReachabilityPlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
-        self._level = self._profile.clusterParams.level
         self._colourmap = getColorMap(colourmap)
         ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
         self._ddists = ce.distances()
@@ -389,11 +388,11 @@ class HierarchyReachabilityPlotter:
         #o = self._order[o]
         if label=="count":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._mapping.iterindices()])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices()])
             xlabel = "count"
         elif label=="tag":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._mapping.iterindices()])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices()])
             xlabel = "lineage"
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
@@ -422,7 +421,7 @@ class HierarchyReachabilityPlotter:
             scores = np.zeros(self._profile.numContigs)
             #Z = hierarchy.linkage_from_reachability(o, d)
             Z = sp_hierarchy.single(self._ddists)
-            (_T, coeffs) = hierarchy.fcluster_classification(Z, self._mapping, self._level)
+            (_T, coeffs) = hierarchy.fcluster_classification(Z, self._profile.mapping, self._profile.clusterParams.level)
             coeffs = coeffs[o]
             smap = plt_cm.ScalarMappable(cmap=self._colourmap)
             smap.set_array(coeffs)
@@ -473,11 +472,10 @@ class HierarchyReachabilityPlotter:
 class HierarchyRemovedPlotter:
     def __init__(self, profile):
         self._profile = profile
-        self._level = self._profile.clusterParams.level
         ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
         ddist = ce.distances()
         self._Z = sp_hierarchy.single(ddist)
-        self._cf = ClassificiationConsensusFinder(self._profile.mapping, self._level)
+        self._cf = ClassificiationConsensusFinder(self._profile.mapping, self._profile.clusterParams.level)
         (_r, self._node_dict) = to_tree(self._Z, rd=True)
         
     def plot(self,

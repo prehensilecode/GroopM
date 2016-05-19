@@ -58,7 +58,6 @@ from bamm.bamExtractor import BamExtractor as BMBE
 # local imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from classification import ClassificationManager
 from mstore import ContigParser
 from utils import makeSurePathExists
 import distance
@@ -215,9 +214,9 @@ class MarkerExtractor:
         return self._pm.loadData(timer,
                                  loadBins=True,
                                  loadMarkers=True,
+                                 minLength=cutoff,
                                  bids=[0] if removeBins else bids,
                                  removeBins=removeBins,
-                                 minLength=cutoff
                                 )
         
     def extractMappingInfo(self,
@@ -235,7 +234,7 @@ class MarkerExtractor:
         
         profile = self.loadProfile(timer, bids, cutoff)
         bm = BinManager(profile)
-        dm = ClassificationManager(profile.markers).makeDistances()
+        dm = sp_distance.squareform(profile.markers.classification.makeDistances())
         
         # load all the contigs which have been assigned to bins
 
@@ -250,7 +249,7 @@ class MarkerExtractor:
             labels = profile.markers.markerNames[idx]
             taxstrings = profile.markers.taxstrings[idx]
             cnames = profile.contigNames[profile.markers.rowIndices[idx]]
-            dists = sp_distance.squareform(dm[distance.pcoords(idx, profile.markers.numMappings)])
+            dists = dm[np.ix_(idx, idx)]
             
             try:
                 with open(file_name, 'w') as f:
@@ -283,11 +282,11 @@ class BinStatsDumper:
                                 )
                                 
     def dumpBinStats(self,
-                       timer,
-                       outFile,
-                       separator,
-                       useHeaders
-                       ):
+                     timer,
+                     outFile,
+                     separator,
+                     useHeaders
+                    ):
         """Compute bin statistics"""
         
         

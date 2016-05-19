@@ -138,7 +138,7 @@ class Profile:
     """
     pass
     
-class ClusterParamParser():
+class ClusterParamReader():
     def __init__(self):
         import argparse
         
@@ -193,6 +193,7 @@ class ProfileManager:
                  loadContigGCs=True,
                  loadBins=False,
                  loadMarkers=True,
+                 minLength=None,
                  bids=[],
                  removeBins=False
                 ):
@@ -205,19 +206,21 @@ class ProfileManager:
 
             
         paramReader = ClusterParamReader()
-        if self.paramFileName is not None:
+        if self.paramsFileName is not None:
             try:
-                with open(self.paramFileName, "r") as f:
+                with open(self.paramsFileName, "r") as f:
                     try:
                         params = reader.parse(f)
                     except:
                         print "Error parsing param file"
                         raise
             except:
-                print "Error opening param file:", self.paramFileName, sys.exc_info()[0]
+                print "Error opening param file:", self.paramsFileName, sys.exc_info()[0]
                 raise
         else:
             params = paramReader.defaults()
+        if minLength is None:
+            minLength = params.minLength
             
         try:
             prof = Profile()
@@ -228,7 +231,7 @@ class ProfileManager:
                 prof.stoitNames = np.array(self._dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
-            condition = _getConditionString(minLength=params.minLength, bids=bids, removeBins=removeBins)
+            condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
             prof.indices = self._dm.getConditionalIndices(self.dbFileName,
                                                           condition=condition,
                                                           silent=silent)
@@ -305,8 +308,8 @@ class ProfileManager:
                 print "Error opening marker file:", self.markerFileName, sys.exc_info()[0]
                 raise
                 
-            lookup = dict(zip(profile.contigNames, np.arange(profile.numContigs)))
-            keep = np.in1d(con_names, profile.contigNames)
+            lookup = dict(zip(prof.contigNames, np.arange(prof.numContigs)))
+            keep = np.in1d(con_names, prof.contigNames)
             row_indices = np.array([lookup[name] for name in np.asarray(con_names)[keep]])
             
             markers = Mapping()
@@ -315,14 +318,12 @@ class ProfileManager:
             markers.numMappings = np.count_nonzero(keep)
             
             taxstrings = np.asarray(con_taxstrings)[keep]
-            classification = Classification(taxstings)
-            classification._table = table
-            classification._taxons = strings
+            classification = Classification(taxstrings)
             
             markers.classification = classification
             prof.mapping = markers
             
-            prof.clusterParams = params
+        prof.clusterParams = params
                 
         if(not silent):
             print "    %s" % timer.getTimeStamp()

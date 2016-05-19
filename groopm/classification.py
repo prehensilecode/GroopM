@@ -84,20 +84,20 @@ class Classification:
             Array of taxonomic classification strings.
         """
         n = len(taxstrings)
-        taxon_dict = { 0: "" }
+        taxon_dict = { "": 0 }
         counter = 0
         table = np.zeros((n, 7), dtype=int)
         for (i, s) in enumerate(taxstrings):
             for (j, rank) in enumerate(_parse_taxstring(s)):
                 try:
-                    table[i, j] = taxons[rank]
+                    table[i, j] = taxon_dict[rank]
                 except KeyError:
                     counter += 1
                     table[i, j] = counter
-                    taxons[rank] = counter
+                    taxon_dict[rank] = counter
                     
-        taxons = np.array(taxon_dict.values())
-        taxons[taxon_dict.keys()] = taxons.copy()
+        taxons = np.array(taxon_dict.keys())
+        taxons[taxon_dict.values()] = taxons.copy()
         
         self._table = table
         self._taxons = taxons

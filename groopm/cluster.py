@@ -67,8 +67,8 @@ from profileManager import ProfileManager
 ###############################################################################
 
 class CoreCreator:
-    def __init__(self, dbFileName, markerFileName, paramFileName):
-        self._pm = ProfileManager(dbFileName, markerFileName, paramFileName)
+    def __init__(self, dbFileName, markerFileName, paramsFileName):
+        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
         
     def loadProfile(self, timer, minLength):
         return self._pm.loadData(timer, minLength=minLength)
