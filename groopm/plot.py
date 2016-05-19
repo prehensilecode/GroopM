@@ -50,7 +50,6 @@ __status__ = "Development"
 import os
 import sys
 import colorsys
-import operator
 import numpy as np
 import numpy.linalg as np_linalg
 import scipy.spatial.distance as sp_distance
@@ -67,8 +66,8 @@ from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
+from cluster import FeatureGlobalRankAndClassificationClusterEngine
 import hierarchy
-from hierarchy import ClassificationLeavesLister, ClassificationCoherenceClusterTool
 
 np.seterr(all='raise')
 
@@ -92,7 +91,6 @@ class BinPlotter:
              timer,
              bids=None,
              origin="mediod",
-             doWeight=True,
              colorMap="HSV",
              prefix="BIN"
             ):
@@ -105,7 +103,7 @@ class BinPlotter:
         else:
             bm.checkBids(bids)
 
-        fplot = BinDistancePlotter(profile, doWeight=doWeight, colourmap=colorMap)
+        fplot = BinDistancePlotter(profile, colourmap=colorMap)
         print "    %s" % timer.getTimeStamp()
         
         for bid in bids:
@@ -134,10 +132,6 @@ class ReachabilityPlotter:
         
     def plot(self,
              timer,
-             ks,
-             pts,
-             linear=False,
-             doWeight=True,
              bids=None,
              prefix="REACH",
             ):
@@ -150,36 +144,12 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
-        fplot = HierarchyReachabilityPlotter(profile, threshold=1, doWeight=doWeight)
+        fplot = HierarchyReachabilityPlotter(profile, level=1)
         print "    %s" % timer.getTimeStamp()
         
-        if ks is None and pts is None:
-            pairs = [(None, None)]
-        elif ks is None:
-            pairs = [(p, None) for p in pts]
-        elif pts is None:
-            pairs = [(None, k) for k in ks]
-        else:
-            pairs = [(p, k) for p in pts for k in ks]
-        for (p, k) in pairs:
-            if self._outDir is None:
-                fileName = ""
-            else:
-                file_str = prefix
-                if k is not None:
-                    file_str += "_k=%g" % k
-                if p is not None:
-                    file_str += "_p=%d" % p
-                file_str += ".png"
-                fileName = os.path.join(self._outDir, file_str)
-            fplot.plot(fileName=fileName,
-                       bids=bids,
-                       smooth=k,
-                       minPts=p,
-                       linear=linear)
-                       
-            if fileName == "":
-                break
+        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
+        fplot.plot(fileName=fileName, bids=bids)
+                   
         print "    %s" % timer.getTimeStamp()
         
         
@@ -198,13 +168,12 @@ class TreePlotter:
         
     def plot(self,
              timer,
-             doWeight=True,
              prefix="TREE"
             ):
         
         profile = self.loadProfile(timer)
 
-        fplot = HierarchyRemovedPlotter(profile, threshold=1, doWeight=doWeight)
+        fplot = HierarchyRemovedPlotter(profile, level=1)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
@@ -400,33 +369,21 @@ class BarPlotter(Plotter2D):
 
 # Tree plotters
 class HierarchyReachabilityPlotter:
-    def __init__(self, classification, level, colourmap="Sequential"):
-        self._classification = classification
-        self._mapping = self._classification.mapping
-        self._profile = self._mapping.profile
-        self._level = level
+    def __init__(self, profile, colourmap="Sequential"):
+        self._profile = profile
+        self._level = self._profile.clusterParams.level
         self._colourmap = getColorMap(colourmap)
-        (feature_ranks, w) = cluster.feature_global_ranks(self._profile)
-        rnorm = np_linalg.norm(feature_ranks, axis=0)
-        self._dists = rnorm
-        self._weights = w
-        self._cf = ClassificationConsensusFinder(self._classification, self._level)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
+        self._ddists = ce.distances()
+        self._cf = ClassificationConsensusFinder(self._profile.mapping)
         
     def plot(self,
              bids,
-             smooth,
-             minPts,
-             linear,
              label="count",
              highlight="bins",
              fileName=""):
                  
-        if smooth is None:
-            minWt = None
-        else:
-            minWt = (smooth - self._profile.contigLengths) * self._profile.contigLengths
-        dd = distance.density_distance(self._dists, weights=self._weights, minWt=minWt, minPts=minPts)
-        (o, d) = distance.reachability_order(dd)
+        (o, d) = distance.reachability_order(self._ddists)
         
         x = d[o]
         #o = self._order[o]
@@ -464,29 +421,18 @@ class HierarchyReachabilityPlotter:
             # color leaves by maximum ancestor coherence score
             scores = np.zeros(self._profile.numContigs)
             #Z = hierarchy.linkage_from_reachability(o, d)
-            Z = sp_hierarchy.single(dd)
-            ll = ClassificationLeavesLister(Z, self._mapping)
-            (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
-            mnodes = ll.nodes
-            for k in mnodes:
-                ix = ll.leaves_list(k)
-                score = self._cf.disagreement(ix)
-                if score > 0:
-                    row_indices = np.array(node_dict[k].pre_order(lambda x: x.get_id()))
-                    nnz_row_indices = row_indices[scores[row_indices] == 0]
-                    scores[nnz_row_indices] = score
-            
-            scores = scores[o]
-            norm = plt_colors.Normalize(vmin=0, vmax=np.max(scores))
-            smap = plt_cm.ScalarMappable(norm=norm, cmap=self._colourmap)
-            smap.set_array(scores)
-            colours = smap.to_rgba(scores)
+            Z = sp_hierarchy.single(self._ddists)
+            (_T, coeffs) = hierarchy.fcluster_classification(Z, self._mapping, self._level)
+            coeffs = coeffs[o]
+            smap = plt_cm.ScalarMappable(cmap=self._colourmap)
+            smap.set_array(coeffs)
+            colours = smap.to_rgba(coeffs)
             text = []
         elif highlight=="node500":
             Z = sp_hierarchy.single(dd)
             (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
             n = self._profile.numContigs
-            height_map = hierarchy.flat_nodes(Z)
+            height_map = hierarchy.flatten_nodes(Z)
             node = node_dict[n+height_map[800]]
             cindex = np.zeros(n, dtype=int)
             
@@ -525,25 +471,24 @@ class HierarchyReachabilityPlotter:
         
 
 class HierarchyRemovedPlotter:
-    def __init__(self, classification, threshold, doWeight):
-        self._classification = classification
-        self._mapping = self._classification.mapping
-        self._profile = self._mapping.profile
-        self._level = level
-        ((x, y), w) = feature_global_ranks(self._profile)
-        rnorm = np_linalg.norm(distance.argrank((x, y), weights=w, axis=1), axis=0)
-        ddist = distance.density_distance(rnorm)
+    def __init__(self, profile):
+        self._profile = profile
+        self._level = self._profile.clusterParams.level
+        ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
+        ddist = ce.distances()
         self._Z = sp_hierarchy.single(ddist)
-        self._cf = ClassificiationConsensusFinder(self._classification, self._level)
+        self._cf = ClassificiationConsensusFinder(self._profile.mapping, self._level)
         (_r, self._node_dict) = to_tree(self._Z, rd=True)
         
     def plot(self,
              label="count",
              fileName=""):
         
-        (L, M) = sp_hierarchy.leaders(self._Z, self._profile.binIds)
-        L = np.concatenate((L[M!=0], np.flatnonzero(T==0)))
-        rootancestors = hierarchy.ancestors(self._Z, L)
+        binIds = self._profile.binIds
+        T = np.arange(len(binIds))
+        (nodes, bids) = sp_hierarchy.leaders(self._Z, binIds[binIds!=0])
+        nodes = np.concatenate((nodes, np.flatnonzero(binIds==0)))
+        rootancestors = hierarchy.ancestors(self._Z, nodes)
         rootancestors_set = set(rootancestors)
         if label=="tag":
             leaf_label_func=lambda k: '' if k in rootancestors_set else self.leaf_label_tag(k)
@@ -567,7 +512,7 @@ class HierarchyRemovedPlotter:
         
     def indices(self, k):
         leaves = self._node_dict[k].pre_order(lambda x: x.get_id())
-        return np.flatnonzero(np.in1d(self._mapping.rowIndices, leaves))
+        return np.flatnonzero(np.in1d(self._profile.mapping.rowIndices, leaves))
         
     def leaf_label_coeff(self, k):
         coeff = self._cf.disagreement(self.indices(k))
@@ -584,10 +529,11 @@ class HierarchyRemovedPlotter:
   
 # Bin plotters
 class BinDistancePlotter:
-    def __init__(self, profile, doWeight, colourmap='HSV'):
+    def __init__(self, profile, colourmap='HSV'):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
-        ((x, y), w) = feature_global_ranks(self._profile)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
+        ((x, y), w) = ce.feature_global_ranks()
         self._x = x
         self._y = y
         self._w = w

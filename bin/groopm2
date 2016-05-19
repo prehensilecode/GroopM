@@ -183,13 +183,7 @@ class core_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
-        parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
-        parser.add_argument('-s', '--size', type=int, default=10, help="minimum number of contigs which define a core")
-        parser.add_argument('-b', '--bp', type=int, default=1000000, help="cumulative size of contigs which define a core regardless of number of contigs")
-        parser.add_argument('--minPts', type=int, help="number of contigs which define core distances")
-        parser.add_argument('-k', type=float, help="cumulative bps density of contigs which define core distances regardless of number of contigs")
-        parser.add_argument('-K', type=float, help="cumulative size of contigs which define core distances regardless of number of contigs")
-        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
+        parser.add_argument('--paramfile', help="file containing clustering parameters")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.set_defaults(run=self)
         
@@ -198,7 +192,7 @@ class core_command_configure:
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
-        cc = groopm.CoreCreator(options.dbname, options.markerfile)
+        cc = groopm.CoreCreator(options.dbname, options.markerfile, options.paramfile)
         cc.run(timer,
                minSize=options.size,
                minBP=options.bp,
@@ -408,11 +402,11 @@ class plot_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
+        parser.add_argument('--paramfile', help="file containing clustering parameters")
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
-        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
         parser.set_defaults(run=self)
@@ -441,10 +435,7 @@ class reach_command_configure:
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
-        parser.add_argument('--minPts', nargs='*', type=int, help="number of contigs which define core distances")
-        parser.add_argument('-k', nargs='*', type=float, help="cumulative bps density of contigs which define core distances regardless of number of contigs")
-        parser.add_argument('-K', nargs='*', type=float, help="cumulative size of contigs which define core distances regardless of number of contigs")
-        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
+        parser.add_argument('--paramfile', help="file containing clustering parameters")
         parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
@@ -475,7 +466,7 @@ class tree_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
-        parser.add_argument('-W', action="store_false", default=True, help="Don't weight distances by contig sizes")
+        parser.add_argument('--paramfile', help="file containing clustering parameters")
         parser.add_argument('-p', '--prefix', default="TREE", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")

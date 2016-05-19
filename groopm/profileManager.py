@@ -52,6 +52,7 @@ import sys
 # GroopM imports
 from mstore import GMDataManager as DataManager
 from utils import CSVReader, group_iterator
+from classification import Classification
 
 np.seterr(all='raise')
 
@@ -59,43 +60,6 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-_TAGS = ['d__', 'p__', 'c__', 'o__', 'f__', 'g__', 's__']
-
-class Classification:
-    """
-    Class for carrying gene taxonomic classification data around, constructed 
-    using Classification Manager class.
-    
-    Fields
-    ------
-    # data
-    _table: ndarray
-        n-by-7 array where n is the number of mappings. `table[i]` contains
-        indices into the `taxons` array corresponding to the taxon with the
-        corresponding ranks for each column:
-            0 - Domain
-            1 - Phylum
-            2 - Class
-            3 - Order
-            4 - Family
-            5 - Genus
-            6 - Species
-    
-    # metadata
-    mapping: Mapping object
-        See ProfileManager class.
-    _taxons: ndarray
-        Array of taxonomic classification strings.
-    """
-    
-    def distances(self):
-        return sp_distance.pdist(self._table, _classification_distance)
-        
-    def tags(self, index):
-        """Return a list of taxonomic tags"""
-        return [t+self._taxons[i] for (t, i) in zip(_TAGS, self._table[index]) if i!=0]
-        
-        
 class Mapping:
     """Class for carrying gene mapping data around, constructed using
     ProfileManager class.
@@ -103,15 +67,15 @@ class Mapping:
     Fields
     ------
     # mapping data
-    rowIndices: ndarray
+    rowIndices : ndarray
         `rowIndices[i]` is the row index in `profile` of the `i`th mapping.
-    markerNames: ndarray
+    markerNames : ndarray
         `markerNames[i]` is the marker gene name hit for the `i`th mapping.
+    classification : Classification object
+        See above.
         
     #metadata
-    profile: Profile object
-        See ProfileManager class.
-    numMappings: int
+    numMappings : int
         Corresponds to the lengths of above arrays.
     """
     
@@ -122,6 +86,17 @@ class Mapping:
     def iterindices(self):
         """Returns an iterator of profile and marker indices."""
         return group_iterator(self.rowIndices)
+                 
+    def makeConnectivity(self, level):
+        """Connectivity matrix to specified taxonomic level"""
+        dm = sp_distance.squareform(self.classification.distances() <= level)
+        
+        # disconnect mappings to the same single copy marker
+        for (_, m) in self.itergroups():
+            dm[np.ix_(m, m)] = False
+            dm[m, m] = True 
+        
+        return dm
         
         
 class Profile:
@@ -130,46 +105,80 @@ class Profile:
     Fields
     ------
     # contig data
-    indices: ndarray
+    indices : ndarray
         `indices[i]` is the index into the pytables data structure of contig `i`.
-    covProfile: ndarray
+    covProfile : ndarray
         `covProfile[i, j]` is the trimmed mean coverage of contig `i` in stoit `j`.
-    kmerSigs: ndarray
+    kmerSigs : ndarray
         `kmerSigs[i, j]` is the relative frequency of occurrence in contig `i` of
         the `j`th kmer.
-    normCoverages: ndarray
+    normCoverages : ndarray
         `normCoverage[i]` is the norm of all stoit coverages for contig `i`.
-    contigGCs: ndarray
+    contigGCs : ndarray
         `contigGCs[i]` is the percentage GC for contig `i`.
-    contigNames: ndarray
+    contigNames : ndarray
         `contigNames[i]` is the fasta contig id of contig `i`.
-    contigLengths: ndarray
+    contigLengths : ndarray
         `contigLengths[i]` is the length in bp of contig `i`.
-    binIds: ndarray
+    binIds : ndarray
         `binIds[i]` is the bin id assigned to contig `i`.
         
     
     # metadata
-    numContigs: int
+    numContigs : int
         Number of contigs, corresponds to length of axis 1 in above arrays.
-    stoitNames: ndarray
+    stoitNames : ndarray
         Names of stoits for each column of covProfiles array.
-    numStoits: int
+    numStoits : int
         Corresponds to number of columns of covProfiles array.
+    mapping : Mapping object
+        See above.
+    clusterParams : ClusterParams object
+        See conf.py.
     """
     pass
-
+    
+class ClusterParamParser():
+    def __init__(self):
+        import argparse
+        
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--minSize', type=int, default=10)
+        parser.add_argument('--minLength', type=int, default=1500)
+        parser.add_argument('--minBP', type=float, default=1e6)
+        parser.add_argument('--minPts', type=int, default=30)
+        parser.add_argument('--smooth', type=float, default=1e10)
+        parser.add_argument('--linear', action="store_true")
+        parser.add_argument('--weighted', action="store_false")
+        parser.add_argument('--level', type=int, default=1)
+        
+        self._parser = parser
+        
+    def parse(self, f):
+        args = []
+        for l in f:
+            l = l.strip()
+            if l.startsWith('#'):
+                continue
+            args += l.split()
+            
+        return self._parser.parse_args(args)
+        
+    def defaults(self):
+        return self._parser.parse_args([])
+        
     
 class ProfileManager:
     """Interacts with the groopm DataManager and local data fields
 
     Mostly a wrapper around a group of numpy arrays and a pytables quagmire
     """
-    def __init__(self, dbFileName, markerFileName=None):
+    def __init__(self, dbFileName, markerFileName=None, paramsFileName=None):
         # misc
         self._dm = DataManager()            # most data is saved to hdf
         self.dbFileName = dbFileName         # db containing all the data we'd like to use
         self.markerFileName = markerFileName
+        self.paramsFileName = paramsFileName
 
     def loadData(self,
                  timer,
@@ -183,7 +192,7 @@ class ProfileManager:
                  loadContigLengths=True,
                  loadContigGCs=True,
                  loadBins=False,
-                 minLength=None,
+                 loadMarkers=True,
                  bids=[],
                  removeBins=False
                 ):
@@ -194,6 +203,22 @@ class ProfileManager:
         if verbose:
             print "Loading data from:", self.dbFileName
 
+            
+        paramReader = ClusterParamReader()
+        if self.paramFileName is not None:
+            try:
+                with open(self.paramFileName, "r") as f:
+                    try:
+                        params = reader.parse(f)
+                    except:
+                        print "Error parsing param file"
+                        raise
+            except:
+                print "Error opening param file:", self.paramFileName, sys.exc_info()[0]
+                raise
+        else:
+            params = paramReader.defaults()
+            
         try:
             prof = Profile()
             
@@ -203,7 +228,7 @@ class ProfileManager:
                 prof.stoitNames = np.array(self._dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
-            condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
+            condition = _getConditionString(minLength=params.minLength, bids=bids, removeBins=removeBins)
             prof.indices = self._dm.getConditionalIndices(self.dbFileName,
                                                           condition=condition,
                                                           silent=silent)
@@ -264,53 +289,45 @@ class ProfileManager:
             print "Error loading DB:", self.dbFileName, sys.exc_info()[0]
             raise
             
+        if (loadMarkers):
+            if verbose:
+                print "    Loading marker data from:", self.markerFileName
+            
+            try:
+                reader = MappingReader()
+                with open(self.markerFileName, "r") as f:
+                    try:
+                        (con_names, con_markers, con_taxstrings) = reader.parse(f, True)
+                    except:
+                        print "Error parsing marker data"
+                        raise
+            except:
+                print "Error opening marker file:", self.markerFileName, sys.exc_info()[0]
+                raise
+                
+            lookup = dict(zip(profile.contigNames, np.arange(profile.numContigs)))
+            keep = np.in1d(con_names, profile.contigNames)
+            row_indices = np.array([lookup[name] for name in np.asarray(con_names)[keep]])
+            
+            markers = Mapping()
+            markers.rowIndices = row_indices
+            markers.markerNames = np.asarray(con_markers)[keep]
+            markers.numMappings = np.count_nonzero(keep)
+            
+            taxstrings = np.asarray(con_taxstrings)[keep]
+            classification = Classification(taxstings)
+            classification._table = table
+            classification._taxons = strings
+            
+            markers.classification = classification
+            prof.mapping = markers
+            
+            prof.clusterParams = params
+                
         if(not silent):
             print "    %s" % timer.getTimeStamp()
             
         return prof
-             
-    def loadMarkers(self, 
-                    timer,
-                    profile,
-                    loadClassifications=True):
-                        
-        if verbose:
-            print "    Loading marker data from:", self.markerFileName
-        
-        try:
-            reader = MappingReader()
-            with open(self.markerFileName, "r") as f:
-                try:
-                    (con_names, con_markers, con_taxstrings) = reader.parse(f, True)
-                except:
-                    print "Error parsing marker data"
-                    raise
-        except:
-            print "Error opening marker file:", self.markerFileName, sys.exc_info()[0]
-            raise
-            
-        lookup = dict(zip(profile.contigNames, np.arange(profile.numContigs)))
-        keep = np.in1d(con_names, profile.contigNames)
-        row_indices = np.array([lookup[name] for name in np.asarray(con_names)[keep]])
-        
-        markers = Mapping()
-        markers.rowIndices = row_indices
-        markers.markerNames = np.asarray(con_markers)[keep]
-        markers.numMappings = np.count_nonzero(keep)
-        markers.profile = prof
-        
-        if (loadClassification):
-            taxstrings = np.asarray(con_taxstrings)[keep]
-            (table, strings) = parse_taxstrings(taxstrings)
-            
-            classification = Classification()
-            classification._table = table
-            classification._taxons = strings
-            classification.mappings = markers
-                
-            return (markers, classification)
-        else:
-            return markers
 
     def setBinAssignments(self, profile, nuke=False):
         """Save bins into the DB
@@ -395,50 +412,6 @@ def _getConditionString(minLength=None, maxLength=None, bids=None, removeBins=Fa
     else:
         return "(" + " & ".join(conds) + ")"
         
-        
-def _classification_distance(a, b):
-    for (d, s, o) in zip(range(7, 0, -1), a, b):
-        if s==0 or o==0 or s!=o:
-            return d
-    return 0
-    
-    
-def parse_taxstrings(taxstrings):
-    n = len(taxstrings)
-    taxons = { 0: "" }
-    counter = 0
-    table = np.zeros((n, 7), dtype=int)
-    for (i, s) in enumerate(taxstrings):
-        for (j, rank) in enumerate(_parse_taxstring(s)):
-            try:
-                table[i, j] = taxons[rank]
-            except KeyError:
-                counter += 1
-                table[i, j] = counter
-                taxons[rank] = counter
-                
-    strings = np.array(taxons.values())
-    strings[taxons.keys()] = strings
-    
-    return (table, strings)
-    
-def _parse_tag(string, prefix):
-    if not string.startswith(prefix):
-        raise ValueError("Error parsing field: '%s'. Missing `%s` prefix." % (string, prefix))
-    return string[len(prefix):].strip()
-    
-def _parse_taxstring(taxstring):
-    fields = taxstring.split('; ')
-    if fields[0]=="Root":
-        fields = fields[1:]
-    ranks = []
-    for (field, prefix) in zip(fields, _TAGS):
-        try:
-            ranks.append(_parse_tag(field, prefix))
-        except ValueError as e:
-            print e, "Skipping remaining fields"
-            break
-    return ranks
 
 ###############################################################################
 ###############################################################################

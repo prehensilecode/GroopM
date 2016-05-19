@@ -67,37 +67,26 @@ from profileManager import ProfileManager
 ###############################################################################
 
 class CoreCreator:
-    def __init__(self, dbFileName, markerFileName):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName, markerFileName, paramFileName):
+        self._pm = ProfileManager(dbFileName, markerFileName, paramFileName)
         
     def loadProfile(self, timer, minLength):
         return self._pm.loadData(timer, minLength=minLength)
         
-    def loadMarkers(self, timer, profile):
-        return self._pm.loadMarkers(timer, profile, loadClassification=True)
-        
     def run(self,
             timer,
-            minSize,
-            minBP,
-            minLength,
-            k,
-            minPts,
-            linear=False,
-            force=False,
-            doWeight=True):
+            force=False):
         # check that the user is OK with nuking stuff...
         if not force and not self._pm.promptOnOverwrite():
             return
             
         profile = self.loadProfile(timer, minLength)
-        (markers, classification) = self.loadClassification(timer, profile)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(classification, level=1, smooth=k, minPts=minPts)
+        ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile)
-        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minBP=minBP)
+        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=profile.clusterParams.minSize, minBP=profile.clusterParams.minBP)
 
         # Now save all the stuff to disk!
         print "Saving bins"
@@ -134,36 +123,31 @@ class HybridHierarchicalClusterEngine:
         pass #subclass to override
         
         
-def feature_global_ranks(profile):
-    """Feature distance ranks scaled by contig lengths"""
-    features = (profile.covProfiles, profile.kmerSigs)
-    raw_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in features)
-    weights = sp_distance.pdist(profile.contigLengths[:, None], operator.mul)
-    scale_factor = 1. / weights.sum()
-    distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1)*scale_factor
-    return (distance_ranks, weights)
-        
-        
 class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
-    def __init__(self, classification, level, smooth, minPts):
-        self._classification = classification
-        self._markers = self._classification.mapping
-        self._profile = self._markers.profile
-        self._level = level
-        self._minPts = minPts
-        if smooth is None:
-            self._minWt = None
-        else:
-            self._minWt = (smooth - self._profile.contigLengths) * self._profile.contigLengths
+    def __init__(self, profile):
+        self._profile = profile
+        self._level = self._profile.clusterParams.level
+        self._minPts = self._profile.clusterParams.minPts
+        smooth = self._profile.clusterParams.smooth
+        self._minWt = None if smooth is None else (smooth - self._profile.contigLengths) * self._profile.contigLengths
+                
+    def feature_global_ranks(self):
+        """Feature distance ranks scaled by contig lengths"""
+        features = (self._profile.covProfiles, self._profile.kmerSigs)
+        raw_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in features)
+        weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
+        scale_factor = 1. / weights.sum()
+        distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1)*scale_factor
+        return (distance_ranks, weights)
         
     def distances(self):
-        (feature_ranks, weights) = feature_global_ranks(self._profile)
+        (feature_ranks, weights) = self.feature_global_ranks()
         rank_norms = np_linalg.norm(feature_ranks, axis=0)
         return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._minPts)
         
     def fcluster(self, Z):
-        return hierarchy.fcluster_classification(Z, self._classification, level=self._level)
+        return hierarchy.fcluster_classification(Z, self._profile.mapping, level=self._level)
     
             
 # Mediod clustering
@@ -247,12 +231,15 @@ class FeatureRankCorrelationClusterEngine(MediodsClusterEngine):
         self._features = (profile.covProfiles, profile.kmerSigs)
         self._threshold = threshold
         
+    def feature_ranks(self, indices):
+        return tuple(distance.argrank(sp_distance.cdist(f[indices], f, metric="euclidean"), axis=1) for f in self._features)
+        
     def mediod(self, indices):
-        feature_ranks = tuple(distance.argrank(sp_distance.cdist(f[indices], f, metric="euclidean"), axis=1)[:, indices] for f in self._features)
-        return np_linalg.norm(feature_dists, axis=0).sum(axis=1).argmin()
+        intracluster_dists = tuple(dm[:, indices] for dm in self.feature_ranks(indices))
+        return np_linalg.norm(intracluster_dists, axis=0).sum(axis=1).argmin()
         
     def recruit(self, origin, putative_members):
-        (covRanks, kmerRanks) = tuple(distance.argrank(sp_distance.cdist(f[[origin]], f, metric="euclidean")[0]) for f in self._features)
+        (covRanks, kmerRanks) = tuple(dm[0] for dm in self.feature_ranks([origin]))
         return recruit.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
         
 

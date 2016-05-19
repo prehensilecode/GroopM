@@ -165,30 +165,6 @@ def core_distance(Y, weights, minWt):
         core_dist[i] = dm[i, sorting_indices[i, minPts]]
     
     return core_dist
-        
-        
-def core_distance_(Y, minPts):
-    """Compute pairwise density distance, defined as the max of the pairwise
-    distance between two points and the minimum distance of the minPts
-    neighbours of the two points.
-
-    Parameters
-    ----------
-    Y : ndarray
-        Condensed distance matrix containing distances for pairs of
-        observations. See scipy's `squareform` function for details.
-    minPts : int
-        Number of neighbours used to compute density distance.
-        
-    Returns
-    -------
-    core_distance : ndarray
-        Core distances for observations.
-    """
-    n = sp_distance.num_obs_y(Y)
-    dm = sp_distance.squareform(Y)
-    dm.sort(axis=1)
-    return dm[:, np.minimum(n-1, minPts)]
 
     
 def reachability_order(Y):
@@ -221,53 +197,6 @@ def reachability_order(Y):
     return (o, d)
     
     
-def reachability_order_(Y):
-    """Traverse collection of nodes by choosing the closest unvisited node to
-    a visited node at each step to produce a reachability plot.
-    
-    Parameters
-    ----------
-    Y : ndarray
-        Condensed distance matrix
-        
-    Returns
-    -------
-    o : ndarray
-        1-D array of indices of leaf nodes in traversal order.
-    """
-    n = sp_distance.num_obs_y(Y)
-    dm = sp_distance.squareform(Y)
-    o = np.empty(n, dtype=np.intp)
-    d = np.empty(n, dtype=np.intp)
-    closest = 0
-    o[0] = 0
-    d[0] = 0
-    to_visit = np.arange(1, n)
-    dists = dm[0, 1:]
-    for i in range(1, n):
-        closest_index = dists.argmin()
-        closest_node = to_visit[closest_index]
-        o[i] = closest_node
-        d[i] = dists[closest_index]
-        keep = to_visit != closest_node
-        to_visit = to_visit[keep]
-        dists = np.minimum(dists[keep], dm[closest_node, to_visit])
-    return o
-    
-    
-def pcoords(idx, n):
-    idx = np.asarray(idx).ravel()
-    (iu, ju) = np.triu_indices(idx.size, k=1)
-    return condensed_index_(n, idx[iu], idx[ju])
-  
-  
-def ccoords(idxA, idxB, n):
-    idxA = np.asarray(idxA).ravel()
-    idxB = np.asarray(idxB).ravel()
-    (rows, cols) = np.ix_(idxA, idxB)
-    return condensed_index_(n, rows, cols)
-    
-    
 def condensed_index(n, i, j):
     """
     Calculate the condensed index of element (i, j) in an n x n condensed
@@ -280,6 +209,19 @@ def condensed_index(n, i, j):
     elif i > j:
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
     
+    
+def pcoords_(idx, n):
+    idx = np.asarray(idx).ravel()
+    (iu, ju) = np.triu_indices(idx.size, k=1)
+    return condensed_index_(n, idx[iu], idx[ju])
+  
+  
+def ccoords_(idxA, idxB, n):
+    idxA = np.asarray(idxA).ravel()
+    idxB = np.asarray(idxB).ravel()
+    (rows, cols) = np.ix_(idxA, idxB)
+    return condensed_index_(n, rows, cols)
+  
   
 def condensed_index_(n, i, j):
     """Returns indices in a condensed matrix corresponding to input

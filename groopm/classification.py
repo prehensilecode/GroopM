@@ -56,12 +56,98 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
+class Classification:
+    """
+    Class for carrying gene taxonomic classification data around, constructed 
+    using Classification Manager class.
+    """
+    
+    def __init__(self, taxstrings):
+        """
+        Fields
+        ------
+        # data
+        _table: ndarray
+            n-by-7 array where n is the number of mappings. `table[i]` contains
+            indices into the `taxons` array corresponding to the taxon with the
+            corresponding ranks for each column:
+                0 - Domain
+                1 - Phylum
+                2 - Class
+                3 - Order
+                4 - Family
+                5 - Genus
+                6 - Species
+        
+        # metadata
+        _taxons: ndarray
+            Array of taxonomic classification strings.
+        """
+        n = len(taxstrings)
+        taxon_dict = { 0: "" }
+        counter = 0
+        table = np.zeros((n, 7), dtype=int)
+        for (i, s) in enumerate(taxstrings):
+            for (j, rank) in enumerate(_parse_taxstring(s)):
+                try:
+                    table[i, j] = taxons[rank]
+                except KeyError:
+                    counter += 1
+                    table[i, j] = counter
+                    taxons[rank] = counter
+                    
+        taxons = np.array(taxon_dict.values())
+        taxons[taxon_dict.keys()] = taxons.copy()
+        
+        self._table = table
+        self._taxons = taxons
+    
+    def distances(self):
+        return sp_distance.pdist(self._table, _classification_distance)
+        
+    def tags(self, index):
+        """Return a list of taxonomic tags"""
+        return [t+self._taxons[i] for (t, i) in zip(_TAGS, self._table[index]) if i!=0]
 
+        
+_TAGS = ['d__', 'p__', 'c__', 'o__', 'f__', 'g__', 's__']
+
+
+def _classification_distance(a, b):
+    for (d, s, o) in zip(range(7, 0, -1), a, b):
+        if s==0 or o==0 or s!=o:
+            return d
+    return 0
+    
+    
+def _parse_taxstring(taxstring):
+    fields = taxstring.split('; ')
+    if fields[0]=="Root":
+        fields = fields[1:]
+    ranks = []
+    for (string, prefix) in zip(fields, _TAGS):
+        try:
+            if not string.startswith(prefix):
+                raise ValueError("Error parsing field: '%s'. Missing `%s` prefix." % (string, prefix))
+            ranks.append(string[len(prefix):].strip())
+        except ValueError as e:
+            print e, "Skipping remaining fields"
+            break
+    return ranks
+    
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 class ClassificationConsensusFinder:
-    def __init__(self, classification, level):
-        self._classification = classification
+    """Wraps a connectivity matrix and determines consensus classifications by
+    finding `cliques` (fully-connected subgraphs) in the matrix.
+    """
+    def __init__(self, mapping, level):
+        self._classification = mapping.classification
         self._level = level
-        self._mC = _make_connectivity(self._classification, self._level)
+        self._mC = mapping.makeConnectivity(self._level)
         
     def maxClique(self, indices):
         """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
@@ -71,13 +157,11 @@ class ClassificationConsensusFinder:
         return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
         
     def disagreement(self, indices):
-        """Compute size difference between 2 largest maximal cliques"""
+        """Compute size difference between 2 largest cliques"""
         if len(indices) == 0:
             return 0
         first_clique = greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
-        remaining = np.ones(len(indices), dtype=bool)
-        remaining[first_clique] = False
-        remaining = indices[remaining]
+        remaining = np.setdiff1d(indices, indices[first_clique])
         second_clique = greedy_clique_by_elimination(self._mC[np.ix_(remaining, remaining)])
         return abs(len(first_clique) - len(second_clique))
         
@@ -94,18 +178,6 @@ class ClassificationConsensusFinder:
                     consensus_tag = t
                     level = o
         return consensus_tag
-                
-                
-def _make_connectivity(classification, level):
-    """Connectivity matrix to specified taxonomic level"""
-    dm = sp_distance.squareform(classification.distances() <= level)
-    
-    # disconnect mappings to the same single copy marker
-    for (_, m) in classification.mapping.itergroups():
-        dm[np.ix_(m, m)] = False
-        dm[m, m] = True 
-    
-    return dm
         
         
 def greedy_clique_by_elimination(C):
