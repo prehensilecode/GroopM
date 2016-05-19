@@ -47,6 +47,7 @@ __email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
 import numpy as np
+import scipy.spatial.distance as sp_distance
 import sys
 
 # GroopM imports

@@ -63,9 +63,13 @@ np.seterr(all='raise')
 ############################################################################### 
 def fcluster_classification(Z, markers, level, return_coeffs=False, return_nodes=False):
     """Run the process to determine flat clusters"""
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    
     (coeffs, num_markers) = consensus_coefficients(Z, markers, level)
     ids = flatten_nodes(Z)
-    return fcluster_coeffs(Z, coeffs[ids], num_markers, return_coeffs=return_coeffs, return_nodes=return_nodes)
+    coeffs[n:] = coeffs[ids+n]
+    return fcluster_coeffs(Z, coeffs, num_markers, return_coeffs=return_coeffs, return_nodes=return_nodes)
 
 
 def consensus_coefficients(Z, markers, level):
@@ -96,8 +100,8 @@ def consensus_coefficients(Z, markers, level):
     
     markers_dict = dict(markers.iterindices())
     num_markers = np.zeros(2*n-1, dtype=int)
-    for (i, row_indices) in markers_dict.iteritems():
-        num_markers[i] = len(row_indices)
+    for (i, indices) in markers_dict.iteritems():
+        num_markers[i] = len(indices)
     coeffs = np.zeros(2*n-1, dtype=int)
         
     # Bottom-up traversal
@@ -111,18 +115,26 @@ def consensus_coefficients(Z, markers, level):
         num_markers[current_node] = current_num_markers
         
         # update leaf cache
-        current_markers = markers_dict[left_child] + markers_dict[right_child]
-        del markers_dict[left_child]
-        del markers_dict[right_child]
+        try:
+            current_markers = markers_dict[left_child]
+            del markers_dict[left_child]
+        except:
+            current_markers = []
+        try:
+            current_markers += markers_dict[right_child]
+            del markers_dict[right_child]
+        except:
+            pass
         markers_dict[current_node] = current_markers
         
         # We only need to compute a new coefficient for new sets of markers, i.e. if
         # both left and right child clusters have markers.
-        merge = left_num_markers != 0 and right_num_markers != 0
-        if merge:
-            coeffs[current_node] = cfinder.disagreement(current_markers)
+        if left_num_markers == 0:
+            coeffs[current_node] = coeffs[right_child]
+        elif right_num_markers == 0:
+            coeffs[current_node] = coeffs[left_child]
         else:
-            coeffs[current_node] = np.maximum(coeffs[left_child], coeffs[right_child])
+            coeffs[current_node] = cfinder.disagreement(current_markers)
 
     return (coeffs, num_markers)
             
@@ -156,8 +168,8 @@ def fcluster_coeffs(Z, coeffs, num_markers, return_coeffs=False, return_nodes=Fa
     
     if return_coeffs:
         leaf_max_coeffs = np.zeros(n, dtype=int)
-    leaf_max_nodes = np.range(n)
-    leaves_dict = dict([(i, [i]) for i in range(n-1)])
+    leaf_max_nodes = np.arange(n)
+    leaves_dict = dict([(i, [i]) for i in range(n)])
     
     # Bottom-up traversal
     for i in range(n-1):
@@ -178,26 +190,20 @@ def fcluster_coeffs(Z, coeffs, num_markers, return_coeffs=False, return_nodes=Fa
         del leaves_dict[right_child]
         leaves_dict[current_node] = current_leaves
         
-        # merge cases:
-        # left_num_markers == 0 or right_num_markers == 0
-        #   No new information taxonomy in one branch, we'll greedily add the clusters
-        #   together.
-        #   
-        # current_max_coeff == current_coeff
-        #   The merged cluster is at least as coherent taxonomically any descendent
-        #   cluster.
-        merge = left_num_markers == 0 or right_num_markers == 0 or current_coeff == current_max_coeff
-        if merge:
+        # Merge if cluster is at least as coherent taxonomically any descendent
+        # cluster.
+        if current_coeff == current_max_coeff:
             if return_coeffs:
-                leaf_max_coeffs[current_leaves] = current_coeff
+                leaf_max_coeffs[current_leaves] = current_max_coeff
             leaf_max_nodes[current_leaves] = n+i
     
-    (nodes, T) = np.unique(leaf_max_nodes, return_inverse=True)
-    T += 1 # start bin ids from 1
-    if not return_coeffs and not return_nodes:
-        return T
+    (nodes, bids) = np.unique(leaf_max_nodes, return_inverse=True)
+    bids += 1 # start bin ids from 1
+    
+    if not (return_coeffs or return_nodes):
+        return bids 
         
-    out = (T,)
+    out = (bids,)
     if return_coeffs:
         out += (leaf_max_coeffs,)
     if return_nodes:

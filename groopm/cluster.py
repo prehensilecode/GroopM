@@ -70,8 +70,8 @@ class CoreCreator:
     def __init__(self, dbFileName, markerFileName, paramsFileName):
         self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
         
-    def loadProfile(self, timer, minLength):
-        return self._pm.loadData(timer, minLength=minLength)
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer)
         
     def run(self,
             timer,
@@ -80,7 +80,7 @@ class CoreCreator:
         if not force and not self._pm.promptOnOverwrite():
             return
             
-        profile = self.loadProfile(timer, minLength)
+        profile = self.loadProfile(timer)
         
         ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
         ce.makeBins(timer, out_bins=profile.binIds)
@@ -111,7 +111,7 @@ class HybridHierarchicalClusterEngine:
         
         print "Finding cores"
         out_bins[...] = self.fcluster(Z)
-        print "    %s bins made." % (out_bins.max()-1)
+        print "    %s bins made." % len(set(out_bins).difference([0]))
         print "    %s" % timer.getTimeStamp()
             
     def distances(self):
@@ -127,10 +127,13 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     def __init__(self, profile):
         self._profile = profile
-        self._level = self._profile.clusterParams.level
-        self._minPts = self._profile.clusterParams.minPts
         smooth = self._profile.clusterParams.smooth
-        self._minWt = None if smooth is None else (smooth - self._profile.contigLengths) * self._profile.contigLengths
+        if smooth is None:
+            self._minWt = None
+        elif self._profile.clusterParams.linear:
+            self._minWt = (smooth - self._profile.contigLengths) * self._profile.contigLengths
+        else:
+            self._minWt = np.full(self._profile.numContigs, smooth)
                 
     def feature_global_ranks(self):
         """Feature distance ranks scaled by contig lengths"""
@@ -144,10 +147,10 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
     def distances(self):
         (feature_ranks, weights) = self.feature_global_ranks()
         rank_norms = np_linalg.norm(feature_ranks, axis=0)
-        return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._minPts)
+        return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._profile.clusterParams.minPts)
         
     def fcluster(self, Z):
-        return hierarchy.fcluster_classification(Z, self._profile.mapping, level=self._level)
+        return hierarchy.fcluster_classification(Z, self._profile.mapping, level=self._profile.clusterParams.level)
     
             
 # Mediod clustering

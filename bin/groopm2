@@ -193,15 +193,7 @@ class core_command_configure:
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
         cc = groopm.CoreCreator(options.dbname, options.markerfile, options.paramsfile)
-        cc.run(timer,
-               minSize=options.size,
-               minBP=options.bp,
-               minLength=options.cutoff,
-               k=int(options.K) if options.K is not None else int(options.k) if options.k is not None else None,
-               minPts=options.minPts,
-               linear=options.K is not None,
-               force=options.force,
-               doWeight=options.W)
+        cc.run(timer, force=options.force)
         
         
 class extract_command_configure:

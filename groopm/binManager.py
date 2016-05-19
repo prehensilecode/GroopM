@@ -158,9 +158,9 @@ class BinManager:
 
         print "    Found %d low quality bins." % len(low_quality)
         out_bins[np.in1d(out_bins, low_quality)] = 0
-        (_, new_bins) = np.unique(out_bins, return_inverse=True)
-        out_bins[...] = new_bins
-        print "    %s bins after removing low quality bins." % (out_bins.max()-1)
+        (_, new_bids) = np.unique(out_bins[out_bins != 0], return_inverse=True)
+        out_bins[out_bins != 0] = new_bids+1 # bin ids start at 1
+        print "    %s bins after removing low quality bins." % len(set(out_bins).difference([0]))
     
     
     

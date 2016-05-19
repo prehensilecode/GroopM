@@ -67,6 +67,7 @@ from profileManager import ProfileManager
 from binManager import BinManager
 import distance
 from cluster import FeatureGlobalRankAndClassificationClusterEngine
+from classification import ClassificationConsensusFinder
 import hierarchy
 
 np.seterr(all='raise')
@@ -374,7 +375,7 @@ class HierarchyReachabilityPlotter:
         self._colourmap = getColorMap(colourmap)
         ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
         self._ddists = ce.distances()
-        self._cf = ClassificationConsensusFinder(self._profile.mapping)
+        self._cf = ClassificationConsensusFinder(self._profile.mapping, self._profile.clusterParams.level)
         
     def plot(self,
              bids,

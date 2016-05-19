@@ -160,6 +160,7 @@ class ClassificationConsensusFinder:
         """Compute size difference between 2 largest cliques"""
         if len(indices) == 0:
             return 0
+        indices = np.asarray(indices)
         first_clique = greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
         remaining = np.setdiff1d(indices, indices[first_clique])
         second_clique = greedy_clique_by_elimination(self._mC[np.ix_(remaining, remaining)])
