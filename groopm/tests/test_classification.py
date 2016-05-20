@@ -29,8 +29,8 @@ from nose.tools import assert_true
 from tools import assert_equal_arrays, assert_almost_equal_arrays
 import numpy as np
 import numpy.random as np_random
-from groopm.classification import (_Classification,
-                                   _classification_pdist,
+from groopm.classification import (parse_taxstring,
+                                   Classification,
                                    greedy_clique_by_elimination,
                                   )
 
@@ -39,33 +39,55 @@ from groopm.classification import (_Classification,
 ###############################################################################
 ###############################################################################
 
+def test_parse_taxstring():
+    assert_equal_arrays(parse_taxstring("d__Archaea; p__Euryarchaeota; c__Methanococci; o__Methanococcales; f__Methanococcaceae; g__Methanococcus"),
+                        ["Archaea", "Euryarchaeota", "Methanococci", "Methanococcales", "Methanococcaceae", "Methanococcus"],
+                        "`parse_taxstring` returns array of parsed taxonomic ranks")
+    
+    assert_equal_arrays(parse_taxstring("d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Burkholderiales"),
+                        ["Bacteria", "Proteobacteria", "Betaproteobacteria", "Burkholderiales"],
+                        "`parse_taxstring` returns array of parsed taxonomic ranks defined to order level")
+    
+
 def test_Classification():
-    methanococcus = _Classification("d__Archaea; p__Euryarchaeota; c__Methanococci; o__Methanococcales; f__Methanococcaceae; g__Methanococcus")
-    ranks = ["Archaea", "Euryarchaeota", "Methanococci", "Methanococcales", "Methanococcaceae", "Methanococcus"]
-    assert_equal_arrays(methanococcus.ranks,
-                        ranks,
-                        "`_Classification.ranks` returns array of parsed taxonomic ranks")
-                        
-    assert_equal_arrays([methanococcus.taxon(field) for field in ["domain", "phylum", "class", "order", "family", "genus"]],
-                         ranks,
-                         "`_Classifcation.taxon` reports specific taxonomic levels")
-                         
-    methanococcus2 = _Classification("d__Archaea; p__Euryarchaeota; c__Methanococci; o__Methanococcales; f__Methanococcaceae; g__Methanococcus")
-    assert_true(methanococcus.distance(methanococcus2)==0, "`_Classification.distance` for identical classifications is 0.")
     
-    pyrococcus = _Classification("d__Archaea; p__Euryarchaeota; c__Thermococci; o__Thermococcales; f__Thermococcaceae; g__Pyrococcus")
-    assert_true(methanococcus.distance(pyrococcus)==5, "`_Classification.distance` computes taxonomic rank of divergence for two genus level classifications")
+    classification = Classification([
+        "d__Archaea; p__Euryarchaeota; c__Methanococci; o__Methanococcales; f__Methanococcaceae; g__Methanococcus",
+        "d__Archaea; p__Euryarchaeota; c__Methanococci; o__Methanococcales; f__Methanococcaceae; g__Methanococcus",
+        "d__Archaea; p__Euryarchaeota; c__Thermococci; o__Thermococcales; f__Thermococcaceae; g__Pyrococcus",
+        "d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Burkholderiales; f__Burkholderiaceae; g__Burkholderia",
+        "d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Burkholderiales",
+        "d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Nitrosomonadales; f__Nitrosomonadaceae; g__Nitrosomonas",
+        ])
     
-    burkholderia = _Classification("d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Burkholderiales; f__Burkholderiaceae; g__Burkholderia")
-    burkholderiales = _Classification("d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Burkholderiales")
-    assert_true(burkholderia.distance(burkholderiales)==0, "`_Classification.distance` returns 0 if no divergence is found for any ranks")
+    assert_equal_arrays(classification.tags(0),
+                        ["d__Archaea", "p__Euryarchaeota", "c__Methanococci", "o__Methanococcales", "f__Methanococcaceae", "g__Methanococcus"],
+                        "`Classifcation.tags` returns array of tagged taxonomic levels")
     
-    nitrosomonas = _Classification("d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Nitrosomonadales; f__Nitrosomonadaceae; g__Nitrosomonas")
-    assert_true(burkholderiales.distance(nitrosomonas)==4, "`_Classification.distance` computes taxonomic rank of divergence for classifications to order and genus level")
-    
-    assert_equal_arrays(_classification_pdist([methanococcus, pyrococcus, burkholderia, burkholderiales, nitrosomonas]),
-                        [5, 7, 7, 7, 7, 7, 7, 0, 4, 4],
-                        "`_classification_pdist` computes pairwise distance between classifications")
+    """
+    Pairwise coherence levels:
+    (Methanococcus, Methanococcus2): 0 (=Species)
+    (Methanococcus, Pyrococcus): 5 (=Phylum)
+    (Methanococcus, Burkholderia): 7 (=Root)
+    (Methanococcus, Burkholderiales): 7
+    (Methanococcus, Nitrosomonas): 7
+    (Methanococcus2, Pyrococcus): 5
+    (Methanococcus2, Burkholderia): 7
+    (Methanococcus2, Burkholderiales): 7
+    (Methanococcus2, Nitrosomonas): 7
+    (Pyrococcus, Burkholderia): 7
+    (Pyrococcus, Burkholderiales): 7
+    (Pyrococcus, Nitrosomonas): 7
+    (Burkholderia, Burkholderiales): 0 (=Species)
+    (Burkholderia, Nitrosomonas): 4 (=Class)
+    (Burkholderiales, Nitrosomonas): 4
+    """
+    print classification._table[:2]
+    print classification._taxons[classification._table[:2]]
+    print classification.distances()
+    assert_equal_arrays(classification.distances(),
+                        [0, 5, 7, 7, 7, 5, 7, 7, 7, 7, 7, 7, 0, 4, 4],
+                        "`Classification.distances` computes pairwise distance between classifications")
     
                                     
 def test_greedy_clique_by_elimination():

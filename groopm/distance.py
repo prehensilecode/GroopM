@@ -104,7 +104,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
         observations. See scipy's `squareform` function for details.
     weights : ndarray
         Condensed matrix containing pairwise weights.
-    minWt : int or float or ndarray
+    minWt : ndarray
         Total cumulative neighbour weight used to compute density distance for individual points.
     minPts : int
         Number of neighbours used to compute density distance.
@@ -148,7 +148,7 @@ def core_distance_weighted(Y, weights, minWt):
         observations. See scipy's `squareform` function for details.
     weights : ndarray
         Condensed matrix containing pairwise weights.
-    minWt : int or float or ndarray
+    minWt : ndarray
         Total cumulative neighbour weight used to compute density distance for individual points.
         
     Returns

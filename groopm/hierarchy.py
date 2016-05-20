@@ -61,19 +61,9 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ############################################################################### 
-def fcluster_classification(Z, markers, level, return_coeffs=False, return_nodes=False):
-    """Run the process to determine flat clusters"""
-    Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    
-    (coeffs, num_markers) = consensus_coefficients(Z, markers, level)
-    ids = flatten_nodes(Z)
-    coeffs[n:] = coeffs[ids+n]
-    return fcluster_coeffs(Z, coeffs, num_markers, return_coeffs=return_coeffs, return_nodes=return_nodes)
-
-
-def consensus_coefficients(Z, markers, level):
-    """Compute measure of taxonomic coherence for hierarchical clustering.
+def fcluster_consensus(Z, markers, level, return_coeffs=False, return_nodes=False):
+    """Find flat clusters using a measure of taxonomic coherence for nodes a
+    hierarchical clustering.
     
     Parameters
     ----------
@@ -84,62 +74,99 @@ def consensus_coefficients(Z, markers, level):
     level : int
         Taxonomic level at which to define clusters.
         
-    Returns
-    -------
-    coeffs : ndarray
-        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
-        the `i`th singleton node, and for `i>=n` is the value for the cluster
-        encoded by the `(i-n)`-th row in `Z`.
-    num_markers : ndarray
-        `num_markers[i]` is the number of taxonomic assignments made to contigs
-        in cluster `i`, where `i<n` corresponds to singleton clusters.
     """
-    cfinder = ClassificationConsensusFinder(markers, level)
     Z = np.asarray(Z)
     n = Z.shape[0]+1
     
-    markers_dict = dict(markers.iterindices())
-    num_markers = np.zeros(2*n-1, dtype=int)
-    for (i, indices) in markers_dict.iteritems():
-        num_markers[i] = len(indices)
+    (coeffs, num_markers) = coeffs_linkage(
+        Z, 
+        dict(markers.iterindices()),
+        ClassificationConsensusFinder(markers, level).disagreement
+        )
+    coeffs[n:] = coeffs[flatten_nodes(Z)+n] # Map coefficient scores to descendents of equal height
+    return fcluster_coeffs(Z,
+                           coeffs,
+                           num_markers,
+                           return_coeffs=return_coeffs,
+                           return_nodes=return_nodes)
+    
+    
+def coeffs_linkage(Z, leaf_data, coeff_fn):
+    """Compute coefficients for hierarchical clustering.
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    leaf_data : dict
+        Dictionary with leaf node ids as keys with values corresponding to
+        lists of values to be passed to coeff_fn
+    coeff_fn : function
+        Function called at each node in `Z` with the concatenation of values 
+        from `leaf_data` for all descendent leaves of the node, and computes
+        the node coefficient.
+        
+    Returns
+    -------
+    coeffs : ndarray
+        `coeffs[i]` for `i<n` is defines the coefficient for the `i`th
+        singleton node, and for `i>=n` is the coefficient for the cluster
+        encoded by the `(i-n)`-th row in `Z`.
+    num_data_points : ndarray
+        `num_data_points[i]` is the number of data points used to compute
+        coefficient of cluster `i`, where `i<n` corresponds to singleton
+        clusters.
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    
+    node_data = dict()
+    num_points = np.zeros(2*n-1, dtype=int)
     coeffs = np.zeros(2*n-1, dtype=int)
+    
+    # Compute leaf clusters
+    for (i, indices) in leaf_data.iteritems():
+        node_data[i] = indices
+        num_points[i] = len(indices)
+        coeffs[i] = coeff_fn(indices)
         
     # Bottom-up traversal
     for i in range(n-1):
         left_child = int(Z[i, 0])
-        left_num_markers = num_markers[left_child]
         right_child = int(Z[i, 1])
-        right_num_markers = num_markers[right_child]
         current_node = n+i
-        current_num_markers = left_num_markers + right_num_markers
-        num_markers[current_node] = current_num_markers
         
         # update leaf cache
         try:
-            current_markers = markers_dict[left_child]
-            del markers_dict[left_child]
+            left_data = node_data[left_child]
+            del node_data[left_child]
         except:
-            current_markers = []
+            left_data = []
         try:
-            current_markers += markers_dict[right_child]
-            del markers_dict[right_child]
+            right_data = node_data[right_child]
+            del node_data[right_child]
         except:
-            pass
-        markers_dict[current_node] = current_markers
+            right_data = []
+            
+        current_data = left_data + right_data
+        num_current_points = len(current_data)
+        num_points[current_node] = num_current_points
+        if num_current_points > 0:
+            node_data[current_node] = current_data
         
-        # We only need to compute a new coefficient for new sets of markers, i.e. if
-        # both left and right child clusters have markers.
-        if left_num_markers == 0:
+        # We only need to compute a new coefficient for new sets of data points, i.e. if
+        # both left and right child clusters have data points.
+        if left_data == []:
             coeffs[current_node] = coeffs[right_child]
-        elif right_num_markers == 0:
+        elif right_data == []:
             coeffs[current_node] = coeffs[left_child]
         else:
-            coeffs[current_node] = cfinder.disagreement(current_markers)
-
-    return (coeffs, num_markers)
+            coeffs[current_node] = coeff_fn(current_data)
+            
+    return (coeffs, num_points)
             
 
-def fcluster_coeffs(Z, coeffs, num_markers, return_coeffs=False, return_nodes=False):
+def fcluster_coeffs(Z, coeffs, num_points, return_coeffs=False, return_nodes=False):
     """Partition a hierarchical clustering by identifying clusters that
     maximise a measure of taxonomic coherence.
     
@@ -151,33 +178,44 @@ def fcluster_coeffs(Z, coeffs, num_markers, return_coeffs=False, return_nodes=Fa
         `coeffs[i]` for `i<n` is defines the taxonomic measure value for
         the `i`th singleton node, and for `i>=n` is the value for the cluster
         encoded by the `(i-n)`-th row in `Z`.
-    num_markers : ndarray
-        `num_markers[i]` is the number of taxonomic assignments made to contigs
+    num_data_points : ndarray
+        `num_data_points[i]` is the number of taxonomic assignments made to contigs
         in cluster `i`, where `i<n` corresponds to singleton clusters.
+    return_coeffs : bool
+        If True, also return array of cluster coefficients for original observations.
+    return_nodes : bool
+        If True, also return array of parent nodes in for flat clusters.
         
     Returns
     -------
     T : ndarray
         1-D array. `T[i]` is the flat cluster number to which original
         observation `i` belongs.
+    leaf_max_coeffs : ndarray
+        1-D array. `leaf_max_coeffs[i]` is the cluster coefficient for the flat
+        cluster of original observation `i`. Only provided if `return_coeffs` is True.
+    nodes : ndarray
+        1-D array. `nodes[i]` is the cluster index corresponding to the `i+1`th flat
+        cluster. Only provided if `return_nodes` is True.
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
-    num_markers = np.asarray(num_markers)
+    num_points = np.asarray(num_points)
     max_coeffs = np.copy(coeffs)
     
+    # Compute leaf clusters
     if return_coeffs:
-        leaf_max_coeffs = np.zeros(n, dtype=int)
+        leaf_max_coeffs = max_coeffs[:n].copy()
     leaf_max_nodes = np.arange(n)
     leaves_dict = dict([(i, [i]) for i in range(n)])
     
     # Bottom-up traversal
     for i in range(n-1):
         left_child = int(Z[i, 0])
-        left_num_markers = num_markers[left_child]
+        left_num_points = num_points[left_child]
         left_max_coeff = max_coeffs[left_child]
         right_child = int(Z[i, 1])
-        right_num_markers = num_markers[right_child]
+        right_num_points = num_points[right_child]
         right_max_coeff = max_coeffs[right_child]
         current_node = n+i
         current_coeff = max_coeffs[current_node]

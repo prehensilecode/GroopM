@@ -34,8 +34,6 @@ from groopm.distance import (mediod,
                              density_distance,
                              reachability_order,
                              argrank,
-                             pcoords,
-                             ccoords,
                              condensed_index)
 
 ###############################################################################
@@ -120,19 +118,20 @@ def test_density_distance():
     """
     Y = np.array([2.2, 7.2, 10.4, 6.7, 12.8, 8.6, 8.9, 12.7, 8.6, 2.2])
     w = np.ones(len(Y), dtype=np.intp)
+    n = sp_distance.num_obs_y(Y)
     
     # core_distances: [2.2, 2.2, 7.2, 2.2, 2.2]
-    assert_equal_arrays(density_distance(Y, w, 1),
+    assert_equal_arrays(density_distance(Y, w, [1]*n),
                         [2.2, 7.2, 10.4, 6.7, 12.8, 8.6, 8.9, 12.7, 8.6, 2.2],
                         "`density_distance` for nearest neighbour returns distances unchanged")
                         
     # core_distances: [6.7, 8.6, 8.6, 8.6, 6.7]
-    assert_equal_arrays(density_distance(Y, w, 2),
+    assert_equal_arrays(density_distance(Y, w, [2]*n),
                         [6.7, 7.2, 10.4, 6.7, 12.8, 8.6, 8.9, 12.7, 8.6, 6.7],
                         "computes `density_distance` for 2-nearest neighbour")
          
     # core_distances: [10.4, 12.8, 12.8, 12.7, 8.9]               
-    assert_equal_arrays(density_distance(Y, w, 4),
+    assert_equal_arrays(density_distance(Y, w, [4]*n),
                         [10.4, 10.4, 10.4, 8.9, 12.8, 12.7, 8.9, 12.7, 8.9, 8.9],
                         "computes `density_distance` for 4-nearest neighbour")
                         
@@ -178,14 +177,15 @@ def test_density_distance():
     """ 
     Y = np.array([17.7, 70., 97.1, 50.8, 121.6, 79.4, 82.1, 120.9, 77.3, 14.4])
     w = np.array([   4,   8,    6,   10,     6,    6,   10,    12,   20,   15])
+    n = sp_distance.num_obs_y(Y)
     
     # core_distances: [50.8, 82.1, 70.0, 14.4, 14.4] 
-    assert_equal_arrays(density_distance(Y, w, 20),
+    assert_equal_arrays(density_distance(Y, w, [20]*n),
                         [50.8, 70., 97.1, 50.8, 121.6, 79.4, 82.1, 120.9, 77.3, 14.4],
                         "computes weighted `density_distance` at various limits")
                         
     # core_distances: [97.1, 121.6, 77.3, 97.1, 50.8] 
-    assert_equal_arrays(density_distance(Y, w, 30),
+    assert_equal_arrays(density_distance(Y, w, [30]*n),
                         [97.1, 77.3, 97.1, 50.8, 121.6, 97.1, 82.1, 120.9, 77.3, 50.8],
                         "computes weighted `density_distance` at various limits")
                         

@@ -84,20 +84,20 @@ class Classification:
             Array of taxonomic classification strings.
         """
         n = len(taxstrings)
-        taxon_dict = { "": 0 }
-        counter = 0
+        taxon_dict = { "": 1 }
+        counter = 1
         table = np.zeros((n, 7), dtype=int)
         for (i, s) in enumerate(taxstrings):
-            for (j, rank) in enumerate(_parse_taxstring(s)):
+            for (j, rank) in enumerate(parse_taxstring(s)):
                 try:
                     table[i, j] = taxon_dict[rank]
                 except KeyError:
                     counter += 1
                     table[i, j] = counter
                     taxon_dict[rank] = counter
-                    
-        taxons = np.array(taxon_dict.keys())
-        taxons[taxon_dict.values()] = taxons.copy()
+        
+        taxons = np.concatenate(([""], taxon_dict.keys()))
+        taxons[taxon_dict.values()] = taxons[1:].copy()
         
         self._table = table
         self._taxons = taxons
@@ -115,12 +115,16 @@ _TAGS = ['d__', 'p__', 'c__', 'o__', 'f__', 'g__', 's__']
 
 def _classification_distance(a, b):
     for (d, s, o) in zip(range(7, 0, -1), a, b):
-        if s==0 or o==0 or s!=o:
+        # 0 = untagged at current level (assume coherent from any tag)
+        # 1 = empty tag at current level (assume incoherent with other empty and non-empty tags)
+        if s==0 or o==0:
+            break
+        if s==1 or o==1 or s!=o:
             return d
     return 0
     
     
-def _parse_taxstring(taxstring):
+def parse_taxstring(taxstring):
     fields = taxstring.split('; ')
     if fields[0]=="Root":
         fields = fields[1:]

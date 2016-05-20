@@ -150,7 +150,7 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._profile.clusterParams.minPts)
         
     def fcluster(self, Z):
-        return hierarchy.fcluster_classification(Z, self._profile.mapping, level=self._profile.clusterParams.level)
+        return hierarchy.fcluster_consensus(Z, self._profile.mapping, level=self._profile.clusterParams.level)
     
             
 # Mediod clustering
