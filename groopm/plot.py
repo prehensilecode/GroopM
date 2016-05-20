@@ -373,8 +373,8 @@ class HierarchyReachabilityPlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
-        ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
-        self._ddists = ce.distances()
+        self._ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
+        self._ddists = self._ce.distances()
         self._cf = ClassificationConsensusFinder(self._profile.mapping, self._profile.clusterParams.level)
         
     def plot(self,
@@ -401,6 +401,12 @@ class HierarchyReachabilityPlotter:
         if highlight=="bins":
             # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
+            Z = hierarchy.linkage_from_reachability(o, d)
+            n = Z.shape[0]+1
+            (T, M) = hierarchy.fcluster_consensus(Z, self._profile.mapping, self._profile.clusterParams.level, return_nodes=True)
+            nodes = M[T-1]
+            binIds = np.zeros(2*n-1, dtype=Z.dtype)
+            binIds[nodes>=n] = Z[nodes[nodes>=n] - n, 2]
             
             flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
             iflag = np.cumsum(flag[:-1])
@@ -422,7 +428,7 @@ class HierarchyReachabilityPlotter:
             scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, d)
             #Z = sp_hierarchy.single(self._ddists)
-            (_T, coeffs) = hierarchy.fcluster_classification(Z, self._profile.mapping, self._profile.clusterParams.level)
+            (_T, coeffs) = hierarchy.fcluster_consensus(Z, self._profile.mapping, self._profile.clusterParams.level, return_coeffs=True)
             coeffs = coeffs[o]
             smap = plt_cm.ScalarMappable(cmap=self._colourmap)
             smap.set_array(coeffs)

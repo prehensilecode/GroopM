@@ -32,7 +32,8 @@ import numpy.random as np_random
 from tools import assert_equal_arrays, assert_isomorphic
 import groopm.distance as distance
 from groopm.hierarchy import (coeffs_linkage,
-                              fcluster_coeffs,
+                              merge_linkage,
+                              fcluster_merge,
                               flatten_nodes,
                               linkage_from_reachability,
                               ancestors,
@@ -62,15 +63,10 @@ def test_coeffs_linkage():
         |----4-+
         3:[]    
     """
-    (coeffs, num_points) = coeffs_linkage(Z, {0:[1]}, max)
-    assert_equal_arrays(coeffs,
+    assert_equal_arrays(coeffs_linkage(Z, {0:[1]}, max),
                         [1, 0, 0, 0, 0, 0, 1],
                         "`coeffs_linkage` computes coefficients in the case of "
                         "a single non-zero coeff")
-    assert_equal_arrays(num_points,
-                        [1, 0, 0, 0, 0, 0, 1],
-                        "`coeffs_linkage` counts number of data points in the "
-                        "case of a single non-zero coeff")
                                 
     """Assign leaf data:
         0:[]--------+
@@ -79,15 +75,10 @@ def test_coeffs_linkage():
         |-----4-+
         3:[]    
     """
-    (coeffs, num_points) = coeffs_linkage(Z, {1:[1], 2:[1]}, sum)
-    assert_equal_arrays(coeffs,
+    assert_equal_arrays(coeffs_linkage(Z, {1:[1], 2:[1]}, sum),
                         [0, 1, 1, 0, 1, 2, 2],
                         "`coeffs_linkage` computes coefficients in case of a "
                         "non-zero leaf and larger valued internal coeff")
-    assert_equal_arrays(num_points,
-                        [0, 1, 1, 0, 1, 2, 2],
-                        "`coeffs_linkage` computes number of data points in "
-                        "case of a non-zero leaf and larger valued internal coeff")
                                               
     """Assign leaf data:
         0:[]--------+
@@ -96,17 +87,12 @@ def test_coeffs_linkage():
         |----4--+
         3:[1,0]    
     """
-    (coeffs, num_points) = coeffs_linkage(Z, {1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x))
-    assert_equal_arrays(coeffs,
+    assert_equal_arrays(coeffs_linkage(Z, {1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x)),
                         [0, 0, 0, 1, 2, 2, 2],
                         "`coeffs_linkage` returns max coefficients when a higher leaf is lower valued")
-    assert_equal_arrays(num_points,
-                        [0, 2, 1, 2, 4, 5, 5],
-                        "`coeffs_linkage` returns number of data points where leaves have mulitple points")
-    
                         
     
-def test_fcluster_coeffs():
+def test_maxcoeffs():
     """Z describes tree:
         0-------+
         2---+   |-6
@@ -118,66 +104,153 @@ def test_fcluster_coeffs():
                   [2., 4., 1., 3.],
                   [0., 5., 2., 4.]])
                   
-    """Assign coefficients/num_points:
-        0:1/1-----------+
-        2:0/3---+       |-6:0/5
-        1:1/1   |-5:0/4-+
-        |-4:1/1-+
-        3:0/0    
+    """Assign coefficients:
+        0:1---------+
+        2:0---+     |-6:0
+        1:1   |-5:0-+
+        |-4:1-+
+        3:0    
+    """ 
+    assert_equal_arrays(maxcoeffs(Z, [1, 1, 0, 0, 1, 0, 0]),
+                        [1, 1, 0, 0, 1, 1, 1],
+                        "`maxcoeffs` returns maximum coefficients for skewed tree")
+                                
+    """Assign coefficients:
+        0:0---------+
+        2:1---+     |-6:0
+        1:1   |-5:2-+
+        |-4:0-+
+        3:0   
     """
-    (T, c, M) = fcluster_coeffs(Z,
-                                [1, 1, 0, 0, 1, 0, 0],
-                                [1, 1, 3, 0, 1, 4, 5],
-                                return_coeffs=True,
-                                return_nodes=True)
+    assert_equal_arrays(maxcoeffs(Z, [0, 1, 1, 0, 0, 2, 0]),
+                        [0, 1, 1, 0, 1, 2, 2],
+                        "`maxcoeffs` returns maximum coefficients for skewed "
+                        "tree with large valued internal coefficient")
+                                              
+    """Assign coefficients:
+        0:0---------+
+        2:0---+     |-6:0
+        1:0   |-5:1-+
+        |-4:2-+
+        3:0    
+    """
+    assert_equal_arrays(maxcoeffs(Z, [0, 0, 0, 0, 2, 1, 0]),
+                        [0, 0, 0, 0, 2, 2, 2],
+                        "`maxcoeffs` returns cluster roots for skewed "
+                        "tree with lower valued internal coefficient")
+                      
+                      
+    """Z describes tree:
+        0
+        |---7---+
+        1       |
+                |-8
+        2---+   |
+        3   |-6-+
+        |-5-+
+        4
+    """
+    Z = np.array([[3., 4., 1., 2.],
+                  [2., 5., 1., 3.],
+                  [0., 1., 3., 2.],
+                  [6., 7., 4., 5.]])
+                  
+    """Assign coefficients:
+        0:0
+        |----7:1----+
+        1:1         |
+                    |-8:1
+        2:0---+     |
+        3:2   |-6:2-+
+        |-5:2-+
+        4:0
+    """
+    assert_equal_arrays(maxcoeffs(Z, [0, 1, 0, 2, 0, 2, 2, 1, 1]),
+                        [0, 1, 0, 2, 0, 2, 2, 1, 2],
+                        "`maxcoeffs` computes maximum coefficients for a "
+                        "balanced tree")
+                        
+    """Assign coeffs:
+        0:1
+        |----7:0----+
+        1:1         |
+                    |-8:0
+        2:2---+     |
+        3:2   |-6:2-+
+        |-5:0-+
+        4:2
+    """                    
+    assert_equal_arrays(maxcoeffs(Z, [1, 1, 2, 2, 2, 0, 2, 0, 0]),
+                        [0, 1, 2, 2, 2, 2, 2, 1, 2],
+                        "`maxcoeffs` returns maximum coefficients for "
+                        "balanced tree with singleton and non-singleton clusters")
+                      
+                      
+def test_fcluster_merge():
+    """Z describes tree:
+        0-------+
+        2---+   |-6
+        1   |-5-+
+        |-4-+
+        3
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 1., 3.],
+                  [0., 5., 2., 4.]])
+                  
+    """Assign merges:
+        0-----------+
+        2-----+     |-6:0
+        1     |-5:0-+
+        |-4:1-+
+        3    
+    """
+    (T, M) = fcluster_merge(Z,
+                            [True, False, False],
+                            return_nodes=True)
     assert_equal_arrays(M,
                         [0, 2, 4],
-                        "`fcluster_coeffs` returns cluster roots for skewed tree")
-    assert_equal_arrays(c,
-                        [1, 1, 0, 1],
-                        "`fcluster_coeffs` returns leaf cluster coefficients for skewed tree")
+                        "`fcluster_merge` returns cluster roots for skewed tree")
     assert_isomorphic(T,
                       [1, 2, 3, 2],
-                      "`fcluster_coeffs` computes flat cluster indices for skewed tree")
+                      "`fcluster_merge` computes flat cluster indices for skewed tree")
                                 
-    """Assign coefficients/num_points:
-        0:0/2-----------+
-        2:1/2---+       |-6:0/8
-        1:1/2   |-5:2/6-+
-        |-4:0/4-+
-        3:0/2    
+    """Assign merges:
+        0-----------+
+        2-----+     |-6:0
+        1     |-5:1-+
+        |-4:0-+
+        3    
     """
-    (T, M) = fcluster_coeffs(Z,
-                                [0, 1, 1, 0, 0, 2, 0],
-                                [2, 2, 2, 2, 4, 6, 8],
-                                return_nodes=True)
+    (T, M) = fcluster_merge(Z,
+                            [False, True, False],
+                            return_nodes=True)
     assert_equal_arrays(M,
                         [0, 5],
-                        "`fcluster_coeffs` returns cluster roots for skewed "
+                        "`fcluster_merge` returns cluster roots for skewed "
                         "tree with large valued internal coefficient")
     assert_isomorphic(T,
                       [1, 2, 2, 2],
-                      "`fcluster_coeffs` computes flat cluster indices for "
+                      "`fcluster_merge` computes flat cluster indices for "
                       "skewed tree with large valued internal coefficient")  
                                               
-    """Assign coefficients:
-        0:0/3-----------+
-        2:0/3---+       |-6:0/10
-        1:0/2   |-5:1/7-+
-        |-4:2/4-+
-        3:0/2    
+    """Assign merges:
+        0-----------+
+        2-----+     |-6:0
+        1     |-5:0-+
+        |-4:1-+
+        3    
     """
-    (T, M) = fcluster_coeffs(Z,
-                             [0, 0, 0, 0, 2, 1, 0],
-                             [3, 2, 3, 2, 4, 7, 10],
-                             return_nodes=True)
+    (T, M) = fcluster_merge(Z,
+                            [True, False, False],
+                            return_nodes=True)
     assert_equal_arrays(M,
                         [0, 2, 4],
-                        "`fcluster_coeffs` returns cluster roots for skewed "
+                        "`fcluster_merge` returns cluster roots for skewed "
                         "tree with lower valued internal coefficient")
     assert_isomorphic(T,
                       [1, 2, 3, 2],
-                      "`fcluster_coeffs` returns flat cluster indices for "
+                      "`fcluster_merge` returns flat cluster indices for "
                       "skewed tree with lower valued internal coefficient")
                       
                       
@@ -196,52 +269,46 @@ def test_fcluster_coeffs():
                   [0., 1., 3., 2.],
                   [6., 7., 4., 5.]])
                   
-    """Assign coeffs/num_points:
-        0:0/0
-        |-----7:1/1-----+
-        1:1/1           |
-                        |-8:1/3
-        2:0/0---+       |
-        3:2/2   |-6:2/2-+
-        |-5:2/2-+
-        4:0/0
+    """Assign merges:
+        0
+        |----7:1----+
+        1           |
+                    |-8:0
+        2-----+     |
+        3     |-6:1-+
+        |-5:1-+
+        4
     """
-    (T, c, M) = fcluster_coeffs(Z,
-                                [0, 1, 0, 2, 0, 2, 2, 1, 1],
-                                [0, 1, 0, 2, 0, 2, 2, 1, 3],
-                                return_coeffs=True,
-                                return_nodes=True)
+    (T, M) = fcluster_merge(Z,
+                            [True, True, True, False],
+                            return_nodes=True)
     assert_equal_arrays(M,
                         [6, 7],
-                        "`fcluster_coeffs` computes cluster roots for balanced tree")
-    assert_equal_arrays(c,
-                        [1, 1, 2, 2, 2],
-                        "`fcluster_coeffs` computes leaf cluster coefficient scores for balanced tree")
+                        "`fcluster_merge` computes cluster roots for balanced tree")
     assert_isomorphic(T,
                       [1, 1, 2, 2, 2],
-                      "`fcluster_coeffs` computes flat cluster indices for balanced tree")
+                      "`fcluster_merge` computes flat cluster indices for balanced tree")
                         
-    """Assign coeffs/num_points:
-        0:1/1
-        |-----7:0/2-----+
-        1:1/1           |
-                        |-8:0/8
-        2:2/2---+       |
-        3:2/2   |-6:2/6-+
-        |-5:0/4-+
-        4:2/2
+    """Assign merges:
+        0
+        |----7:0----+
+        1           |
+                    |-8:0
+        2-----+     |
+        3     |-6:1-+
+        |-5:0-+
+        4
     """                    
-    (T, M) = fcluster_coeffs(Z,
-                                [1, 1, 2, 2, 2, 0, 2, 0, 0],
-                                [1, 1, 2, 2, 2, 4, 6, 2, 8],
-                                return_nodes=True)
+    (T, M) = fcluster_merge(Z,
+                            [False, True, False, False],
+                            return_nodes=True)
     assert_equal_arrays(M,
                         [0, 1, 6],
-                        "`filter_descendents` returns cluster roots for "
+                        "`fcluster_merge` returns cluster roots for "
                         "balanced tree with singleton and non-singleton clusters")
     assert_isomorphic(T,
                       [1, 2, 3, 3, 3],
-                      "`fcluster_coeffs` computes flat cluster indices for "
+                      "`fcluster_merge` computes flat cluster indices for "
                       "balanced tree with singleton and non-singleton clusters")
 
     

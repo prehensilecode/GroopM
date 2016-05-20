@@ -73,22 +73,49 @@ def fcluster_consensus(Z, markers, level, return_coeffs=False, return_nodes=Fals
         See ProfileManager.py.
     level : int
         Taxonomic level at which to define clusters.
+    return_coeffs : bool
+        If True, also return array of cluster coefficients.
+    return_nodes : bool
+        If True, also return array of parent nodes in for flat clusters.
+        
+    Returns
+    -------
+    T : ndarray
+        1-D array. `T[i]` is the flat cluster number to which original
+        observation `i` belongs.
+    leaf_max_coeffs : ndarray
+        1-D array. `leaf_max_coeffs[i]` is the cluster coefficient for the flat
+        cluster of original observation `i`. Only provided if `return_coeffs` is True.
+    nodes : ndarray
+        1-D array. `nodes[i]` is the cluster index corresponding to the `i+1`th flat
+        cluster. Only provided if `return_nodes` is True.
         
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
     
-    (coeffs, num_markers) = coeffs_linkage(
+    coeffs = coeffs_linkage(
         Z, 
         dict(markers.iterindices()),
         ClassificationConsensusFinder(markers, level).disagreement
         )
-    coeffs[n:] = coeffs[flatten_nodes(Z)+n] # Map coefficient scores to descendents of equal height
-    return fcluster_coeffs(Z,
-                           coeffs,
-                           num_markers,
-                           return_coeffs=return_coeffs,
-                           return_nodes=return_nodes)
+    flat_ids = flatten_nodes(Z)
+    coeffs[n:] = coeffs[flat_ids+n] # Map coefficient scores to descendents of equal height
+    merge = maxcoeffs(Z, coeffs)[n:] == coeffs[n:]
+    merge = merge[flat_ids] # Map merge scores to descendents of equal height
+    if not (return_nodes or return_coeffs):
+        return fcluster_merge(Z, merge)
+        
+    (T, M) = fcluster_merge(Z,
+                            merge,
+                            return_nodes=return_nodes)
+    out = (T,)
+    if return_coeffs:
+        c = coeffs[M[T-1]]
+        out += (c,)
+    if return_nodes:
+        out += (M,)
+    return out
     
     
 def coeffs_linkage(Z, leaf_data, coeff_fn):
@@ -112,22 +139,16 @@ def coeffs_linkage(Z, leaf_data, coeff_fn):
         `coeffs[i]` for `i<n` is defines the coefficient for the `i`th
         singleton node, and for `i>=n` is the coefficient for the cluster
         encoded by the `(i-n)`-th row in `Z`.
-    num_data_points : ndarray
-        `num_data_points[i]` is the number of data points used to compute
-        coefficient of cluster `i`, where `i<n` corresponds to singleton
-        clusters.
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
     
     node_data = dict()
-    num_points = np.zeros(2*n-1, dtype=int)
     coeffs = np.zeros(2*n-1, dtype=int)
     
     # Compute leaf clusters
     for (i, indices) in leaf_data.iteritems():
         node_data[i] = indices
-        num_points[i] = len(indices)
         coeffs[i] = coeff_fn(indices)
         
     # Bottom-up traversal
@@ -149,9 +170,7 @@ def coeffs_linkage(Z, leaf_data, coeff_fn):
             right_data = []
             
         current_data = left_data + right_data
-        num_current_points = len(current_data)
-        num_points[current_node] = num_current_points
-        if num_current_points > 0:
+        if current_data != []:
             node_data[current_node] = current_data
         
         # We only need to compute a new coefficient for new sets of data points, i.e. if
@@ -163,12 +182,11 @@ def coeffs_linkage(Z, leaf_data, coeff_fn):
         else:
             coeffs[current_node] = coeff_fn(current_data)
             
-    return (coeffs, num_points)
+    return coeffs
             
 
-def fcluster_coeffs(Z, coeffs, num_points, return_coeffs=False, return_nodes=False):
-    """Partition a hierarchical clustering by identifying clusters that
-    maximise a measure of taxonomic coherence.
+def maxcoeffs(Z, coeffs):
+    """Compute the maximum coefficient of cluster nodes and their descendents.
     
     Parameters
     ----------
@@ -178,11 +196,39 @@ def fcluster_coeffs(Z, coeffs, num_points, return_coeffs=False, return_nodes=Fal
         `coeffs[i]` for `i<n` is defines the taxonomic measure value for
         the `i`th singleton node, and for `i>=n` is the value for the cluster
         encoded by the `(i-n)`-th row in `Z`.
-    num_data_points : ndarray
-        `num_data_points[i]` is the number of taxonomic assignments made to contigs
-        in cluster `i`, where `i<n` corresponds to singleton clusters.
-    return_coeffs : bool
-        If True, also return array of cluster coefficients for original observations.
+        
+    Returns
+    -------
+    maxcoeffs : ndarray
+        `maxcoeffs[i]` is the maximum coefficient of any cluster below and 
+        including cluster `i`.
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    max_coeffs = np.copy(coeffs)
+    
+    # Bottom-up traversal
+    for i in range(n-1):
+        left_child = int(Z[i, 0])
+        right_child = int(Z[i, 1])
+        current_node = n+i
+        current_coeff = max_coeffs[current_node]
+        current_max_coeff = np.max([current_coeff, max_coeff[left_child], max_coeff[right_child]])
+        max_coeffs[current_node] = current_max_coeff
+    
+    return max_coeffs
+    
+    
+def fcluster_merge(Z, merge, return_nodes=False):
+    """Partition a hierarchical clustering by flattening clusters.
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    merge : ndarray
+        Boolean array. `merge[i]` indicates whether the cluster represented by
+        `Z[i, :]` should be flattened.
     return_nodes : bool
         If True, also return array of parent nodes in for flat clusters.
         
@@ -191,36 +237,22 @@ def fcluster_coeffs(Z, coeffs, num_points, return_coeffs=False, return_nodes=Fal
     T : ndarray
         1-D array. `T[i]` is the flat cluster number to which original
         observation `i` belongs.
-    leaf_max_coeffs : ndarray
-        1-D array. `leaf_max_coeffs[i]` is the cluster coefficient for the flat
-        cluster of original observation `i`. Only provided if `return_coeffs` is True.
     nodes : ndarray
         1-D array. `nodes[i]` is the cluster index corresponding to the `i+1`th flat
         cluster. Only provided if `return_nodes` is True.
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
-    num_points = np.asarray(num_points)
-    max_coeffs = np.copy(coeffs)
     
     # Compute leaf clusters
-    if return_coeffs:
-        leaf_max_coeffs = max_coeffs[:n].copy()
     leaf_max_nodes = np.arange(n)
     leaves_dict = dict([(i, [i]) for i in range(n)])
     
     # Bottom-up traversal
     for i in range(n-1):
         left_child = int(Z[i, 0])
-        left_num_points = num_points[left_child]
-        left_max_coeff = max_coeffs[left_child]
         right_child = int(Z[i, 1])
-        right_num_points = num_points[right_child]
-        right_max_coeff = max_coeffs[right_child]
         current_node = n+i
-        current_coeff = max_coeffs[current_node]
-        current_max_coeff = np.max([current_coeff, left_max_coeff, right_max_coeff])
-        max_coeffs[current_node] = current_max_coeff
         
         # update leaf cache
         current_leaves = leaves_dict[left_child] + leaves_dict[right_child]
@@ -230,9 +262,7 @@ def fcluster_coeffs(Z, coeffs, num_points, return_coeffs=False, return_nodes=Fal
         
         # Merge if cluster is at least as coherent taxonomically any descendent
         # cluster.
-        if current_coeff == current_max_coeff:
-            if return_coeffs:
-                leaf_max_coeffs[current_leaves] = current_max_coeff
+        if merge[i]:
             leaf_max_nodes[current_leaves] = n+i
     
     (nodes, bids) = np.unique(leaf_max_nodes, return_inverse=True)
@@ -242,8 +272,6 @@ def fcluster_coeffs(Z, coeffs, num_points, return_coeffs=False, return_nodes=Fal
         return bids 
         
     out = (bids,)
-    if return_coeffs:
-        out += (leaf_max_coeffs,)
     if return_nodes:
         out += (nodes,)
     return out
