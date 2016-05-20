@@ -139,7 +139,7 @@ class Profile:
     """
     pass
     
-class ClusterParamReader():
+class ClusterParamsReader():
     def __init__(self):
         import argparse
         
@@ -147,8 +147,8 @@ class ClusterParamReader():
         parser.add_argument('--minSize', type=int, default=10)
         parser.add_argument('--minLength', type=int, default=1500)
         parser.add_argument('--minBP', type=float, default=1e6)
-        parser.add_argument('--minPts', type=int, default=30)
-        parser.add_argument('--smooth', type=float, default=1e10)
+        parser.add_argument('--minPts', type=int)
+        parser.add_argument('--smooth', type=float)
         parser.add_argument('--linear', action="store_true")
         parser.add_argument('--weighted', action="store_false")
         parser.add_argument('--level', type=int, default=1)
@@ -159,14 +159,14 @@ class ClusterParamReader():
         args = []
         for l in f:
             l = l.strip()
-            if l.startsWith('#'):
+            if l.startswith('#'):
                 continue
             args += l.split()
             
         return self._parser.parse_args(args)
         
     def defaults(self):
-        return self._parser.parse_args([])
+        return self._parser.parse_args(['--minPts=30', '--smooth=1e10'])
         
     
 class ProfileManager:
@@ -206,12 +206,12 @@ class ProfileManager:
             print "Loading data from:", self.dbFileName
 
             
-        paramReader = ClusterParamReader()
+        pr = ClusterParamsReader()
         if self.paramsFileName is not None:
             try:
                 with open(self.paramsFileName, "r") as f:
                     try:
-                        params = reader.parse(f)
+                        params = pr.parse(f)
                     except:
                         print "Error parsing param file"
                         raise
@@ -219,7 +219,7 @@ class ProfileManager:
                 print "Error opening param file:", self.paramsFileName, sys.exc_info()[0]
                 raise
         else:
-            params = paramReader.defaults()
+            params = pr.defaults()
         if minLength is None:
             minLength = params.minLength
             

@@ -420,8 +420,8 @@ class HierarchyReachabilityPlotter:
         elif highlight=="markers":
             # color leaves by maximum ancestor coherence score
             scores = np.zeros(self._profile.numContigs)
-            #Z = hierarchy.linkage_from_reachability(o, d)
-            Z = sp_hierarchy.single(self._ddists)
+            Z = hierarchy.linkage_from_reachability(o, d)
+            #Z = sp_hierarchy.single(self._ddists)
             (_T, coeffs) = hierarchy.fcluster_classification(Z, self._profile.mapping, self._profile.clusterParams.level)
             coeffs = coeffs[o]
             smap = plt_cm.ScalarMappable(cmap=self._colourmap)
@@ -429,7 +429,8 @@ class HierarchyReachabilityPlotter:
             colours = smap.to_rgba(coeffs)
             text = []
         elif highlight=="node500":
-            Z = sp_hierarchy.single(dd)
+            Z = hierarchy.linkage_from_reachability(o, d)
+            #Z = sp_hierarchy.single(self._ddists)
             (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
             n = self._profile.numContigs
             height_map = hierarchy.flatten_nodes(Z)
@@ -475,7 +476,10 @@ class HierarchyRemovedPlotter:
         self._profile = profile
         ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
         ddist = ce.distances()
-        self._Z = sp_hierarchy.single(ddist)
+        (o, d) = distance.reachability_order(ddist)
+        Z = hierarchy.linkage_from_reachability(o, d)
+        #Z = sp_hierarchy.single(ddist)
+        self._Z = Z
         self._cf = ClassificiationConsensusFinder(self._profile.mapping, self._profile.clusterParams.level)
         (_r, self._node_dict) = to_tree(self._Z, rd=True)
         

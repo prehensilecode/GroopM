@@ -106,7 +106,9 @@ class HybridHierarchicalClusterEngine:
 
         print "Computing cluster hierarchy"
         print "Clustering 2^%f.2 pairs" % np.log2(len(dists))
-        Z = sp_hierarchy.single(dists)
+        #Z = sp_hierarchy.single(dists)
+        (o, d) = distance.reachability_order(dists)
+        Z = hierarchy.linkage_from_reachability(o, d)
         print "    %s" % timer.getTimeStamp()
         
         print "Finding cores"
