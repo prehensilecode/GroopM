@@ -380,7 +380,7 @@ class HierarchyReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="bins",
+             highlight="markers",
              fileName=""):
                  
         (o, d) = distance.reachability_order(self._ddists)
@@ -401,15 +401,6 @@ class HierarchyReachabilityPlotter:
         if highlight=="bins":
             # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
-            Z = hierarchy.linkage_from_reachability(o, d)
-            n = Z.shape[0]+1
-            (T, M) = hierarchy.fcluster_consensus(Z,
-                                                  dict(self._profile.mapping.iterindices()),
-                                                  self._cf.disagreement,
-                                                  return_nodes=True)
-            nodes = M[T-1]
-            binIds = np.zeros(2*n-1, dtype=Z.dtype)
-            binIds[nodes>=n] = Z[nodes[nodes>=n] - n, 2]
             
             flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
             iflag = np.cumsum(flag[:-1])
@@ -420,7 +411,6 @@ class HierarchyReachabilityPlotter:
             last_indices = np.flatnonzero(flag[1:])
             first_indices = np.concatenate(([0], last_indices[:-1]+1))
             group_centers = (first_indices+last_indices+1)*0.5
-            #group_centers = np.concatenate(([group_ends[0]+1*0.5], (group_ends[1:]+1+group_ends[:-1]+1)*0.5))
             group_heights = np.array([x[s:e+1].max() for (s, e) in zip(first_indices, last_indices)])
             group_labels = binIds[first_indices].astype(str)
             k = np.in1d(binIds[first_indices], bids)

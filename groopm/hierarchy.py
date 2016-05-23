@@ -78,7 +78,7 @@ def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=Fa
     return_coeffs : bool
         If True, also return array of cluster coefficients.
     return_nodes : bool
-        If True, also return array of parent nodes in for flat clusters.
+        If True, also return array of flat cluster root nodes.
         
     Returns
     -------
@@ -89,8 +89,8 @@ def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=Fa
         1-D array. `leaf_max_coeffs[i]` is the cluster coefficient for the flat
         cluster of original observation `i`. Only provided if `return_coeffs` is True.
     nodes : ndarray
-        1-D array. `nodes[i]` is the cluster index corresponding to the `i+1`th flat
-        cluster. Only provided if `return_nodes` is True.
+        1-D array. `nodes[i]` is the cluster index corresponding to the flat cluster 
+        of the `i`th original observation. Only provided if `return_nodes` is True.
         
     """
     Z = np.asarray(Z)
@@ -100,16 +100,19 @@ def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=Fa
     flat_ids = flatten_nodes(Z)
     coeffs[n:] = coeffs[flat_ids+n] # Map coefficient scores to descendents of equal height
     merge = maxcoeffs(Z, coeffs)[n:] == coeffs[n:]
-    merge = merge[flat_ids] # Map merge scores to descendents of equal height
+    merge = merge[flat_ids] # Map merge value to descendents of equal height
+    
+    
     if not (return_nodes or return_coeffs):
-        return fcluster_merge(Z, merge)
+        return T
         
     (T, M) = fcluster_merge(Z,
                             merge,
-                            return_nodes=return_nodes)
+                            return_nodes=True)
+        
     out = (T,)
     if return_coeffs:
-        c = coeffs[M[T-1]]
+        c = coeffs[M]
         out += (c,)
     if return_nodes:
         out += (M,)
@@ -228,7 +231,7 @@ def fcluster_merge(Z, merge, return_nodes=False):
         Boolean array. `merge[i]` indicates whether the cluster represented by
         `Z[i, :]` should be flattened.
     return_nodes : bool
-        If True, also return array of parent nodes in for flat clusters.
+        If True, also return array of flat cluster root nodes.
         
     Returns
     -------
@@ -236,8 +239,9 @@ def fcluster_merge(Z, merge, return_nodes=False):
         1-D array. `T[i]` is the flat cluster number to which original
         observation `i` belongs.
     nodes : ndarray
-        1-D array. `nodes[i]` is the cluster index corresponding to the `i+1`th flat
-        cluster. Only provided if `return_nodes` is True.
+        1-D array. `nodes[i]` is the cluster index corresponding to the flat
+        cluster of the `i`th original obseration. Only provided if
+        `return_nodes` is True.
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
@@ -263,7 +267,7 @@ def fcluster_merge(Z, merge, return_nodes=False):
         if merge[i]:
             leaf_max_nodes[current_leaves] = n+i
     
-    (nodes, bids) = np.unique(leaf_max_nodes, return_inverse=True)
+    (_, bids) = np.unique(leaf_max_nodes, return_inverse=True)
     bids += 1 # start bin ids from 1
     
     if not return_nodes:
@@ -271,7 +275,7 @@ def fcluster_merge(Z, merge, return_nodes=False):
         
     out = (bids,)
     if return_nodes:
-        out += (nodes,)
+        out += (leaf_max_nodes,)
     return out
     
      
