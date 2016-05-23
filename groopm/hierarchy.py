@@ -104,7 +104,7 @@ def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=Fa
     
     
     if not (return_nodes or return_coeffs):
-        return T
+        return fcluster_merge(Z, merge)
         
     (T, M) = fcluster_merge(Z,
                             merge,
@@ -112,8 +112,7 @@ def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=Fa
         
     out = (T,)
     if return_coeffs:
-        c = coeffs[M]
-        out += (c,)
+        out += (coeffs[M],)
     if return_nodes:
         out += (M,)
     return out
