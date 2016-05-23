@@ -234,7 +234,7 @@ class MarkerExtractor:
         
         profile = self.loadProfile(timer, bids, cutoff)
         bm = BinManager(profile)
-        dm = sp_distance.squareform(profile.markers.classification.makeDistances())
+        dm = sp_distance.squareform(profile.mapping.classification.distances())
         
         # load all the contigs which have been assigned to bins
 
@@ -244,11 +244,11 @@ class MarkerExtractor:
             file_name = os.path.join(self._outDir, "%s_bin_%d.txt" % (prefix, bid))
             
             bin_indices = bm.getBinIndices([bid])
-            idx = np.flatnonzero(np.in1d(profile.markers.rowIndices, bin_indices))
+            idx = np.flatnonzero(np.in1d(profile.mapping.rowIndices, bin_indices))
             
-            labels = profile.markers.markerNames[idx]
-            taxstrings = profile.markers.taxstrings[idx]
-            cnames = profile.contigNames[profile.markers.rowIndices[idx]]
+            labels = profile.mapping.markerNames[idx]
+            taxstrings = profile.mapping.taxstrings[idx]
+            cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
             dists = dm[np.ix_(idx, idx)]
             
             try:

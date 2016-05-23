@@ -318,10 +318,8 @@ class ProfileManager:
             markers.markerNames = np.asarray(con_markers)[keep]
             markers.numMappings = np.count_nonzero(keep)
             
-            taxstrings = np.asarray(con_taxstrings)[keep]
-            classification = Classification(taxstrings)
-            
-            markers.classification = classification
+            markers.taxstrings = np.asarray(con_taxstrings)[keep]
+            markers.classification = Classification(markers.taxstrings)
             prof.mapping = markers
             
         prof.clusterParams = params

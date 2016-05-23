@@ -86,7 +86,7 @@ class BinPlotter:
             makeSurePathExists(self._outDir)
 
     def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, removeBins=True, bids=[0])
+        return self._pm.loadData(timer, loadMarkers=False, loadBins=True, removeBins=True, bids=[0])
 
     def plot(self,
              timer,
@@ -380,7 +380,7 @@ class HierarchyReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="markers",
+             highlight="bins",
              fileName=""):
                  
         (o, d) = distance.reachability_order(self._ddists)
