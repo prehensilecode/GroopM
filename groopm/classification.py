@@ -144,7 +144,7 @@ def parse_taxstring(taxstring):
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class ClassificationConsensusFinder:
+class ClassificationManager:
     """Wraps a connectivity matrix and determines consensus classifications by
     finding `cliques` (fully-connected subgraphs) in the matrix.
     """

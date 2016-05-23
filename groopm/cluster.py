@@ -60,6 +60,7 @@ import recruit
 import hierarchy
 from binManager import BinManager
 from profileManager import ProfileManager
+from classification import ClassificationManager
 
 ###############################################################################
 ###############################################################################
@@ -152,7 +153,10 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._profile.clusterParams.minPts)
         
     def fcluster(self, Z):
-        return hierarchy.fcluster_consensus(Z, self._profile.mapping, level=self._profile.clusterParams.level)
+        cf = ClassificationManager(self._profile.mapping, level=self._profile.clusterParams.level)
+        return hierarchy.fcluster_coeffs(Z,
+                                         dict(self._profile.mapping.iterindices()),
+                                         cf.disagreement)
     
             
 # Mediod clustering

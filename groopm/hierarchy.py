@@ -53,7 +53,6 @@ import scipy.spatial.distance as sp_distance
 
 # local imports
 import distance
-from classification import ClassificationConsensusFinder
 
 np.seterr(all='raise')
 
@@ -61,18 +60,21 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ############################################################################### 
-def fcluster_consensus(Z, markers, level, return_coeffs=False, return_nodes=False):
-    """Find flat clusters using a measure of taxonomic coherence for nodes a
+def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=False):
+    """Find flat clusters by maximising cluster coefficient scores for nodes a
     hierarchical clustering.
     
     Parameters
     ----------
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
-    markers : Mapping object
-        See ProfileManager.py.
-    level : int
-        Taxonomic level at which to define clusters.
+    leaf_data : dict
+        Dictionary with leaf node ids as keys with values corresponding to
+        lists of values to be passed to coeff_fn
+    coeff_fn : function
+        Function called at each node in `Z` with the concatenation of values 
+        from `leaf_data` for all descendent leaves of the node, and computes
+        the node coefficient.
     return_coeffs : bool
         If True, also return array of cluster coefficients.
     return_nodes : bool
@@ -94,11 +96,7 @@ def fcluster_consensus(Z, markers, level, return_coeffs=False, return_nodes=Fals
     Z = np.asarray(Z)
     n = Z.shape[0]+1
     
-    coeffs = coeffs_linkage(
-        Z, 
-        dict(markers.iterindices()),
-        ClassificationConsensusFinder(markers, level).disagreement
-        )
+    coeffs = coeffs_linkage(Z, leaf_data, coeff_fn)
     flat_ids = flatten_nodes(Z)
     coeffs[n:] = coeffs[flat_ids+n] # Map coefficient scores to descendents of equal height
     merge = maxcoeffs(Z, coeffs)[n:] == coeffs[n:]
@@ -213,7 +211,7 @@ def maxcoeffs(Z, coeffs):
         right_child = int(Z[i, 1])
         current_node = n+i
         current_coeff = max_coeffs[current_node]
-        current_max_coeff = np.max([current_coeff, max_coeff[left_child], max_coeff[right_child]])
+        current_max_coeff = np.max([current_coeff, max_coeffs[left_child], max_coeffs[right_child]])
         max_coeffs[current_node] = current_max_coeff
     
     return max_coeffs
@@ -268,7 +266,7 @@ def fcluster_merge(Z, merge, return_nodes=False):
     (nodes, bids) = np.unique(leaf_max_nodes, return_inverse=True)
     bids += 1 # start bin ids from 1
     
-    if not (return_coeffs or return_nodes):
+    if not return_nodes:
         return bids 
         
     out = (bids,)

@@ -32,9 +32,10 @@ import numpy.random as np_random
 from tools import assert_equal_arrays, assert_isomorphic
 import groopm.distance as distance
 from groopm.hierarchy import (coeffs_linkage,
-                              merge_linkage,
+                              maxcoeffs,
                               fcluster_merge,
                               flatten_nodes,
+                              fcluster_coeffs,
                               linkage_from_reachability,
                               ancestors,
                              )
@@ -170,7 +171,7 @@ def test_maxcoeffs():
                         "`maxcoeffs` computes maximum coefficients for a "
                         "balanced tree")
                         
-    """Assign coeffs:
+    """Assign coefficients:
         0:1
         |----7:0----+
         1:1         |
@@ -179,9 +180,9 @@ def test_maxcoeffs():
         3:2   |-6:2-+
         |-5:0-+
         4:2
-    """                    
+    """
     assert_equal_arrays(maxcoeffs(Z, [1, 1, 2, 2, 2, 0, 2, 0, 0]),
-                        [0, 1, 2, 2, 2, 2, 2, 1, 2],
+                        [1, 1, 2, 2, 2, 2, 2, 1, 2],
                         "`maxcoeffs` returns maximum coefficients for "
                         "balanced tree with singleton and non-singleton clusters")
                       
@@ -387,7 +388,55 @@ def test_flatten_nodes():
     assert_equal_arrays(flatten_nodes(Z),
                         [0, 1, 5, 5, 5, 5],
                         "`flat_nodes` assigns nodes the indices of parents and grandparents of equal height")
-                     
+ 
+ 
+def test_fcluster_coeffs():      
+    """Z describes tree:
+        5
+        |-9-+
+        6   |-10-+
+        2---+    |
+                 |
+        1        |-12
+        |-8-+    |
+        0   |    |
+            |-11-+
+        3   |
+        |-7-+
+        4
+    """
+    Z = np.array([[ 3.,  4., 1., 2.],
+                  [ 0.,  1., 2., 2.],
+                  [ 5.,  6., 3., 2.],
+                  [ 2.,  9., 3., 3.],
+                  [ 7.,  8., 3., 4.],
+                  [10., 11., 3., 7.]])
+                  
+    """Assign leaf data
+        5:[]
+        |---9---+
+        6:[-1]  |-10-+
+        2:[]----+    |
+                     |
+        1:[1]        |-12
+        |---8---+    |
+        0:[]    |    |
+                |-11-+
+        3:[]    |
+        |---7---+
+        4:[1]
+    """
+    assert_isomorphic(fcluster_coeffs(Z, {1:[1], 4:[1], 6:[-1]}, lambda x: abs(sum(x))),
+                        [1, 1, 1, 1, 1, 1, 1],
+                        "`fcluster_coeffs` flattens nested clusters of equal height "
+                        "when highest cluster would be flattened")
+                
+    assert_isomorphic(fcluster_coeffs(Z, {1:[1], 4:[1], 6:[-1]}, min),
+                        [1, 1, 2, 3, 3, 4, 5],
+                        "`fcluster_coeffs` doesn't partially flatten nested "
+                        "clusters of equal height when the highest cluster does "
+                        "not have a maximum coefficient")
+                        
                      
 def test_linkage_from_reachability():
     """
