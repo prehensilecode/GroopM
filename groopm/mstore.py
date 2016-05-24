@@ -1385,7 +1385,11 @@ class ContigParser:
         contigInfo = {} # save everything here first so we can sort accordingly
         for cid,seq in self.readFasta(contigFile):
             if len(seq) >= cutoff:
-                contigInfo[cid] = (kse.getKSig(seq.upper()), len(seq), self.calculateGC(seq))
+                try:
+                    info = (kse.getKSig(seq.upper()), len(seq), self.calculateGC(seq))
+                except ZeroDivisionError:
+                    continue
+                contigInfo[cid] = info
 
         # sort the contig names here once!
         con_names = np.array(sorted(contigInfo.keys()))
