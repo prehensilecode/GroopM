@@ -183,7 +183,9 @@ class core_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
-        parser.add_argument('--paramsfile', help="file containing clustering parameters")
+        parser.add_argument('-c', '--cutoff', default=1500, help="cutoff contig size for core creation")
+        parser.add_argument('-s', '--size', default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
+        parser.add_argument('-P', '--points', default=20, help="minimum number of contigs which define a core")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.set_defaults(run=self)
         
@@ -192,8 +194,12 @@ class core_command_configure:
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
-        cc = groopm.CoreCreator(options.dbname, options.markerfile, options.paramsfile)
-        cc.run(timer, force=options.force)
+        cc = groopm.CoreCreator(options.dbname, options.markerfile)
+        cc.run(timer,
+               minLength=options.cutoff,
+               minSize=options.size,
+               minPts=options.points,
+               force=options.force)
         
         
 class extract_command_configure:
@@ -395,7 +401,6 @@ class plot_command_configure:
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
-        parser.add_argument('--paramsfile', help="file containing clustering parameters")
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
@@ -413,7 +418,6 @@ class plot_command_configure:
 
         bplot = groopm.BinPlotter(options.dbname,
                                   options.markerfile,
-                                  options.paramsfile,
                                   folder=None if options.interactive else options.out_folder)
         bplot.plot(timer,
                    bids=options.bids,
@@ -429,7 +433,10 @@ class reach_command_configure:
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
-        parser.add_argument('--paramsfile', help="file containing clustering parameters")
+        parser.add_argument('-c', '--cutoff', help="cutoff contig size for core creation")
+        parser.add_argument('-s', '--size', default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
+        parser.add_argument('-P', '--points', default=20, help="minimum number of contigs which define a core")
+        #parser.add_argument('--paramsfile', help="file containing clustering parameters")
         parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
@@ -444,9 +451,11 @@ class reach_command_configure:
 
         rplot = groopm.ReachabilityPlotter(options.dbname,
                                            options.markerfile,
-                                           options.paramsfile,
                                            folder=None if options.interactive else options.out_folder)
         rplot.plot(timer,
+                   minLength=options.cutoff,
+                   minSize=options.size,
+                   minPts=options.points,
                    bids=options.bids,
                    prefix=options.prefix)
                    
@@ -457,7 +466,10 @@ class tree_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
-        parser.add_argument('--paramsfile', help="file containing clustering parameters")
+        parser.add_argument('-c', '--cutoff', help="cutoff contig size for core creation")
+        parser.add_argument('-s', '--size', help="cumulative size of contigs which define a core, regardless of number of contigs")
+        parser.add_argument('-P', '--points', help="minimum number of contigs which define a core")
+        #parser.add_argument('--paramsfile', help="file containing clustering parameters")
         parser.add_argument('-p', '--prefix', default="TREE", help="prefix to apply to output files")
         parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
@@ -472,9 +484,11 @@ class tree_command_configure:
 
         tplot = groopm.TreePlotter(options.dbname,
                                    options.markerfile,
-                                   options.paramsfile,
                                    folder=None if options.interactive else options.out_folder)
         tplot.plot(timer,
+                   minLength=options.cutoff,
+                   minSize=options.size,
+                   minPts=options.pts,
                    prefix=options.prefix)
                    
 

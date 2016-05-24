@@ -82,6 +82,7 @@ class BinExtractor:
     def loadProfile(self, timer, bids=[], cutoff=0):
         removeBins = bids is None or bids == []
         return self._pm.loadData(timer, 
+                                 loadMarkers=False,
                                  loadBins=True,
                                  bids=[0] if removeBins else bids,
                                  removeBins=removeBins,
@@ -276,6 +277,7 @@ class BinStatsDumper:
         
     def loadProfile(self, timer):
         return self._pm.loadData(timer,
+                                 loadMarkers=False,
                                  loadBins=True,
                                  bids=[0],
                                  removeBins=True,

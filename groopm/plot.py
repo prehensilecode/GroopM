@@ -78,8 +78,8 @@ np.seterr(all='raise')
 ###############################################################################
 class BinPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName=None, paramsFileName=None, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
+    def __init__(self, dbFileName, markerFileName=None, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
@@ -121,23 +121,31 @@ class BinPlotter:
         
 class ReachabilityPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName, paramsFileName=None, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
+    def __init__(self, dbFileName, markerFileName, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
             
-    def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, loadMarkers=True, minLength=1500)
+    def loadProfile(self, timer, minLength=None, minSize=None, minPts=None):
+        profile = self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True)
+        if minSize is not None:
+            profile.minSize = minSize
+        if minPts is not None:
+            profile.minPts = minPts
+        return profile
         
     def plot(self,
              timer,
+             minLength=None,
+             minSize=None,
+             minPts=None,
              bids=None,
              prefix="REACH",
             ):
         
-        profile = self.loadProfile(timer)
+        profile = self.loadProfile(timer, minLength=minLength, minSize=minSize, minPts=minPts)
 
         bm = BinManager(profile)
         if bids is None or len(bids) == 0:
@@ -156,23 +164,31 @@ class ReachabilityPlotter:
         
 class TreePlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName, paramsFileName=None, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
+    def __init__(self, dbFileName, markerFileName, folder=None):
+        self._pm = ProfileManager(dbFileName, markerFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
             
-    def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, loadMarkers=True,
+    def loadProfile(self, timer, minLength=None, minSize=None, minPts=None):
+        profile = self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True,
                 removeBins=True, bids=[0])
+        if minSize is not None:
+            profile.minSize = minSize
+        if minPts is not None:
+            profile.minPts = minPts
+        return profile        
         
     def plot(self,
              timer,
+             minLength=None,
+             minSize=None,
+             minPts=None,
              prefix="TREE"
             ):
         
-        profile = self.loadProfile(timer)
+        profile = self.loadProfile(timer, minLength=minLength, minSize=minSize, minPts=minPts)
 
         fplot = HierarchyRemovedPlotter(profile)
         print "    %s" % timer.getTimeStamp()
@@ -375,7 +391,7 @@ class HierarchyReachabilityPlotter:
         self._colourmap = getColorMap(colourmap)
         self._ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
         self._ddists = self._ce.distances()
-        self._cf = ClassificationManager(self._profile.mapping, self._profile.clusterParams.level)
+        self._cf = ClassificationManager(self._profile.mapping)
         
     def plot(self,
              bids,
@@ -430,32 +446,6 @@ class HierarchyReachabilityPlotter:
             smap.set_array(coeffs)
             colours = smap.to_rgba(coeffs)
             text = []
-        elif highlight=="node500":
-            Z = hierarchy.linkage_from_reachability(o, d)
-            #Z = sp_hierarchy.single(self._ddists)
-            (_r, node_dict) = sp_hierarchy.to_tree(Z, rd=True)
-            n = self._profile.numContigs
-            height_map = hierarchy.flatten_nodes(Z)
-            node = node_dict[n+height_map[800]]
-            cindex = np.zeros(n, dtype=int)
-            
-            # colour subtrees of descendent nodes up to a maximum depth of 3
-            stack = [(2, node)]
-            counter = 0
-            while len(stack) > 0:
-                (d, cnode) = stack.pop()
-                if cnode.is_leaf() or d == 0:
-                    counter += 1
-                    cindex[cnode.pre_order(lambda x: x.get_id())] = counter
-                elif d > 0:
-                    stack.append((d-1, cnode.get_left()))
-                    stack.append((d-1, cnode.get_right()))
-            cindex = cindex[o]
-            
-            colours = np.array(['r', 'g', 'b', 'c', 'y', 'm'], dtype='|S1')[cindex % 6]
-            colours[cindex == 0] = 'k'
-            smap = None
-            text = []
         else:
             raise ValueError("Invalid `highlight` argument parameter value: `%s`" % highlight)
         
@@ -482,7 +472,7 @@ class HierarchyRemovedPlotter:
         Z = hierarchy.linkage_from_reachability(o, d)
         #Z = sp_hierarchy.single(ddist)
         self._Z = Z
-        self._cf = ClassificiationConsensusFinder(self._profile.mapping, self._profile.clusterParams.level)
+        self._cf = ClassificiationConsensusFinder(self._profile.mapping)
         (_r, self._node_dict) = to_tree(self._Z, rd=True)
         
     def plot(self,

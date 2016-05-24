@@ -68,26 +68,35 @@ from classification import ClassificationManager
 ###############################################################################
 
 class CoreCreator:
-    def __init__(self, dbFileName, markerFileName, paramsFileName):
-        self._pm = ProfileManager(dbFileName, markerFileName, paramsFileName)
+    def __init__(self, dbFileName, markerFileName):
+        self._pm = ProfileManager(dbFileName, markerFileName)
         
-    def loadProfile(self, timer):
-        return self._pm.loadData(timer)
+    def loadProfile(self, timer, minLength, minSize, minPts):
+        profile = self._pm.loadData(timer,
+                                    minLength=minLength,
+                                    loadMarkers=True,
+                                    loadBins=False)
+        profile.minSize = minSize
+        profile.minPts = minPts
+        return profile
         
     def run(self,
             timer,
+            minLength,
+            minSize,
+            minPts,
             force=False):
         # check that the user is OK with nuking stuff...
         if not force and not self._pm.promptOnOverwrite():
             return
             
-        profile = self.loadProfile(timer)
+        profile = self.loadProfile(timer, minLength=minLength, minSize=minSize, minPts=minPts)
         
         ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
         ce.makeBins(timer, out_bins=profile.binIds)
         
         bm = BinManager(profile)
-        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=profile.clusterParams.minSize, minBP=profile.clusterParams.minBP)
+        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
 
         # Now save all the stuff to disk!
         print "Saving bins"
@@ -130,13 +139,6 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     def __init__(self, profile):
         self._profile = profile
-        smooth = self._profile.clusterParams.smooth
-        if smooth is None:
-            self._minWt = None
-        elif self._profile.clusterParams.linear:
-            self._minWt = (smooth - self._profile.contigLengths) * self._profile.contigLengths
-        else:
-            self._minWt = np.full(self._profile.numContigs, smooth)
                 
     def feature_global_ranks(self):
         """Feature distance ranks scaled by contig lengths"""
@@ -144,16 +146,17 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         raw_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in features)
         weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         scale_factor = 1. / weights.sum()
-        distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1)*scale_factor
+        distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
         return (distance_ranks, weights)
         
     def distances(self):
         (feature_ranks, weights) = self.feature_global_ranks()
         rank_norms = np_linalg.norm(feature_ranks, axis=0)
-        return distance.density_distance(rank_norms, weights=weights, minWt=self._minWt, minPts=self._profile.clusterParams.minPts)
+        minWt = (self._profile.minSize - self._profile.contigLengths) * self._profile.contigLengths
+        return distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=self._profile.minPts)
         
     def fcluster(self, Z):
-        cf = ClassificationManager(self._profile.mapping, level=self._profile.clusterParams.level)
+        cf = ClassificationManager(self._profile.mapping)
         return hierarchy.fcluster_coeffs(Z,
                                          dict(self._profile.mapping.iterindices()),
                                          cf.disagreement)

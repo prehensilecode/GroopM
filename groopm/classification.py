@@ -148,10 +148,9 @@ class ClassificationManager:
     """Wraps a connectivity matrix and determines consensus classifications by
     finding `cliques` (fully-connected subgraphs) in the matrix.
     """
-    def __init__(self, mapping, level):
+    def __init__(self, mapping):
         self._classification = mapping.classification
-        self._level = level
-        self._mC = mapping.makeConnectivity(self._level)
+        self._mC = mapping.makeConnectivity()
         
     def maxClique(self, indices):
         """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`

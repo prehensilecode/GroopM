@@ -102,7 +102,6 @@ def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=Fa
     merge = maxcoeffs(Z, coeffs)[n:] == coeffs[n:]
     merge = merge[flat_ids] # Map merge value to descendents of equal height
     
-    
     if not (return_nodes or return_coeffs):
         return fcluster_merge(Z, merge)
         

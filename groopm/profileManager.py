@@ -88,7 +88,7 @@ class Mapping:
         """Returns an iterator of profile and marker indices."""
         return group_iterator(self.rowIndices)
                  
-    def makeConnectivity(self, level):
+    def makeConnectivity(self, level=1):
         """Connectivity matrix to specified taxonomic level"""
         dm = sp_distance.squareform(self.classification.distances() <= level)
         
@@ -134,39 +134,15 @@ class Profile:
         Corresponds to number of columns of covProfiles array.
     mapping : Mapping object
         See above.
-    clusterParams : ClusterParams object
-        See conf.py.
+    minLength : int
+        Contig length cutoff.
+    minPts : int
+        Minimum number of contigs to form a bin core.
+    minSize : int
+        Minimum length of contigs to form a bin core (regardless of number of contigs).
     """
     pass
-    
-class ClusterParamsReader():
-    def __init__(self):
-        import argparse
-        
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--minSize', type=int, default=10)
-        parser.add_argument('--minLength', type=int, default=1500)
-        parser.add_argument('--minBP', type=float, default=1e6)
-        parser.add_argument('--minPts', type=int)
-        parser.add_argument('--smooth', type=float)
-        parser.add_argument('--linear', action="store_true")
-        parser.add_argument('--weighted', action="store_false")
-        parser.add_argument('--level', type=int, default=1)
-        
-        self._parser = parser
-        
-    def parse(self, f):
-        args = []
-        for l in f:
-            l = l.strip()
-            if l.startswith('#'):
-                continue
-            args += l.split()
-            
-        return self._parser.parse_args(args)
-        
-    def defaults(self):
-        return self._parser.parse_args(['--minPts=30', '--smooth=1e10'])
+       
         
     
 class ProfileManager:
@@ -174,12 +150,11 @@ class ProfileManager:
 
     Mostly a wrapper around a group of numpy arrays and a pytables quagmire
     """
-    def __init__(self, dbFileName, markerFileName=None, paramsFileName=None):
+    def __init__(self, dbFileName, markerFileName=None):
         # misc
         self._dm = DataManager()            # most data is saved to hdf
         self.dbFileName = dbFileName         # db containing all the data we'd like to use
         self.markerFileName = markerFileName
-        self.paramsFileName = paramsFileName
 
     def loadData(self,
                  timer,
@@ -205,24 +180,6 @@ class ProfileManager:
         if verbose:
             print "Loading data from:", self.dbFileName
 
-            
-        pr = ClusterParamsReader()
-        if self.paramsFileName is not None:
-            try:
-                with open(self.paramsFileName, "r") as f:
-                    try:
-                        params = pr.parse(f)
-                    except:
-                        print "Error parsing param file"
-                        raise
-            except:
-                print "Error opening param file:", self.paramsFileName, sys.exc_info()[0]
-                raise
-        else:
-            params = pr.defaults()
-        if minLength is None:
-            minLength = params.minLength
-            
         try:
             prof = Profile()
             
@@ -236,6 +193,8 @@ class ProfileManager:
             prof.indices = self._dm.getConditionalIndices(self.dbFileName,
                                                           condition=condition,
                                                           silent=silent)
+            if minLength is not None:
+                prof.minLength = minLength
 
             # Collect contig data
             if(verbose):
@@ -322,7 +281,6 @@ class ProfileManager:
             markers.classification = Classification(markers.taxstrings)
             prof.mapping = markers
             
-        prof.clusterParams = params
                 
         if(not silent):
             print "    %s" % timer.getTimeStamp()

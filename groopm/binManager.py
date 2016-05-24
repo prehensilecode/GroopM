@@ -147,12 +147,12 @@ class BinManager:
         
         return out
         
-    def unbinLowQualityAssignments(self, out_bins, minBP=0, minSize=0):
+    def unbinLowQualityAssignments(self, out_bins, minSize=0, minPts=0):
         """Check bin assignment quality"""
         low_quality = []
         stats = self.getBinStats(out_bins)
         for (i, bid) in enumerate(stats.bids):
-            if not _isGoodBin(stats.sizes[i], stats.numContigs[i], minBP=minBP, minSize=minSize):
+            if not _isGoodBin(stats.sizes[i], stats.numContigs[i], minSize=minSize, minPts=minPts):
                 # This partition is too small, ignore
                 low_quality.append(bid)
 
@@ -164,11 +164,11 @@ class BinManager:
     
     
     
-def _isGoodBin(totalBP, binSize, minBP, minSize):
+def _isGoodBin(binSize, binPts, minSize, minPts):
     """Does this bin meet my exacting requirements?"""
 
     # contains enough bp or enough contigs
-    return totalBP >= minBP or binSize >= minSize
+    return binSize >= minSize or binPts >= minPts
     
 
 ###############################################################################
