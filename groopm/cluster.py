@@ -139,22 +139,22 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     def __init__(self, profile):
         self._profile = profile
-                
+    
     def feature_global_ranks(self):
         """Feature distance ranks scaled by contig lengths"""
         features = (self._profile.covProfiles, self._profile.kmerSigs)
-        raw_distances = tuple(sp_distance.pdist(f, metric="euclidean") for f in features)
+        raw_distances = np.array([sp_distance.pdist(f, metric="euclidean") for f in features])
         weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
         scale_factor = 1. / weights.sum()
         distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
         return (distance_ranks, weights)
-        
+    
     def distances(self):
         (feature_ranks, weights) = self.feature_global_ranks()
         rank_norms = np_linalg.norm(feature_ranks, axis=0)
         minWt = (self._profile.minSize - self._profile.contigLengths) * self._profile.contigLengths
         return distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=self._profile.minPts)
-        
+    
     def fcluster(self, Z):
         cf = ClassificationManager(self._profile.mapping)
         return hierarchy.fcluster_coeffs(Z,

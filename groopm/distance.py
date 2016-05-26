@@ -52,7 +52,7 @@ import scipy.spatial.distance as sp_distance
 from Queue import PriorityQueue
 
 # local imports
-from utils import multi_apply_along_axis
+#from utils import multi_apply_along_axis
 
 np.seterr(all='raise')
 
@@ -78,9 +78,8 @@ def mediod(Y):
     index = sp_distance.squareform(Y).sum(axis=1).argmin()
 
     return index
-
-    
-def argrank(array, weights=None, axis=0):
+     
+def argrank_(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if weights is None:
         return np.apply_along_axis(_rank_with_ties, axis, array)
@@ -90,6 +89,13 @@ def argrank(array, weights=None, axis=0):
         indexer = [None]*len(array.shape)
         indexer[axis] = slice(None)
         return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
+
+
+def argrank(array, weights=None, axis=0):
+    """Return the positions of elements of a when sorted along the specified axis"""
+    if axis is None:
+        return _rank_with_ties(array, weights=weights)
+    return np.apply_along_axis(_rank_with_ties, axis, array, weights=weights)
 
         
 def density_distance(Y, weights=None, minWt=None, minPts=None):
@@ -292,14 +298,15 @@ def condensed_index_(n, i, j):
     
       
 # helper
+@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
-    a = np.asarray(a)
+    a = np.asanyarray(a)
     shape = a.shape
     size = a.size
     
     if weights is not None:
-        weights = np.asarray(weights)
+        weights = np.asanyarray(weights)
         if weights.shape != shape:
             raise ValueError('weights should have the same shape as a.')
         weights = weights.ravel()

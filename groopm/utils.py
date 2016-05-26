@@ -101,10 +101,10 @@ def multi_apply_along_axis(func1d, axis, tup, *args, **kwargs):
         `func1d` returns a scalar `outarr` will have one fewer dimensions than
         `arr`.
     """
-    tup = tuple(np.asarray(t) for t in tup)
-    ns = np.array([t.shape[axis] for t in tup])
+    #tup = tuple(np.asarray(t) for t in tup)
+    ns = np.array([np.shape(t)[axis] for t in tup])
     a = np.concatenate(tup, axis=axis)
-    edges = np.concatenate(([0, ], ns.cumsum()))
+    edges = np.concatenate(([0], ns.cumsum()))
     
     def multi_func1d(arr): 
         splits = tuple([arr[s:e] for (s, e) in zip(edges[:-1], edges[1:])])

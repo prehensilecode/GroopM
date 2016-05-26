@@ -188,7 +188,7 @@ class core_command_configure:
         parser.add_argument('-P', '--points', type=int, default=20, help="minimum number of contigs which define a core")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.set_defaults(run=self)
-        
+    
     def __call__(_self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
