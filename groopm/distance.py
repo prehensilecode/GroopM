@@ -79,6 +79,7 @@ def mediod(Y):
     return index
     
 
+@profile
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
@@ -221,7 +222,6 @@ def reachability_order(Y):
     
     
 #condensed_index_vectorised = np.vectorize(condensed_index, otypes=[np.intp])
-    
 def condensed_index(n, i, j):
     """
     Calculate the condensed index of element (i, j) in an n x n condensed
@@ -291,6 +291,7 @@ def condensed_index_(n, i, j):
     
       
 # helper
+@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)

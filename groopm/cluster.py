@@ -140,6 +140,7 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
     def __init__(self, profile):
         self._profile = profile
     
+    @profile
     def feature_global_ranks(self):
         """Feature distance ranks scaled by contig lengths"""
         features = (self._profile.covProfiles, self._profile.kmerSigs)
