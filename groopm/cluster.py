@@ -155,6 +155,7 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         minWt = (self._profile.minSize - self._profile.contigLengths) * self._profile.contigLengths
         return distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=self._profile.minPts)
     
+    @profile
     def fcluster(self, Z):
         cf = ClassificationManager(self._profile.mapping)
         return hierarchy.fcluster_coeffs(Z,

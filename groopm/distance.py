@@ -52,7 +52,6 @@ import scipy.spatial.distance as sp_distance
 from Queue import PriorityQueue
 
 # local imports
-#from utils import multi_apply_along_axis
 
 np.seterr(all='raise')
 
@@ -78,18 +77,7 @@ def mediod(Y):
     index = sp_distance.squareform(Y).sum(axis=1).argmin()
 
     return index
-     
-def argrank_(array, weights=None, axis=0):
-    """Return the positions of elements of a when sorted along the specified axis"""
-    if weights is None:
-        return np.apply_along_axis(_rank_with_ties, axis, array)
-    else:
-        array = np.asarray(array)
-        weights = np.asarray(weights)
-        indexer = [None]*len(array.shape)
-        indexer[axis] = slice(None)
-        return multi_apply_along_axis(lambda (a, w): _rank_with_ties(a, w), axis, np.broadcast_arrays(array, weights[indexer]))
-
+    
 
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
@@ -97,7 +85,8 @@ def argrank(array, weights=None, axis=0):
         return _rank_with_ties(array, weights=weights)
     return np.apply_along_axis(_rank_with_ties, axis, array, weights=weights)
 
-        
+
+@profile
 def density_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
@@ -142,7 +131,8 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
     return dd
         
-        
+
+@profile
 def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -166,15 +156,16 @@ def core_distance_weighted(Y, weights, minWt):
     dm = sp_distance.squareform(Y)
     wm = sp_distance.squareform(weights)
     sorting_indices = dm.argsort(axis=1)
-    core_dist = np.empty(n, dtype=dm.dtype)
+    core_dist = np.empty(n, dtype=Y.dtype)
     for i in range(n):
-        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt[i]) - 1)
-        #minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt) - 1)
+        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt[i]))
+        #minPts -= 1
         core_dist[i] = dm[i, sorting_indices[i, minPts]]
     
     return core_dist
             
         
+@profile
 def core_distance(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
@@ -228,6 +219,8 @@ def reachability_order(Y):
         d[to_visit] = np.minimum(d[to_visit], dm[closest, to_visit])
     return (o, d)
     
+    
+#condensed_index_vectorised = np.vectorize(condensed_index, otypes=[np.intp])
     
 def condensed_index(n, i, j):
     """
@@ -298,7 +291,6 @@ def condensed_index_(n, i, j):
     
       
 # helper
-@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
