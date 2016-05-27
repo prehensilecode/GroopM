@@ -48,7 +48,7 @@ __email__ = "t.lamberton@uq.edu.au"
 ###############################################################################
 
 # GroopM imports
-from mstore import GMDataManager as DataManager
+from data3 import GMDataManager as DataManager
 from cluster import CoreCreator
 from extract import BinExtractor, MarkerExtractor, BinStatsDumper
 from import_ import BinImporter

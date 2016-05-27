@@ -51,7 +51,7 @@ import scipy.spatial.distance as sp_distance
 import sys
 
 # GroopM imports
-from mstore import GMDataManager as DataManager
+from data3 import GMDataManager as DataManager
 from utils import CSVReader, group_iterator
 from classification import Classification
 
