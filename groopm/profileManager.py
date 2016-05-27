@@ -324,30 +324,6 @@ class ProfileManager:
             print "Will Overwrite database",self.dbFileName
         return True
 
-
-class MappingReader:
-    """Read a file of tab delimited contig names, marker names and optionally classifications."""
-    def parse(self, fp, doclassifications=False):
-        con_names = []
-        con_markers = []
-        if doclassifications:
-            con_taxstrings = []
-           
-        reader = CSVReader()
-        for l in reader.readCSV(fp, "\t"):
-
-            con_names.append(l[0])
-            con_markers.append(l[1])
-            if doclassifications:
-                if len(l) > 2:
-                    con_taxstrings.append(l[2])
-                else:
-                    con_taxstrings.append("")
-        
-        if doclassifications:
-            return (con_names, con_markers, con_taxstrings)
-        else:
-            return (con_names, con_markers)
         
 #------------------------------------------------------------------------------
 # Helpers
@@ -370,7 +346,6 @@ def _getConditionString(minLength=None, maxLength=None, bids=None, removeBins=Fa
     else:
         return "(" + " & ".join(conds) + ")"
         
-
 ###############################################################################
 ###############################################################################
 ###############################################################################
