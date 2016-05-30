@@ -242,6 +242,8 @@ class DataManager:
     'z' : tables.FloatCol(pos=2)
 
     """
+    kms_dtype = lambda mers: [(mer, float) for mer in mers]
+    coverage_dtype = lambda cols: [(col, float) for col in cols]
     normCoverage_dtype = [('normCov', float)]
     links_dtype = [('contig1', int),
                    ('contig2', int),
@@ -390,8 +392,7 @@ class DataManager:
                 # write kmer sigs
                 #------------------------
                 # store the raw calculated kmer sigs in one table
-                kms_dtype = [(mer, float) for mer in kse.kmerCols]
-                kms_desc = np.array([tuple(i) for i in con_ksigs], dtype=kms_dtype)
+                kms_desc = np.array([tuple(i) for i in con_ksigs], dtype=self.kms_dtype(kse.kmerCols))
                 try:
                     h5file.create_table(profile_group,
                                        'kms',
@@ -415,8 +416,7 @@ class DataManager:
                 stoitColNames = np.array(stoitColNames)
 
                 # raw coverages
-                coverage_dtype = [(colName, float) for colName in stoitColNames]
-                coverage_desc = np.array([tuple(i) for i in cov_profiles], dtype=coverage_dtype)
+                coverage_desc = np.array([tuple(i) for i in cov_profiles], dtype=self.coverage_dtype(stoitColNames))
                 try:
                     h5file.create_table(profile_group,
                                        'coverage',
@@ -540,20 +540,61 @@ class DataManager:
                 print "Error, unrecognised choice '"+option.upper()+"'"
                 minimal = True
 
+#------------------------------------------------------------------------------
+# GET / SET TABLES - GENERIC
+
+    def withCondition(self, dbFileName, path, table, condition, do, silent=False, checkUpgrade=True):
+        """return the indices into the db which meet the condition"""
+        # check the DB out and see if we need to change anything about it
+        if checkUpgrade:
+            self.checkAndUpgradeDB(dbFileName, silent=silent)
+
+        if('' == condition):
+            raise ValueError("'condition' parameter cannot be an empty string.")
+        try:
+            with tables.open_file(dbFileName, mode='r') as h5file:
+                table = h5file.get_node(where, name)
+                return do(table.where(condition))
+        except:
+            print "Error opening DB:",dbFileName, sys.exc_info()[0]
+            raise
+            
+    def withIndices(self, dbFileName, path, table, indices, do, silent=False, checkUpgrade=True):
+        """return the indices into the db which meet the condition"""
+        # check the DB out and see if we need to change anything about it
+        if checkUpgrade:
+            self.checkAndUpgradeDB(dbFileName, silent=silent)
+
+        try:
+            with tables.open_file(dbFileName, mode='r') as h5file:
+                table = h5file.get_node(where, name)
+                if(len(indices) != 0):
+                    return do(iter([table[x] for x in indices]))
+                else:
+                    return do(table.iterrows())
+        except:
+            print "Error opening DB:",dbFileName, sys.exc_info()[0]
+            raise
+            
+#------------------------------------------------------------------------------
+# GET / SET TABLES - PROFILES
+
+    def getProfileIndices(self, dbFileName, field, indices=[]):
+        """Load columns from profile"""
+        
+        if not field in ["kms", "coverage", "normCoverage"]:
+            raise ValueError("'field' parameter must be one of 'kms', 'coverage', 'normCoverage'")
+            
+        return self.withIndices("/profile", field, indices,
+                                lambda t: np.array([list(x) for x in t]))
 
 #------------------------------------------------------------------------------
 # GET LINKS
 
     def restoreLinks(self, dbFileName, indices=[], silent=False):
         """Restore the links hash for a given set of indices"""
-        full_record = []
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                full_record = [list(x) for x in h5file.root.links.links.read_where("contig1 >= 0")]
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-
+        full_record = self.withCondition("/links", "links", "contig1 >= 0",
+                                         lambda t: [list(x) for x in t])
         if indices == []:
             # get all!
             indices = self.getConditionalIndices(dbFileName, silent=silent)
@@ -568,70 +609,11 @@ class DataManager:
                     except KeyError:
                         links_hash[record[0]] = [record[1:]]
         return links_hash
-
-#------------------------------------------------------------------------------
-# GET / SET TABLES - PROFILES
-
-    def getKmerSigs(self, dbFileName, condition='', indices=np.array([])):
-        """Load kmer sigs"""
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([list(h5file.root.profile.kms[x]) for x in indices])
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(h5file.root.profile.kms[x.nrow]) for x in h5file.root.meta.contigs.where(condition)])
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-
-    def getKmerPCAs_(self, dbFileName, condition='', indices=np.array([])):
-        """Load kmer sig PCAs"""
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([list(h5file.root.profile.kpca[x]) for x in indices])
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(h5file.root.profile.kpca[x.nrow]) for x in h5file.root.meta.contigs.where(condition)])
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-            
-    def getCoverageProfiles(self, dbFileName, condition='', indices=np.array([])):
-        """Load coverage profiles"""
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([list(h5file.root.profile.coverage[x]) for x in indices])
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(h5file.root.profile.coverage[x.nrow]) for x in h5file.root.meta.contigs.where(condition)])
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-
-    def getCoverageProfileNorms(self, dbFileName, condition='', indices=np.array([])):
-        """Load coverage profile norms"""
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([list(h5file.root.profile.normCoverage[x]) for x in indices])
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(h5file.root.profile.normCoverage[x.nrow]) for x in h5file.root.meta.contigs.where(condition)])
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
             
 #------------------------------------------------------------------------------
 # GET / SET TABLES - CONTIGS
 
-    def getConditionalIndices(self, dbFileName, condition='', silent=False, checkUpgrade=True):
+    def getConditionalIndices(self, dbFileName, condition):
         """return the indices into the db which meet the condition"""
         # check the DB out and see if we need to change anything about it
         if checkUpgrade:
@@ -639,110 +621,41 @@ class DataManager:
 
         if('' == condition):
             condition = "cid != ''" # no condition breaks everything!
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                return np.array([x.nrow for x in h5file.root.meta.contigs.where(condition)])
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-            
-    def nukeBins(self, dbFileName):
-        """Reset all bin information, completely"""
-        print "    Clearing all old bin information from",dbFileName
-        self.setBinStats(dbFileName, [])
-        self.setNumBins(dbFileName, 0)
-        self.setBinAssignments(dbFileName, updates={}, nuke=True)
-
-    def setBinStats(self, dbFileName, updates):
-        """Set bins table
-
-        updates is a list of tuples which looks like:
-        [ (bid, numMembers, isLikelyChimeric) ]
-        """
-        bins_desc = np.array(updates, dtype=self.bins_dtype)
-
-        try:
-            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
-                meta_group = h5file.get_node('/', name='meta')
-                # nuke any previous failed attempts
-                try:
-                    h5file.remove_node(meta_group, 'tmp_bins')
-                except:
-                    pass
-
-                try:
-                    h5file.create_table(meta_group,
-                                       'tmp_bins',
-                                       bins_desc,
-                                       title="Bin information",
-                                       expectedrows=1)
-                except:
-                    print "Error creating META table:", sys.exc_info()[0]
-                    raise
-
-                # rename the tmp table to overwrite
-                h5file.rename_node(meta_group, 'bins', 'tmp_bins', overwrite=True)
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-                
-    def getBins(self, dbFileName, condition='', indices=np.array([])):
+        return self.withCondition("/meta", "contigs", condition,
+                                  lambda t: np.array([x.nrow for x in t]))
+                     
+    def getContigsIndices(self, dbFileName, fields, indices=[]):
         """Load bin ids"""
         try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([h5file.root.meta.contigs[x][0] for x in indices]).ravel()
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[1] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-
-    def getBinStats(self, dbFileName):
-        """Load data from bins table
-
-        Returns a dict of type:
-        { bid : [numMembers, isLikelyChimeric] }
-        """
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                ret_dict = {}
-                all_rows = h5file.root.meta.bins.read()
-                for row in all_rows:
-                    ret_dict[row[0]] = [row[1], row[2]]
-
-                return ret_dict
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
-        return {}
-
-    def setBinAssignments(self, dbFileName, updates=None, nuke=False):
+            cols = [["cid", "bid", "length", "gc"].index(field) for field in fields]
+        except ValueError:
+            raise ValueError("'fields' parameter must be a list of values chosen from 'cid', 'bid', 'length', 'gc'")
+        
+        return self.withIndices("/meta", "contigs", indices,
+                                lambda t: zip(*[tuple(x[col] for col in cols) for x in t]))
+                    
+    def setBinAssignments(self, dbFileName, updates={}, nuke=False):
         """Set per-contig bins
 
         updates is a dictionary which looks like:
-        { tableRow : binValue }
+        { tableRow : bid }
         """
         # we need to build the image
-        contig_names = self.getContigNames(dbFileName)
-        contig_lengths = self.getContigLengths(dbFileName)
-        contig_gcs = self.getContigGCs(dbFileName)
-        num_cons = len(contig_lengths)
         if nuke:
+            (con_names, con_lens, con_gcs) = self.getContigsIndices(dbFileName, ["cid", "length", "gc"])
+            num_cons = len(con_lens)
             # clear all bin assignments
             bins = [0]*num_cons
         else:
-            bins = self.getBins(dbFileName)
-
+            (con_names, bins, con_lens, con_gcs) = self.getContigsIndices(dbFileName, ["cid", "bid", "length", "gc"])
+        
         # now apply the updates
         for tr in updates.keys():
             bins[tr] = updates[tr]
 
         # and build the image
-        image = np.array(zip(contig_names, bins, contig_lengths, contig_gcs),
-                         dtype=self.meta_dtype)
+        contigs_desc = np.array(zip(con_names, bins, con_lens, con_gcs),
+                                dtype=self.meta_dtype)
 
         try:
             with tables.open_file(dbFileName, mode='a', root_uep='/') as h5file:
@@ -768,47 +681,75 @@ class DataManager:
         except:
             pass
 
-    def getContigNames(self, dbFileName, condition='', indices=np.array([])):
+    def getContigNames(self, dbFileName, indices=[]):
         """Load contig names"""
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([h5file.root.meta.contigs[x][0] for x in indices]).ravel()
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[0] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
+        return self.getContigIndices(dbFileName, ["cid"])[0]
 
-    def getContigLengths(self, dbFileName, condition='', indices=np.array([])):
+    def getContigLengths(self, dbFileName, indices=[]):
         """Load contig lengths"""
-        try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([h5file.root.meta.contigs[x][2] for x in indices]).ravel()
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[2] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
-        except:
-            print "Error opening DB:",dbFileName, sys.exc_info()[0]
-            raise
+        return self.getContigIndices(dbFileName, ["length"])[0]
 
-    def getContigGCs(self, dbFileName, condition='', indices=np.array([])):
+    def getContigGCs(self, dbFileName, indices=[]):
         """Load contig gcs"""
+        return self.getContigGCs(dbFileName, ["gc"])[0]
+                                
+#------------------------------------------------------------------------------
+# GET / SET TABLES - BINS
+            
+    def nukeBins(self, dbFileName):
+        """Reset all bin information, completely"""
+        print "    Clearing all old bin information from",dbFileName
+        self.setBinStats(dbFileName, [])
+        self.setNumBins(dbFileName, 0)
+        self.setBinAssignments(dbFileName, updates={}, nuke=True)
+
+    def setBins(self, dbFileName, updates):
+        """Set bins table
+
+        updates is a list of tuples which looks like:
+        [ (bid, numMembers) ]
+        """
+        updates = [(bid, numMembers, False) for (bid, numMembers) in updates] #isLikelyChimeric is always false
+        bins_desc = np.array(updates, dtype=self.bins_dtype)
+
         try:
-            with tables.open_file(dbFileName, mode='r') as h5file:
-                if(np.size(indices) != 0):
-                    return np.array([h5file.root.meta.contigs[x][3] for x in indices]).ravel()
-                else:
-                    if('' == condition):
-                        condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[3] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
+                meta_group = h5file.get_node('/', name='meta')
+                # nuke any previous failed attempts
+                try:
+                    h5file.remove_node(meta_group, 'tmp_bins')
+                except:
+                    pass
+
+                try:
+                    h5file.create_table(meta_group,
+                                        'tmp_bins',
+                                        bins_desc,
+                                        title="Bin information",
+                                        expectedrows=1)
+                except:
+                    print "Error creating META table:", sys.exc_info()[0]
+                    raise
+
+                # rename the tmp table to overwrite
+                h5file.rename_node(meta_group, 'bins', 'tmp_bins', overwrite=True)
         except:
             print "Error opening DB:",dbFileName, sys.exc_info()[0]
             raise
+       
+    def getBinStats(self, dbFileName):
+        """Load data from bins table
+
+        Returns a dict of type:
+        { bid : numMembers }
+        """
+        ret_dict = {}
+        def load_bid(row):
+            ret_dict[row[0]] = row[1]
+            
+        self.withIndices(dbFileName, "/meta", "bins", [],
+                         lambda t: [load_bid(x) for x in t])
+        return ret_dict
 
 #------------------------------------------------------------------------------
 # GET / SET METADATA
