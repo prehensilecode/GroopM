@@ -231,6 +231,10 @@ def condensed_index(n, i, j):
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
     
     
+def pairs(n):
+    return triu_indices(n, k=1)
+    
+    
 def pcoords_(idx, n):
     idx = np.asarray(idx).ravel()
     (iu, ju) = np.triu_indices(idx.size, k=1)

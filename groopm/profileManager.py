@@ -51,8 +51,8 @@ import scipy.spatial.distance as sp_distance
 import sys
 
 # GroopM imports
-from data3 import GMDataManager as DataManager
-from utils import CSVReader, group_iterator
+from data3 import DataManager, ClassificationEngine
+from utils import group_iterator
 from classification import Classification
 
 np.seterr(all='raise')
@@ -61,7 +61,42 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class Mapping:
+class _Classification:
+    """
+    Class for carrying gene taxonomic classification data around, constructed 
+    using ProfileManager class.
+        
+    Fields
+    ------
+    # data
+    _table: ndarray
+        n-by-7 array where n is the number of mappings. `table[i]` contains
+        indices into the `taxons` array corresponding to the taxon with the
+        corresponding ranks for each column:
+            0 - Domain
+            1 - Phylum
+            2 - Class
+            3 - Order
+            4 - Family
+            5 - Genus
+            6 - Species
+    
+    # metadata
+    _taxons: ndarray
+        Array of taxonomic classification strings.
+    """
+    _ce = ClassificationEngine()
+        
+    def tags(self, index):
+        """Return a list of taxonomic tags"""
+        return [t+self._taxons[i] for (t, i) in zip(self._ce.TAGS, self._table[index]) if i!=0]
+    
+    def getDistances(self):
+        return sp_distance.pdist(self._table, self._ce.distance)
+        
+        
+        
+class _Mappings:
     """Class for carrying gene mapping data around, constructed using
     ProfileManager class.
     
@@ -70,9 +105,9 @@ class Mapping:
     # mapping data
     rowIndices : ndarray
         `rowIndices[i]` is the row index in `profile` of the `i`th mapping.
-    markerNames : ndarray
-        `markerNames[i]` is the marker gene name hit for the `i`th mapping.
-    classification : Classification object
+    markers : ndarray
+        `markerNames[i]` is the marker id for the `i`th mapping.
+    classification : Classificaton object
         See above.
         
     #metadata
@@ -81,8 +116,8 @@ class Mapping:
     """
     
     def itergroups(self):
-        """Returns an iterator of marker names and indices."""
-        return group_iterator(self.markerNames)
+        """Returns an iterator of marker group ids and indices."""
+        return group_iterator(self.markers)
         
     def iterindices(self):
         """Returns an iterator of profile and marker indices."""
@@ -100,7 +135,7 @@ class Mapping:
         return dm
         
         
-class Profile:
+class _Profile:
     """Class for carrying profile data around, construct using ProfileManager class.
     
     Fields
@@ -132,7 +167,7 @@ class Profile:
         Names of stoits for each column of covProfiles array.
     numStoits : int
         Corresponds to number of columns of covProfiles array.
-    mapping : Mapping object
+    mappings : Mappings object
         See above.
     minLength : int
         Contig length cutoff.
@@ -142,19 +177,18 @@ class Profile:
         Minimum length of contigs to form a bin core (regardless of number of contigs).
     """
     pass
-       
-        
+    
     
 class ProfileManager:
     """Interacts with the groopm DataManager and local data fields
 
     Mostly a wrapper around a group of numpy arrays and a pytables quagmire
     """
-    def __init__(self, dbFileName, markerFileName=None):
+    _dm = DataManager()             # most data is saved to hdf
+    
+    def __init__(self, dbFileName):
         # misc
-        self._dm = DataManager()            # most data is saved to hdf
         self.dbFileName = dbFileName         # db containing all the data we'd like to use
-        self.markerFileName = markerFileName
 
     def loadData(self,
                  timer,
@@ -179,9 +213,10 @@ class ProfileManager:
             verbose=False
         if verbose:
             print "Loading data from:", self.dbFileName
-
+        
+        self._dm.checkAndUpgradeDB(self.dbFileName, silent=silent)
         try:
-            prof = Profile()
+            prof = _Profile()
             
             # Stoit names
             prof.numStoits = self._dm.getNumStoits(self.dbFileName)
@@ -191,8 +226,7 @@ class ProfileManager:
             # Conditional filter
             condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
             prof.indices = self._dm.getConditionalIndices(self.dbFileName,
-                                                          condition=condition,
-                                                          silent=silent)
+                                                          condition=condition)
             if minLength is not None:
                 prof.minLength = minLength
 
@@ -212,7 +246,7 @@ class ProfileManager:
                 if(verbose):
                     print "    Loading coverage profiles"
                 prof.covProfiles = self._dm.getCoverageProfiles(self.dbFileName, indices=prof.indices)
-                prof.normCoverages = self._dm.getNormalisedCoverageProfiles(self.dbFileName, indices=prof.indices)
+                prof.normCoverages = self._dm.getCoverageNorms(self.dbFileName, indices=prof.indices)
 
             if(loadKmerSigs):
                 if(verbose):
@@ -248,39 +282,44 @@ class ProfileManager:
                 # we need zeros as bin indicies then...
                 prof.binIds = np.zeros(prof.numContigs, dtype=int)
 
+            if(loadMarkers):
+                if verbose:
+                    print "    Loading marker data"
+                
+                map_indices = self._dm.getMappingContigs(self.dbFileName)
+                map_markers = self._dm.getMappingMarkers(self.dbFileName)
+                map_table = self._dm.getClassification(self.dbFileName)
+                indices2Rows = dict(zip(prof.indices, range(prof.numContigs)))
+                
+                map_row_indices = []
+                map_keep = []
+                for (i, index) in map_indices:
+                    try:
+                        row = indices2Rows[index]
+                    except:
+                        pass
+                    map_row_indices.append(row)
+                    map_keep.append(i)
+                map_row_indices = np.array(map_row_indices)
+                map_keep = np.array(map_keep)
+                    
+                marker_names = self._dm.getMarkerNames(self.dbFileName)
+                taxon_names = self._dm.getTaxonNames(self.dbFileName)
+                
+                markers = _Mappings()
+                markers.rowIndices = map_row_indices
+                markers.markerNames = marker_names[map_markers[map_keep]]
+                markers.numMappings = len(map_keep)
+                
+                classification = _Classification()
+                classification._table = map_table[:, map_keep]
+                classificaiton._taxons = taxon_names
+                markers.classification = classification
+                prof.mapping = markers
+            
         except:
             print "Error loading DB:", self.dbFileName, sys.exc_info()[0]
             raise
-            
-        if (loadMarkers):
-            if verbose:
-                print "    Loading marker data from:", self.markerFileName
-            
-            try:
-                reader = MappingReader()
-                with open(self.markerFileName, "r") as f:
-                    try:
-                        (con_names, con_markers, con_taxstrings) = reader.parse(f, True)
-                    except:
-                        print "Error parsing marker data"
-                        raise
-            except:
-                print "Error opening marker file:", self.markerFileName, sys.exc_info()[0]
-                raise
-                
-            lookup = dict(zip(prof.contigNames, np.arange(prof.numContigs)))
-            keep = np.in1d(con_names, prof.contigNames)
-            row_indices = np.array([lookup[name] for name in np.asarray(con_names)[keep]])
-            
-            markers = Mapping()
-            markers.rowIndices = row_indices
-            markers.markerNames = np.asarray(con_markers)[keep]
-            markers.numMappings = np.count_nonzero(keep)
-            
-            markers.taxstrings = np.asarray(con_taxstrings)[keep]
-            markers.classification = Classification(markers.taxstrings)
-            prof.mapping = markers
-            
                 
         if(not silent):
             print "    %s" % timer.getTimeStamp()
@@ -297,6 +336,9 @@ class ProfileManager:
         self._dm.setBinAssignments(self.dbFileName,
                                    assignments,
                                    nuke=nuke)
+                                   
+    def setMappingDistances(self, mappings, de):
+        """"""
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""

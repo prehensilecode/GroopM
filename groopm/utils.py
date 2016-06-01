@@ -64,6 +64,25 @@ class CSVReader:
     def readCSV(self, fp, separator):
         for l in fp:
             yield l.rstrip().split(separator)
+            
+            
+class FastaReader:
+    """Read in fasta files"""
+    def readFasta(self, fp): # this is a generator function
+        header = None
+        seq = None
+        for l in fp:
+            if l[0] == '>': # fasta header line
+                if header is not None:
+                    # we have reached a new sequence
+                    yield header, "".join(seq)
+                header = l.rstrip()[1:].partition(" ")[0] # save the header we just saw
+                seq = []
+            else:
+                seq.append(l.rstrip())
+        # anything left in the barrel?
+        if header is not None:
+            yield header, "".join(seq)
 
             
 def makeSurePathExists(path):
