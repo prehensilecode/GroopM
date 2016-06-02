@@ -209,8 +209,9 @@ def test_fcluster_merge():
     (T, M) = fcluster_merge(Z,
                             [True, False, False],
                             return_nodes=True)
+    print T, M
     assert_equal_arrays(M,
-                        [0, 2, 4],
+                        [0, 4, 2, 4],
                         "`fcluster_merge` returns cluster roots for skewed tree")
     assert_isomorphic(T,
                       [1, 2, 3, 2],
@@ -227,7 +228,7 @@ def test_fcluster_merge():
                             [False, True, False],
                             return_nodes=True)
     assert_equal_arrays(M,
-                        [0, 5],
+                        [0, 5, 5, 5],
                         "`fcluster_merge` returns cluster roots for skewed "
                         "tree with large valued internal coefficient")
     assert_isomorphic(T,
@@ -246,7 +247,7 @@ def test_fcluster_merge():
                             [True, False, False],
                             return_nodes=True)
     assert_equal_arrays(M,
-                        [0, 2, 4],
+                        [0, 4, 2, 4],
                         "`fcluster_merge` returns cluster roots for skewed "
                         "tree with lower valued internal coefficient")
     assert_isomorphic(T,
@@ -284,7 +285,7 @@ def test_fcluster_merge():
                             [True, True, True, False],
                             return_nodes=True)
     assert_equal_arrays(M,
-                        [6, 7],
+                        [7, 7, 6, 6, 6],
                         "`fcluster_merge` computes cluster roots for balanced tree")
     assert_isomorphic(T,
                       [1, 1, 2, 2, 2],
@@ -304,7 +305,7 @@ def test_fcluster_merge():
                             [False, True, False, False],
                             return_nodes=True)
     assert_equal_arrays(M,
-                        [0, 1, 6],
+                        [0, 1, 6, 6, 6],
                         "`fcluster_merge` returns cluster roots for "
                         "balanced tree with singleton and non-singleton clusters")
     assert_isomorphic(T,

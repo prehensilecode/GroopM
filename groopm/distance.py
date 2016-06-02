@@ -109,24 +109,22 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
         Condensed distance matrix of pairwise density distances.
     """
     n = sp_distance.num_obs_y(Y)
-    if weights is not None and minWt is not None:
-        weight_dists = core_distance_weighted(Y, weights, minWt)
-    else:
-        weight_dists = None
-    if minPts is not None:
-        pts_dists = core_distance(Y, minPts)
-    else:
-        pts_dists = None
-    if weight_dists is not None and pts_dists is not None:
-        core_dists = np.minimum(weight_dists, pts_dists)
-    elif weight_dists is not None:
-        core_dists = weight_dists
-    elif pts_dists is not None:
-        core_dists = pts_dists
-    else:
+    do_weights = weights is not None
+    do_pts = minPts is not None
+    if (do_weights and minWt is None) or not (do_weights or do_pts):
         raise ValueError("Specify either 'weights' and 'minWt' or 'minPts' parameter values")
+        
+    if do_weights:
+        core_dists = core_distance_weighted(Y, weights, minWt)
+        
+    if do_pts:
+        pts_dists = core_distance(Y, minPts)
+        if do_weights:
+            core_dists = np.minimum(core_dists, pts_dists)
+        else:
+            core_dists = pts_dists
     
-    inds = np.triu_indices(n, k=1)
+    inds = pairs(n)
     dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
     return dd
         
@@ -156,9 +154,8 @@ def core_distance_weighted(Y, weights, minWt):
     sorting_indices = dm.argsort(axis=1)
     core_dist = np.empty(n, dtype=Y.dtype)
     for i in range(n):
-        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() <= minWt[i]))
-        #minPts -= 1
-        core_dist[i] = dm[i, sorting_indices[i, minPts]]
+        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() < minWt[i]))
+        core_dist[i] = dm[i, sorting_indices[i, np.minimum(n-1, minPts)]]
     
     return core_dist
             
@@ -232,7 +229,7 @@ def condensed_index(n, i, j):
     
     
 def pairs(n):
-    return triu_indices(n, k=1)
+    return np.triu_indices(n, k=1)
     
     
 def pcoords_(idx, n):

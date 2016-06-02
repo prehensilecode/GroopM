@@ -200,12 +200,10 @@ class BinExtractor:
 class MarkerExtractor:
     def __init__(self,
                  dbFileName,
-                 markerFileName=None,
                  folder=''
                  ):
         self.dbFileName = dbFileName
-        self.markerFileName = markerFileName
-        self._pm = ProfileManager(self.dbFileName, self.markerFileName)
+        self._pm = ProfileManager(self.dbFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         makeSurePathExists(self._outDir)

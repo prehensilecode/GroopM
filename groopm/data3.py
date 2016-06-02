@@ -196,17 +196,17 @@ class DataManager:
     # ** Metadata **
     #table = 'meta'
     meta_desc = [('stoitColNames', '|S512'),
-                  ('numStoits', int),
-                  ('merColNames', '|S4096'),
-                  ('merSize', int),
-                  ('numMers', int),
-                  ('numCons', int),
-                  ('numBins', int),
-                  ('numMarkers', int),          # [NEW in version 6]
-                  ('clustered', bool),          # set to true after clustering is complete
-                  ('complete', bool),           # set to true after clustering finishing is complete
-                  ('formatVersion', int)        # groopm file version
-                  ]
+                 ('numStoits', int),
+                 ('merColNames', '|S4096'),
+                 ('merSize', int),
+                 ('numMers', int),
+                 ('numCons', int),
+                 ('numBins', int),
+                 ('numMarkers', int),           # [NEW in version 6]
+                 ('clustered', bool),           # set to true after clustering is complete
+                 ('complete', bool),            # set to true after clustering finishing is complete
+                 ('formatVersion', int)         # groopm file version
+                 ]
     #
     # **PC variance**
     #table = 'kpca_variance'                                                    # [DEL in version 6]
@@ -576,7 +576,7 @@ class DataManager:
                 upgrade_tasks[task](dbFileName)
                 this_DB_version += 1
         except:
-            print "Error upgrading database to version %d" % this_DB_version+1
+            print "    Error upgrading database to version %d" % (this_DB_version+1)
             raise
 
     def upgradeDB_0_to_1(self, dbFileName):
@@ -592,7 +592,7 @@ class DataManager:
 
         # don't compute the PCA of the ksigs just store dummy data
         ksigs = self.getKmerSigs(dbFileName)
-        pc_ksigs, sumvariance = DB1_PCAKsigs(ksigs)
+        pc_ksigs, sumvariance = _DB1_PCAKsigs(ksigs)
         num_cons = len(pc_ksigs)
 
         DB1_kpca_desc = [('pc1', float),
@@ -604,11 +604,33 @@ class DataManager:
                                title='Kmer signature PCAs',
                                expectedrows=num_cons
                                 )
-
+                     
         # update the formatVersion field and we're done
+        DB1_meta_desc = [('stoitColNames', '|S512'),
+                         ('numStoits', int),
+                         ('merColNames', '|S4096'),
+                         ('merSize', int),
+                         ('numMers', int),
+                         ('numCons', int),
+                         ('numBins', int),
+                         ('clustered', bool),
+                         ('complete', bool),
+                         ('formatVersion', int)
+                         ]
         with tables.open_file(dbFileName, mode='a', root_uep="/meta") as h5file:
-            meta = h5file.root.meta.read()
-            meta[0]["formatVersion"] = 1
+            meta = h5file.root.meta[0]        
+        
+            meta_data = (meta["stoitColNames"],
+                         meta["numStoits"],
+                         meta["merColNames"],
+                         meta["merSize"],
+                         meta["numMers"],
+                         meta["numCons"],
+                         meta["numBins"],
+                         meta["clustered"],
+                         meta["complete"],
+                         1) # ensure formatVersion field exists
+            meta = np.array([meta_data], dtype=DB1_meta_desc)
             try:
                 h5file.remove_node("/", "tmp_meta")
             except:
@@ -638,10 +660,11 @@ class DataManager:
 
         # compute the PCA of the ksigs
         conParser = ContigParser()
+        reader = FastaReader()
         ksigs = self.getKmerSigs(dbFileName)
-        pc_ksigs, sumvariance = DB1_PCAKSigs(ksigs)
+        pc_ksigs, sumvariance = _DB1_PCAKsigs(ksigs)
         num_cons = len(pc_ksigs)
-        DB2_kpca_desc = [('pc%d' % i+1, float) for i in range(len(pc_ksigs[0]))]
+        DB2_kpca_desc = [('pc%d' % (i+1), float) for i in range(len(pc_ksigs[0]))]
         kpca_data = np.array(pc_ksigs, dtype=DB2_kpca_desc)
          
         # Add GC
@@ -649,7 +672,7 @@ class DataManager:
         with open(contigFile, "r") as f:
             try:
                 contigInfo = {}
-                for cid,seq in conParser.readFasta(f):
+                for cid,seq in reader.readFasta(f):
                     contigInfo[cid] = (len(seq), conParser.calculateGC(seq))
 
                 # sort the contig names here once!
@@ -735,7 +758,7 @@ class DataManager:
 
         # compute the PCA of the ksigs
         ksigs = self.getKmerSigs(dbFileName)
-        pc_ksigs, sumvariance = DB1_PCAKSigs(ksigs)
+        pc_ksigs, sumvariance = _DB1_PCAKsigs(ksigs)
 
         # calcualte variance of each PC
         pc_var = [sumvariance[0]]
@@ -743,7 +766,7 @@ class DataManager:
           pc_var.append(sumvariance[i]-sumvariance[i-1])
         pc_var = tuple(pc_var)
 
-        DB3_kpca_variance_desc = [('pc%d_var' % i+1, float) for i in range(len(pc_var))]
+        DB3_kpca_variance_desc = [('pc%d_var' % (i+1), float) for i in range(len(pc_var))]
         kpca_variance_data = np.array([pc_var], dtype=DB3_kpca_variance_desc)
 
         with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
@@ -846,13 +869,13 @@ class DataManager:
         print "    You will not need to re-run parse or core due to this change"
 
         # we need to get the raw coverage profiles and the kmerPCA1 data
-        raw_coverages = self.getCoverageProfiles(dbFileName)
+        raw_coverages = self.getCoverages(dbFileName)
         ksigs = self.getKmerSigs(dbFileName)
-        pc_ksigs, sumvariance = DB1_PCAKSigs(ksigs)
+        pc_ksigs, sumvariance = _DB1_PCAKsigs(ksigs)
         kPCA_1 = pc_ksigs[:,0]
-        norm_coverages = np.array([np.linalg.norm(raw_coverages[i]) for i in range(len(indices))])
+        norm_coverages = np.linalg.norm(raw_coverages, axis=1)
 
-        CT = DB4_CoverageTransformer(len(indices),
+        CT = _DB4_CoverageTransformer(len(raw_coverages),
                                      self.getNumContigs(dbFileName),
                                      norm_coverages,
                                      kPCA_1,
@@ -863,21 +886,10 @@ class DataManager:
                                      
         # stoit col names may have been shuffled
         with tables.open_file(dbFileName, mode='r') as h5file:
-            meta = h5file.root.meta.meta[0].read()
-        meta['stoitColNames'] = ",".join([str(i) for i in CT.stoitColNames])
-        meta['numStoits'] = CT.numStoits
+            meta_data = h5file.root.meta.meta.read()
+        meta_data[0]['stoitColNames'] = ",".join([str(i) for i in CT.stoitColNames])
+        meta_data[0]['numStoits'] = CT.numStoits
         
-        DB5_meta_desc = [('stoitColNames', '|S512'),
-                         ('numStoits', int),
-                         ('merColNames', '|S4096'),
-                         ('numMers', int),
-                         ('numCons', int),
-                         ('numBins', int),
-                         ('clustered', bool),
-                         ('complete', bool),
-                         ('formatVersion', int)]
-        meta_data = np.array(meta, dtype=DB5_meta_desc)
-                 
         DB5_coverages_desc = [(col_name, float) for col_name in CT.stoitColNames]
         coverages_data = np.array(CT.covProfiles, dtype=DB5_coverages_desc)
         
@@ -987,21 +999,23 @@ class DataManager:
 
         cde = ContigDistanceEngine()
         cfe = ClassificationEngine()
+        mapper = MappingParser()
         
         # contig distances
-        cov_profiles = self.getCoverageProfiles(dbFileName)
+        cov_profiles = self.getCoverages(dbFileName)
         con_ksigs = self.getKmerSigs(dbFileName)
         con_lengths = self.getContigLengths(dbFileName)
         
         # mappings
         con_names = self.getContigNames(dbFileName)
-        cid2Indices = dict(con_names, range(len(con_names)))
+        cid2Indices = dict(zip(con_names, range(len(con_names))))
         
         markerFile = raw_input('\nPlease specify file containing contigs, mapped markers and taxonomies: ')
         with open(markerFile, 'r') as f:
             try:
                 (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names) = mapper.parse(f, cid2Indices, cfe)
-                num_markers = len(contig_indices)
+                num_mappings = len(contig_indices)
+                num_markers = len(marker_names)
             except:
                 print "Error parsing mapping data"
                 raise
@@ -1010,7 +1024,7 @@ class DataManager:
         profileDistances_data = np.array([],dtype=DB6_profileDistances_desc)
                                          
         DB6_mappings_desc = self.mappings_desc
-        mappings_data = np.array([marker_indices, contig_indices], dtype=DB6_mappings_desc)
+        mappings_data = np.array(zip(marker_indices, contig_indices), dtype=DB6_mappings_desc)
         
         DB6_classification_desc = self.classification_desc
         classification_data = np.array([tuple(i) for i in tax_table], dtype=DB6_classification_desc)
@@ -1019,13 +1033,13 @@ class DataManager:
         mappingDistances_data = np.array([], dtype=DB6_mappingDistances_desc)
         
         DB6_markers_desc = self.markers_desc
-        markers_data = np.array([marker_names, marker_counts], dtype=DB6_markers_desc)
+        markers_data = np.array(zip(marker_names, marker_counts), dtype=DB6_markers_desc)
         
         DB6_taxons_desc = self.taxons_desc
         taxons_data = np.array([taxon_names], dtype=DB6_taxons_desc)
             
         # metadata
-        with table.open_file(dbFileName, mode='r', root_uep="/") as h5file:
+        with tables.open_file(dbFileName, mode='r', root_uep="/") as h5file:
             meta = h5file.root.meta.meta[0]
         DB6_meta_desc = self.meta_desc
         meta_data = np.array([(
@@ -1036,7 +1050,7 @@ class DataManager:
             meta['numMers'],
             meta['numCons'],
             meta['numBins'],
-            numMarkers,
+            num_markers,
             meta['clustered'],
             meta['complete'],
             meta['formatVersion']
@@ -1045,11 +1059,12 @@ class DataManager:
         
         with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
             mappings_group = h5file.create_group("/", "mappings", "Contig mappings")
-            profile_distances_group = h5file.create_group("/", "profileDistances", "Pairwise profile distances")
-            mapping_distances_group = h5file.create_group("/", "mappingDistances", "Pairwise mapping distances")
+            profileDistances_group = h5file.create_group("/", "profileDistances", "Pairwise profile distances")
+            mappingDistances_group = h5file.create_group("/", "mappingDistances", "Pairwise mapping distances")
+            meta_group = h5file.get_node("/", "meta")
 
             # profile distances
-            h5file.create_table(profile_distances_group,
+            h5file.create_table(profileDistances_group,
                                'profileDistances',
                                profileDistances_data,
                                title="Pairwise profile distances",
@@ -1064,7 +1079,7 @@ class DataManager:
                                )
                                 
             # classifications
-            h5file.create_table(mapping_group,
+            h5file.create_table(mappings_group,
                                 "classification",
                                 classification_data,
                                 title="Mapping classifications",
@@ -1079,7 +1094,7 @@ class DataManager:
                                 expectedrows=1)
                                 
             # markers
-            h5file.create_table(meta,
+            h5file.create_table(meta_group,
                                 "markers",
                                 markers_data,
                                 title="Marker information",
@@ -1087,7 +1102,7 @@ class DataManager:
                                 )
             
             # taxons
-            h5file.create_table(meta,
+            h5file.create_table(meta_group,
                                 "taxons",
                                 taxons_data,
                                 title="Taxon information",
@@ -1131,7 +1146,7 @@ class DataManager:
         if(len(rows) != 0):
             return (table[x] for x in rows)
         else:
-            return (x for x in table)
+            return (x.fetch_all_fields() for x in table)
             
 #------------------------------------------------------------------------------
 # GET TABLES - PROFILES
@@ -1247,22 +1262,22 @@ class DataManager:
     def getContigNames(self, dbFileName, indices=[]):
         """Load contig names"""
         with tables.open_file(dbFileName, 'r') as h5file:
-            return [x["cid"] for x in self.iterrows(h5file.root.meta.contigs,  indices)]
+            return np.array([x["cid"] for x in self.iterrows(h5file.root.meta.contigs,  indices)])
         
     def getBins(self, dbFileName, indices=[]):
         """Load bin assignments"""
         with tables.open_file(dbFileName, 'r') as h5file:
-            return [x["bid"] for x in self.iterrows(h5file.root.meta.contigs,  indices)]
+            return np.array([x["bid"] for x in self.iterrows(h5file.root.meta.contigs,  indices)])
 
     def getContigLengths(self, dbFileName, indices=[]):
         """Load contig lengths"""
         with tables.open_file(dbFileName, 'r') as h5file:
-            return [x["length"] for x in self.iterrows(h5file.root.meta.contigs,  indices)]
+            return np.array([x["length"] for x in self.iterrows(h5file.root.meta.contigs,  indices)])
 
     def getContigGCs(self, dbFileName, indices=[]):
         """Load contig gcs"""
         with tables.open_file(dbFileName, 'r') as h5file:
-            return [x["gc"] for x in self.iterrows(h5file.root.meta.contigs,  indices)]
+            return np.array([x["gc"] for x in self.iterrows(h5file.root.meta.contigs,  indices)])
                             
 #------------------------------------------------------------------------------
 # GET TABLES - BINS
@@ -1307,7 +1322,7 @@ class DataManager:
     def _getMeta(self, dbFileName):
         """return the metadata table as a structured array"""
         with tables.open_file(dbFileName, 'r') as h5file:
-            return h5file.root.meta.meta[0].read()
+            return h5file.root.meta.meta[0]
 
     def getGMDBFormat(self, dbFileName):
         """return the format version of this GM file"""
@@ -1315,7 +1330,7 @@ class DataManager:
         # becuase earlier versions of GM didn't include a format parameter
         try:
             this_DB_version = self._getMeta(dbFileName)['formatVersion']
-        except ValueError:
+        except IndexError:
             # this happens when an oldskool formatless DB is loaded
             this_DB_version = 0
         return this_DB_version
@@ -1336,7 +1351,7 @@ class DataManager:
         """return the value of numMers in the metadata tables"""
         return self._getMeta(dbFileName)['numMers']
 
-    def getNumCons(self, dbFileName):
+    def getNumContigs(self, dbFileName):
         """return the value of numCons in the metadata tables"""
         return self._getMeta(dbFileName)['numCons']
 
@@ -1344,7 +1359,7 @@ class DataManager:
         """return the value of numBins in the metadata tables"""
         return self._getMeta(dbFileName)['numBins']
 
-    def getStoitColNames(self, dbFileName):
+    def getStoitNames(self, dbFileName):
         """return the value of stoitColNames in the metadata tables"""
         return self._getMeta(dbFileName)['stoitColNames']
 
@@ -1587,7 +1602,7 @@ def _get_bam_descriptor(fullPath, index_num):
     
 def _DB1_PCAKsigs(ksigs):
     # stub pca calculation
-    return (zip(ksigs[:, 0], ksigs[:, 1]), np.zeros(len(ksigs)))
+    return (ksigs[:, :2], np.zeros(len(ksigs)))
     
 class _DB4_CoverageTransformer:
     # stup coverage transformation
@@ -1604,7 +1619,7 @@ class _DB4_CoverageTransformer:
         self.normCoverages = normCoverages
         self.kmerNormPC1 = kmerNormPC1
         self.covProfiles = coverageProfiles
-        self.stoitColNames = stoitColNames
+        self.stoitColNames = np.array(stoitColNames.split(','))
         self.indices = range(self.numContigs)
         self.scaleFactor = scaleFactor
         
@@ -1731,21 +1746,6 @@ class KmerSigEngine:
         except ZeroDivisionError:
             print "***WARNING*** Sequence '%s' is not playing well with the kmer signature engine " % seq
             return tuple([0.0] * self.numMers)
-
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-class ContigDistanceEngine:
-    """Simple class for computing feature distances"""
-    def getDistances(self, covProfiles, kmerSigs, contigLengths):
-        print "Computing pairwise feature distances"
-        features = (kmerSigs, covProfiles)
-        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
-        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-        scale_factor = 1. / weights.sum()
-        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
-        return (scaled_ranks[0], scaled_ranks[1], weights)
         
             
 ###############################################################################
@@ -1869,17 +1869,17 @@ class ClassificationEngine:
         n = len(taxstrings)
         taxon_dict = { "": 1 }
         counter = 1
-        table = np.zeros((len(TAGS), n), dtype=int)
+        table = np.zeros((n, len(self.TAGS)), dtype=int)
         for (i, s) in enumerate(taxstrings):
             for (j, rank) in enumerate(self.parse_taxstring(s)):
                 try:
-                    table[j, i] = taxon_dict[rank]
+                    table[i, j] = taxon_dict[rank]
                 except KeyError:
                     counter += 1
-                    table[j, i] = counter
+                    table[i, j] = counter
                     taxon_dict[rank] = counter
         
-        taxons = np.concatentate(([""], taxon_dict.keys))
+        taxons = np.concatenate(([""], taxon_dict.keys()))
         taxons[taxon_dict.values()] = taxons[1:].copy()
         
         return (table, taxons)
