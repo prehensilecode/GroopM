@@ -160,8 +160,12 @@ class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterE
         return hierarchy.fcluster_coeffs(Z,
                                          dict(self._profile.mapping.iterindices()),
                                          cf.disagreement)
-    
-            
+     
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+   
 # Mediod clustering
 class MediodsClusterEngine:
     """Iterative mediod clustering algorithm"""
@@ -259,3 +263,15 @@ class FeatureRankCorrelationClusterEngine(MediodsClusterEngine):
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
+class ContigDistanceEngine:
+    """Simple class for computing feature distances"""
+    def getDistances(self, covProfiles, kmerSigs, contigLengths):
+        print "Computing pairwise feature distances"
+        features = (kmerSigs, covProfiles)
+        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
+        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+        scale_factor = 1. / weights.sum()
+        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
+        return (scaled_ranks[0], scaled_ranks[1], weights)
+   

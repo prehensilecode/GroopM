@@ -1,0 +1,1 @@
+Contig_3_Cov_1195.29	proteinA	Root; d__Bacteria; p__Deinococcus-Thermus; c__Deinococci; o__Thermales; f__Thermaceae; g__Thermus

@@ -53,7 +53,6 @@ import sys
 # GroopM imports
 from data3 import DataManager, ClassificationEngine
 from utils import group_iterator
-from classification import Classification
 
 np.seterr(all='raise')
 
@@ -91,7 +90,7 @@ class _Classification:
         """Return a list of taxonomic tags"""
         return [t+self._taxons[i] for (t, i) in zip(self._ce.TAGS, self._table[index]) if i!=0]
     
-    def getDistances(self):
+    def makeDistances(self):
         return sp_distance.pdist(self._table, self._ce.distance)
         
         
@@ -104,9 +103,11 @@ class _Mappings:
     ------
     # mapping data
     rowIndices : ndarray
-        `rowIndices[i]` is the row index in `profile` of the `i`th mapping.
+        `rowIndices[i]` is the row index in `profile` of mapping `i`.
+    mapIndices : ndarray
+        `indices[i]` is the index into the pytables structure of mapping `i`
     markers : ndarray
-        `markerNames[i]` is the marker id for the `i`th mapping.
+        `markerNames[i]` is the marker id for mapping `i`.
     classification : Classificaton object
         See above.
         
@@ -125,7 +126,7 @@ class _Mappings:
                  
     def makeConnectivity(self, level=1):
         """Connectivity matrix to specified taxonomic level"""
-        dm = sp_distance.squareform(self.classification.distances() <= level)
+        dm = sp_distance.squareform(self.classification.makeDistances() <= level)
         
         # disconnect mappings to the same single copy marker
         for (_, m) in self.itergroups():
@@ -308,6 +309,7 @@ class ProfileManager:
                 
                 markers = _Mappings()
                 markers.rowIndices = map_row_indices
+                markers.indices = map_keep
                 markers.markerNames = marker_names[map_markers[map_keep]]
                 markers.numMappings = len(map_keep)
                 
@@ -337,8 +339,11 @@ class ProfileManager:
                                    assignments,
                                    nuke=nuke)
                                    
-    def setMappingDistances(self, mappings, de):
-        """"""
+    def setMappingDistances(self, mappings, mapping_distances):
+        """Save mapping distances"""
+        
+        pairs = mappings.indices[distance.pairs(mappings.numMappings)]
+        self._dm.setMappingDistances(self.dbFileName, pairs, mapping_distances)
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""
