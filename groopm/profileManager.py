@@ -108,7 +108,7 @@ class _Mappings:
         `indices[i]` is the index into the pytables structure of mapping `i`
     markers : ndarray
         `markerNames[i]` is the marker id for mapping `i`.
-    classification : Classificaton object
+    classification : _Classificaton object
         See above.
         
     #metadata
@@ -124,9 +124,9 @@ class _Mappings:
         """Returns an iterator of profile and marker indices."""
         return group_iterator(self.rowIndices)
                  
-    def makeConnectivity(self, level=1):
-        """Connectivity matrix to specified taxonomic level"""
-        dm = sp_distance.squareform(self.classification.makeDistances() <= level)
+    def makeConnectivity(self, d=1):
+        """Connectivity matrix to specified distance"""
+        dm = sp_distance.squareform(self.classification.makeDistances() <= d)
         
         # disconnect mappings to the same single copy marker
         for (_, m) in self.itergroups():
@@ -134,6 +134,30 @@ class _Mappings:
             dm[m, m] = True 
         
         return dm
+        
+        
+class _Distances:
+    """Class for carrying profile distance data around, constructed using ProfileManager class.
+    
+    Fields
+    ------
+    # contig data
+    covDists : ndarray
+        `covDists[i]` is the coverage distance of the pair of contigs represented by
+        the condensed index `i`.
+    kmerDists : ndarray
+        `kmerDists[i]` is kmer signature distance of contig pair `i`.
+    weights : ndarray
+        `weights[i]` is the distance weight of contig pair `i`
+    denDists : ndarray
+        `denDists[i]` is the density distance of contig pair `i`.
+        
+    
+    # metadata
+    numDists : int
+        Number of pairs of contigs, corresponds to length of above arrays.
+    """
+    pass
         
         
 class _Profile:
@@ -159,6 +183,10 @@ class _Profile:
         `contigLengths[i]` is the length in bp of contig `i`.
     binIds : ndarray
         `binIds[i]` is the bin id assigned to contig `i`.
+    reachPos : ndarray
+        `reachPos[i]` is the reachability order position of contig `i`.
+    reachDist : ndarray
+        `reachDist[i]` is the reachability distance of contig `i`.
         
     
     # metadata
@@ -168,14 +196,10 @@ class _Profile:
         Names of stoits for each column of covProfiles array.
     numStoits : int
         Corresponds to number of columns of covProfiles array.
-    mappings : Mappings object
+    mappings : _Mappings object
         See above.
-    minLength : int
-        Contig length cutoff.
-    minPts : int
-        Minimum number of contigs to form a bin core.
-    minSize : int
-        Minimum length of contigs to form a bin core (regardless of number of contigs).
+    distances : _Distances object
+        See above.
     """
     pass
     
@@ -185,7 +209,6 @@ class ProfileManager:
 
     Mostly a wrapper around a group of numpy arrays and a pytables quagmire
     """
-    _dm = DataManager()             # most data is saved to hdf
     
     def __init__(self, dbFileName):
         # misc
@@ -197,12 +220,12 @@ class ProfileManager:
                  silent=False,              # some to no output messages
                  loadCovProfiles=True,
                  loadKmerSigs=True,
-                 #loadKmerPCs=False,
                  loadStoitNames=True,
                  loadContigNames=True,
                  loadContigLengths=True,
                  loadContigGCs=True,
                  loadBins=False,
+                 loadReachability=False,
                  loadMarkers=True,
                  minLength=None,
                  bids=[],
@@ -214,22 +237,21 @@ class ProfileManager:
             verbose=False
         if verbose:
             print "Loading data from:", self.dbFileName
-        
-        self._dm.checkAndUpgradeDB(self.dbFileName, silent=silent)
+            
+        dm = DataManager()
+        dm.checkAndUpgradeDB(self.dbFileName, timer, silent=silent)
         try:
             prof = _Profile()
             
             # Stoit names
-            prof.numStoits = self._dm.getNumStoits(self.dbFileName)
+            prof.numStoits = dm.getNumStoits(self.dbFileName)
             if(loadStoitNames):
-                prof.stoitNames = np.array(self._dm.getStoitColNames(self.dbFileName).split(","))
+                prof.stoitNames = np.array(dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
             condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
-            prof.indices = self._dm.getConditionalIndices(self.dbFileName,
-                                                          condition=condition)
-            if minLength is not None:
-                prof.minLength = minLength
+            prof.indices = dm.getConditionalIndices(self.dbFileName,
+                                                    condition=condition)
 
             # Collect contig data
             if(verbose):
@@ -246,50 +268,53 @@ class ProfileManager:
             if(loadCovProfiles):
                 if(verbose):
                     print "    Loading coverage profiles"
-                prof.covProfiles = self._dm.getCoverageProfiles(self.dbFileName, indices=prof.indices)
-                prof.normCoverages = self._dm.getCoverageNorms(self.dbFileName, indices=prof.indices)
+                prof.covProfiles = dm.getCoverageProfiles(self.dbFileName, indices=prof.indices)
+                prof.normCoverages = dm.getCoverageNorms(self.dbFileName, indices=prof.indices)
 
             if(loadKmerSigs):
                 if(verbose):
-                    print "    Loading RAW kmer sigs"
-                prof.kmerSigs = self._dm.getKmerSigs(self.dbFileName, indices=prof.indices)
-
-            if(False):
-                prof.kmerPCs = self._dm.getKmerPCAs(self.dbFileName, indices=prof.indices)
-
-                if(verbose):
-                    print "    Loading PCA kmer sigs (" + str(len(prof.kmerPCs[0])) + " dimensional space)"
-
+                    print "    Loading kmer sigs"
+                prof.kmerSigs = dm.getKmerSigs(self.dbFileName, indices=prof.indices)
+                
             if(loadContigNames):
                 if(verbose):
                     print "    Loading contig names"
-                prof.contigNames = self._dm.getContigNames(self.dbFileName, indices=prof.indices)
+                prof.contigNames = dm.getContigNames(self.dbFileName, indices=prof.indices)
 
             if(loadContigLengths):
-                prof.contigLengths = self._dm.getContigLengths(self.dbFileName, indices=prof.indices)
+                prof.contigLengths = dm.getContigLengths(self.dbFileName, indices=prof.indices)
                 if(verbose):
                     print "    Loading contig lengths (Total: %d BP)" % ( sum(prof.contigLengths) )
 
             if(loadContigGCs):
-                prof.contigGCs = self._dm.getContigGCs(self.dbFileName, indices=prof.indices)
+                prof.contigGCs = dm.getContigGCs(self.dbFileName, indices=prof.indices)
                 if(verbose):
                     print "    Loading contig GC ratios (Average GC: %0.3f)" % ( np.mean(prof.contigGCs) )
 
             if(loadBins):
                 if(verbose):
                     print "    Loading bin assignments"
-                prof.binIds = self._dm.getBins(self.dbFileName, indices=prof.indices)
+                prof.binIds = dm.getBins(self.dbFileName, indices=prof.indices)
             else:
                 # we need zeros as bin indicies then...
                 prof.binIds = np.zeros(prof.numContigs, dtype=int)
+                
+            if(loadReachability):
+                if(verbose):
+                    print "    Loading bin assignments"
+                (prof.reachPos, prof.reachDists) = dm.getReachabilityData(self.dbFileName, indices=prof.indices)
+            else:
+                # we need zeros as positional indicies then...
+                prof.reachPos = np.zeros(prof.numContigs, dtype=int)
+                prof.reachDists = np.zeros(prof.numContigs, dtype=float)
 
             if(loadMarkers):
                 if verbose:
                     print "    Loading marker data"
                 
-                map_indices = self._dm.getMappingContigs(self.dbFileName)
-                map_markers = self._dm.getMappingMarkers(self.dbFileName)
-                map_table = self._dm.getClassification(self.dbFileName)
+                map_indices = dm.getMappingContigs(self.dbFileName)
+                map_markers = dm.getMappingMarkers(self.dbFileName)
+                map_table = dm.getClassification(self.dbFileName)
                 indices2Rows = dict(zip(prof.indices, range(prof.numContigs)))
                 
                 map_row_indices = []
@@ -304,8 +329,8 @@ class ProfileManager:
                 map_row_indices = np.array(map_row_indices)
                 map_keep = np.array(map_keep)
                     
-                marker_names = self._dm.getMarkerNames(self.dbFileName)
-                taxon_names = self._dm.getTaxonNames(self.dbFileName)
+                marker_names = dm.getMarkerNames(self.dbFileName)
+                taxon_names = dm.getTaxonNames(self.dbFileName)
                 
                 markers = _Mappings()
                 markers.rowIndices = map_row_indices
@@ -327,7 +352,99 @@ class ProfileManager:
             print "    %s" % timer.getTimeStamp()
             
         return prof
-
+        
+    def loadDistances(self, 
+                      timer,
+                      dsFileName,
+                      verbose=True,              # many to some output messages
+                      silent=False,              # some to no output messages
+                      loadCoverageDistances=False,
+                      loadKmerDistances=False,
+                      loadWeights=False,
+                      loadDensityDistances=True,
+                      minLength=None,
+                      minPts=None,
+                      minSize=None,
+                      force=False,
+                      **kwargs):
+        """Load profile distances from distance store file
+        
+        File is created if it doesn't exist
+        """
+        
+        # check if file exists
+        make_file = True
+        try:
+            with open(dsFileName) as f:
+                if (not force):
+                    make_file = False
+        except IOError:
+            pass
+             
+        stm = DistanceStoreManager()
+        if make_file:
+            stm.createDistanceStore(timer,
+                                    dsFileName,
+                                    self.dbFileName,
+                                    minLength=minLength,
+                                    minSize=minSize,
+                                    minPts=minPts)
+                                    
+        prof = self.loadData(timer,
+                             verbose=verbose,
+                             silent=silent,
+                             minLength=minLength,
+                             loadContigNames=True,
+                             **kwargs)
+        
+        try:                    
+            con_names = stm.getContigNames(dsFileName)
+            cid2Indices = dict(zip(con_names, range(len(con_names))))
+            indices = []
+            for name in prof.contigNames:
+                try:
+                    i = cid2Indices[name]
+                except KeyError:
+                    pass
+                    raise DistanceStoreContigNotFoundException("ERROR: No pre-computed distances for contig %s" % name)
+                indices.append(i)
+            num_contigs = len(indices)
+            condensed_indices = [distance.condensed_index(len(con_names), indices[i], indices[j]) for (i, j) in zip(*distance.pairs(num_contigs))]
+            
+            dists = _Distances()
+            
+            if loadCoverageDistances:
+                if(verbose):
+                    print "    Loading coverage distances"
+                dists.covDists = stm.getCoverageDistances(dsFileName, indices=condensed_indices)
+                
+            if loadKmerDistances:
+                if verbose:
+                    print "    Loading kmer distances"
+                dists.kmerDists = stm.getKmerDistances(dsFileName, indices=condensed_indices)
+                
+            if loadWeights:
+                if verbose:
+                    print "    Loading distance weights"
+                dists.weights = stm.getWeights(dsFileName, indices=condensed_indices)
+                
+            if loadDensityDistances:
+                if verbose:
+                    print "    Loading density distances"
+                dists.denDists = stm.getDensityDistances(dsFileName, indices=condensed_indices)
+        
+            dists.numDists = len(condensed_indices)
+            dists.profile = prof
+        
+        except:
+            print "Error loading distance store:", self.dsFileName, sys.exc_info()[0]
+            raise
+                
+        if(not silent):
+            print "    %s" % timer.getTimeStamp()
+            
+        return dists
+        
     def setBinAssignments(self, profile, nuke=False):
         """Save bins into the DB
         
@@ -335,25 +452,22 @@ class ProfileManager:
         { global_index : bid }
         """
         assignments = dict(zip(profile.indices, profile.binIds))
-        self._dm.setBinAssignments(self.dbFileName,
-                                   assignments,
-                                   nuke=nuke)
+        DataManager().setBinAssignments(self.dbFileName,
+                                        assignments,
+                                        nuke=nuke)
                                    
-    def setMappingDistances(self, mappings, mapping_distances):
+    def setReachability(self, profile):
         """Save mapping distances
         
-        dataManager.setMappingDistances needs GLOBAL index pairs
-        for each distance
+        dataManager.setReachability needs GLOBAL indices
+        { global_index : (order, distance) }
         """
-        (i1, i2) = distance.pairs(mappings.numMappings)
-        self._dm.setMappingDistances(self.dbFileName,
-                                     (mappings.indices[i1],
-                                      mappings.indices[i2]),
-                                     mapping_distances)
+        updates = dict(zip(profile.indices, zip(profile.reachabilityOrder, profile.reachabilityDistance)))
+        DataManager().setMappingDistances(self.dbFileName, updates)
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""
-        if(self._dm.isClustered(self.dbFileName)):
+        if(DataManager().isClustered(self.dbFileName)):
             input_not_ok = True
             valid_responses = ['Y','N']
             vrs = ",".join([str.lower(str(x)) for x in valid_responses])

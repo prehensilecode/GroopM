@@ -78,15 +78,19 @@ np.seterr(all='raise')
 ###############################################################################
 class BinPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName=None, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName, folder=None):
+        self._pm = ProfileManager(dbFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
 
     def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadMarkers=False, loadBins=True, removeBins=True, bids=[0])
+        return self._pm.loadData(timer,
+                                 loadMarkers=False,
+                                 loadBins=True,
+                                 removeBins=True,
+                                 bids=[0])
 
     def plot(self,
              timer,
@@ -121,31 +125,26 @@ class BinPlotter:
         
 class ReachabilityPlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName, folder=None):
+        self._pm = ProfileManager(dbFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
             
-    def loadProfile(self, timer, minLength=None, minSize=None, minPts=None):
-        profile = self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True)
-        if minSize is not None:
-            profile.minSize = minSize
-        if minPts is not None:
-            profile.minPts = minPts
+    def loadProfile(self, timer, minLength=None):
+        return self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True)
+
         return profile
         
     def plot(self,
              timer,
              minLength=None,
-             minSize=None,
-             minPts=None,
              bids=None,
              prefix="REACH",
             ):
         
-        profile = self.loadProfile(timer, minLength=minLength, minSize=minSize, minPts=minPts)
+        profile = self.loadProfile(timer, minLength=minLength)
 
         bm = BinManager(profile)
         if bids is None or len(bids) == 0:
@@ -164,31 +163,24 @@ class ReachabilityPlotter:
         
 class TreePlotter:
     """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, markerFileName, folder=None):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName, folder=None):
+        self._pm = ProfileManager(dbFileName)
         self._outDir = os.getcwd() if folder == "" else folder
         # make the dir if need be
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
             
-    def loadProfile(self, timer, minLength=None, minSize=None, minPts=None):
-        profile = self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True,
+    def loadProfile(self, timer, minLength=None):
+        return self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True,
                 removeBins=True, bids=[0])
-        if minSize is not None:
-            profile.minSize = minSize
-        if minPts is not None:
-            profile.minPts = minPts
-        return profile        
         
     def plot(self,
              timer,
              minLength=None,
-             minSize=None,
-             minPts=None,
              prefix="TREE"
             ):
         
-        profile = self.loadProfile(timer, minLength=minLength, minSize=minSize, minPts=minPts)
+        profile = self.loadProfile(timer, minLength=minLength)
 
         fplot = HierarchyRemovedPlotter(profile)
         print "    %s" % timer.getTimeStamp()

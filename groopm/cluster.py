@@ -68,32 +68,51 @@ from classification import ClassificationManager
 ###############################################################################
 
 class CoreCreator:
-    def __init__(self, dbFileName, markerFileName):
-        self._pm = ProfileManager(dbFileName, markerFileName)
+    def __init__(self, dbFileName):
+        self._pm = ProfileManager(dbFileName)
+        self._dbFileName = dbFileName
         
-    def loadProfile(self, timer, minLength, minSize, minPts):
-        profile = self._pm.loadData(timer,
-                                    minLength=minLength,
-                                    loadMarkers=True,
-                                    loadBins=False)
-        profile.minSize = minSize
-        profile.minPts = minPts
-        return profile
+    def loadProfile(self, timer, dsFileName, minLength, force):
+        return self._pm.loadDistances(timer,
+                                      dsFileName,
+                                      minLength=minLength,
+                                      loadMarkers=True,
+                                      loadBins=False,
+                                      force=force)
         
     def run(self,
             timer,
             minLength,
             minSize,
             minPts,
+            useDsFile=None,
+            newDsFile=None,
             force=False):
         # check that the user is OK with nuking stuff...
         if not force and not self._pm.promptOnOverwrite():
             return
-            
-        profile = self.loadProfile(timer, minLength=minLength, minSize=minSize, minPts=minPts)
         
-        ce = FeatureGlobalRankAndClassificationClusterEngine(profile)
-        ce.makeBins(timer, out_bins=profile.binIds)
+        if useDsFile is not None:
+            dsFileName = useDsFile
+            force_dists = False
+            keep_dists = True
+        elif newDsFile is not None:
+            dsFileName = newDsFile
+            force_dists = True
+            keep_dists = True
+        else:
+            dsFileName = self._dbFileName+".ds"
+            force_dists = True
+            keep_dists = False
+            
+        profile = self.loadProfile(timer,
+                                   dsFileName,
+                                   minLength=minLength,
+                                   force=force_dists
+                                   )
+        
+        ce = ClassificationClusterEngine(profile)
+        ce.makeBins(timer, out_bins=profile.binIds, out_reach_pos=profile.reachPos, out_reach_dist=profile.reachDist)
         
         bm = BinManager(profile)
         bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
@@ -105,9 +124,9 @@ class CoreCreator:
 
         
 # Hierarchical clustering
-class HybridHierarchicalClusterEngine:
-    """Hybrid hierarchical clustering algorthm"""
-    def makeBins(self, timer, out_bins):
+class HierarchicalClusterEngine:
+    """Hierarchical clustering algorthm"""
+    def makeBins(self, timer, out_bins, out_reach_pos, out_reach_dist):
         """Run binning algorithm"""
         
         print "Reticulating splines"
@@ -123,6 +142,8 @@ class HybridHierarchicalClusterEngine:
         
         print "Finding cores"
         out_bins[...] = self.fcluster(Z)
+        out_reach_pos[...] = o+1
+        out_reach_dist[...] = d
         print "    %s bins made." % len(set(out_bins).difference([0]))
         print "    %s" % timer.getTimeStamp()
             
@@ -135,25 +156,13 @@ class HybridHierarchicalClusterEngine:
         pass #subclass to override
         
         
-class FeatureGlobalRankAndClassificationClusterEngine(HybridHierarchicalClusterEngine):
+class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     def __init__(self, profile):
         self._profile = profile
     
-    def feature_global_ranks(self):
-        """Feature distance ranks scaled by contig lengths"""
-        features = (self._profile.covProfiles, self._profile.kmerSigs)
-        raw_distances = np.array([sp_distance.pdist(f, metric="euclidean") for f in features])
-        weights = sp_distance.pdist(self._profile.contigLengths[:, None], operator.mul)
-        scale_factor = 1. / weights.sum()
-        distance_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
-        return (distance_ranks, weights)
-    
     def distances(self):
-        (feature_ranks, weights) = self.feature_global_ranks()
-        rank_norms = np_linalg.norm(feature_ranks, axis=0)
-        minWt = (self._profile.minSize - self._profile.contigLengths) * self._profile.contigLengths
-        return distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=self._profile.minPts)
+        return self._profile.distances.denDists
     
     def fcluster(self, Z):
         cf = ClassificationManager(self._profile.mapping)
@@ -240,7 +249,7 @@ class MediodsClusterEngine:
         pass #subclass to override
         
         
-class FeatureRankCorrelationClusterEngine(MediodsClusterEngine):
+class CorrelationClusterEngine(MediodsClusterEngine):
     """Cluster using mediod feature distance rank correlation"""
     def __init__(self, profile, threshold=0.5):
         self._profile = profile
@@ -264,14 +273,4 @@ class FeatureRankCorrelationClusterEngine(MediodsClusterEngine):
 ###############################################################################
 ###############################################################################
 
-class ContigDistanceEngine:
-    """Simple class for computing feature distances"""
-    def getDistances(self, covProfiles, kmerSigs, contigLengths):
-        print "Computing pairwise feature distances"
-        features = (kmerSigs, covProfiles)
-        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
-        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-        scale_factor = 1. / weights.sum()
-        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
-        return (scaled_ranks[0], scaled_ranks[1], weights)
    

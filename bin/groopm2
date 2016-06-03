@@ -5,7 +5,7 @@
 #                                                                             #
 #    Entry point. See groopm/groopm.py for internals                          #
 #                                                                             #
-#    Copyright (C) Michael Imelfort                                           #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -38,7 +38,7 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
+__author__ = "Michael Imelfort, Tim Lamberton"
 __copyright__ = "Copyright 2012-2015"
 __credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"
@@ -154,6 +154,7 @@ class parse_command_configure:
         parser.add_argument('dbname', help="name of the database being created")
         parser.add_argument('reference', help="fasta file containing bam reference sequences")
         parser.add_argument('bamfiles', nargs='+', help="bam files to parse")
+        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-t', '--threads', type=int, default=1, help="number of threads to use during BAM parsing")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.add_argument('-c', '--cutoff', type=int, default=500, help="cutoff contig size during parsing")
@@ -168,6 +169,7 @@ class parse_command_configure:
         success = dm.createDB(
             options.bamfiles,
             options.reference,
+            options.markerfile,
             options.dbname,
             options.cutoff,
             timer,
@@ -182,7 +184,6 @@ class core_command_configure:
     
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
         parser.add_argument('-s', '--size', type=int, default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
         parser.add_argument('-P', '--points', type=int, default=20, help="minimum number of contigs which define a core")
@@ -194,7 +195,7 @@ class core_command_configure:
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
-        cc = groopm.CoreCreator(options.dbname, options.markerfile)
+        cc = groopm.CoreCreator(options.dbname)
         cc.run(timer,
                minLength=options.cutoff,
                minSize=options.size,

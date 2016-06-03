@@ -58,7 +58,7 @@ from bamm.bamExtractor import BamExtractor as BMBE
 # local imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from mstore import ContigParser
+from data3 import ContigParser
 from utils import makeSurePathExists
 import distance
 

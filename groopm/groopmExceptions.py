@@ -61,12 +61,9 @@ class BinNotFoundException(GMBinException): pass
 class ModeNotAppropriateException(GMBinException): pass
 
 #------------------------------------------------------------------------------
-# SOM MANAGER
-class GMSOMException(BaseException): pass
-class SOMDataNotFoundException(GMSOMException): pass
-class SOMFlavourException(GMSOMException): pass
-class SOMTypeException(GMSOMException): pass
-class RegionsDontExistException(GMSOMException): pass
+# PROFILE MANAGER
+class GMProfileException(BaseException): pass
+class DistanceStoreContigNotFoundException(GMProfileException): pass
 
 #------------------------------------------------------------------------------
 # ARG PARSER
