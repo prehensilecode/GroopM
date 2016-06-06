@@ -121,7 +121,10 @@ class CoreCreator:
         print "Saving bins"
         self._pm.setBinAssignments(profile, nuke=True)
         print "    %s" % timer.getTimeStamp()
-
+        
+        if not keep_dists:
+            self._pm.cleanUpDistances(dsFileName)
+        
         
 # Hierarchical clustering
 class HierarchicalClusterEngine:
@@ -129,20 +132,17 @@ class HierarchicalClusterEngine:
     def makeBins(self, timer, out_bins, out_reach_pos, out_reach_dist):
         """Run binning algorithm"""
         
-        print "Reticulating splines"
-        dists = self.distances()
-        print "    %s" % timer.getTimeStamp()
-
         print "Computing cluster hierarchy"
+        dists = self.distances()
         print "Clustering 2^%f.2 pairs" % np.log2(len(dists))
-        #Z = sp_hierarchy.single(dists)
         (o, d) = distance.reachability_order(dists)
         Z = hierarchy.linkage_from_reachability(o, d)
         print "    %s" % timer.getTimeStamp()
         
         print "Finding cores"
-        out_bins[...] = self.fcluster(Z)
-        out_reach_pos[...] = o+1
+        T = self.fcluster(Z)
+        out_bins[...] = T+1 #bins start from 1
+        out_reach_pos[...] = o
         out_reach_dist[...] = d
         print "    %s bins made." % len(set(out_bins).difference([0]))
         print "    %s" % timer.getTimeStamp()
@@ -267,7 +267,6 @@ class CorrelationClusterEngine(MediodsClusterEngine):
         (covRanks, kmerRanks) = tuple(dm[0] for dm in self.feature_ranks([origin]))
         return recruit.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
         
-
 ###############################################################################
 ###############################################################################
 ###############################################################################

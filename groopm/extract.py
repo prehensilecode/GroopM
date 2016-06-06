@@ -58,7 +58,7 @@ from bamm.bamExtractor import BamExtractor as BMBE
 # local imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from data3 import ContigParser
+from data3 import ContigParser, MappingParser
 from utils import makeSurePathExists
 import distance
 
@@ -220,6 +220,7 @@ class MarkerExtractor:
         
     def extractMappingInfo(self,
                            timer,
+                           markerFileName,
                            bids=[],
                            prefix='',
                            separator='\t',
@@ -235,7 +236,27 @@ class MarkerExtractor:
         bm = BinManager(profile)
         dm = sp_distance.squareform(profile.mapping.classification.distances())
         
-        # load all the contigs which have been assigned to bins
+        # load markers from file
+        cid2Indices = dict(zip(profile.contigNames, range(profile.numContigs)))
+        cid2Taxstrings = {}
+        reader = CSVParser()
+        try:
+            with open(markerFileName, 'r') as f:
+                for l in reader.parse(f, "\t"):
+                    try:
+                        contig_index = cid2Indices[l[0]]
+                    except:
+                        continue
+                        
+                    try:
+                        taxstring = l[2]
+                    except IndexError:
+                        taxstring = ""
+                    
+                    cid2Taxstrings[l[0]] = taxstring
+        except:
+            print "Error reading marker file:", markerfileName, sys.exc_info()[0]
+            raise
 
         # now print out the sequences
         print "Writing files"
@@ -246,8 +267,8 @@ class MarkerExtractor:
             idx = np.flatnonzero(np.in1d(profile.mapping.rowIndices, bin_indices))
             
             labels = profile.mapping.markerNames[idx]
-            taxstrings = profile.mapping.taxstrings[idx]
             cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
+            taxstrings = np.array([cid2Taxstring[name] for name in cnames])
             dists = dm[np.ix_(idx, idx)]
             
             try:

@@ -50,6 +50,7 @@ __status__ = "Development"
 import os
 import sys
 import colorsys
+import operator
 import numpy as np
 import numpy.linalg as np_linalg
 import scipy.spatial.distance as sp_distance
@@ -85,22 +86,39 @@ class BinPlotter:
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
 
-    def loadProfile(self, timer):
-        return self._pm.loadData(timer,
-                                 loadMarkers=False,
-                                 loadBins=True,
-                                 removeBins=True,
-                                 bids=[0])
+    def loadProfile(self, timer, dsFileName, force):
+        return self._pm.loadDistances(timer,
+                                      dsFileName,
+                                      loadMarkers=False,
+                                      loadBins=True,
+                                      removeBins=True,
+                                      bids=[0],
+                                      force=force)
 
     def plot(self,
              timer,
              bids=None,
              origin="mediod",
              colorMap="HSV",
-             prefix="BIN"
+             prefix="BIN",
+             useDsFile=None,
+             newDsFile=None
             ):
         
-        profile = self.loadProfile(timer)
+        if useDsFile is not None:
+            dsFileName = useDsFile
+            force_dists = False
+            keep_dists = True
+        elif newDsFile is not None:
+            dsFileName = newDsFile
+            force_dists = True
+            keep_dists = True
+        else:
+            dsFileName = self._dbFileName+".ds"
+            force_dists = True
+            keep_dists = False
+            
+        profile = self.loadProfile(timer, dsFileName, force=force_dists)
 
         bm = BinManager(profile)
         if bids is None or len(bids) == 0:
@@ -121,6 +139,9 @@ class BinPlotter:
             if fileName=="":
                 break
         print "    %s" % timer.getTimeStamp()
+        
+        if not keep_dists:
+            self._pm.cleanUpDistances(dsFileName)
 
         
 class ReachabilityPlotter:
@@ -133,7 +154,8 @@ class ReachabilityPlotter:
             makeSurePathExists(self._outDir)
             
     def loadProfile(self, timer, minLength=None):
-        return self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True)
+        return self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True,
+                loadReachability=True)
 
         return profile
         
@@ -172,7 +194,7 @@ class TreePlotter:
             
     def loadProfile(self, timer, minLength=None):
         return self._pm.loadData(timer, minLength=minLength, loadBins=True, loadMarkers=True,
-                removeBins=True, bids=[0])
+                loadReachability=True, removeBins=True, bids=[0])
         
     def plot(self,
              timer,
@@ -380,28 +402,24 @@ class BarPlotter(Plotter2D):
 class HierarchyReachabilityPlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
-        self._colourmap = getColorMap(colourmap)
-        self._ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
-        self._ddists = self._ce.distances()
         self._cf = ClassificationManager(self._profile.mapping)
+        self._colourmap = getColorMap(colourmap)
         
     def plot(self,
              bids,
              label="count",
              highlight="bins",
              fileName=""):
-                 
-        (o, d) = distance.reachability_order(self._ddists)
         
-        x = d[o]
-        #o = self._order[o]
+        h = self._profile.reachDists
+        o = self._profile.reachOrder
         if label=="count":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices()])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "count"
         elif label=="tag":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices()])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
@@ -410,16 +428,17 @@ class HierarchyReachabilityPlotter:
             # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
             
-            flag = np.concatenate(([False], binIds[1:] != binIds[:-1], [True]))
+            binned_indices = np.flatnonzero(binIds > 0)
+            flag = np.concatenate(([False], binIds[binned_indices[1:]] != binIds[bined_indices[:-1]], [True]))
             iflag = np.cumsum(flag[:-1])
-            colours = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
-            colours[binIds==0] = 'c'
+            colours = np.full(len(o), 'c', dtype="|S1")
+            colours[binned] = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
             
             # label stretches with bin ids
-            last_indices = np.flatnonzero(flag[1:])
+            last_indices = binned[flag[1:]]
             first_indices = np.concatenate(([0], last_indices[:-1]+1))
             group_centers = (first_indices+last_indices+1)*0.5
-            group_heights = np.array([x[s:e+1].max() for (s, e) in zip(first_indices, last_indices)])
+            group_heights = np.array([h[s:e+1].max() for (s, e) in zip(first_indices, last_indices)])
             group_labels = binIds[first_indices].astype(str)
             k = np.in1d(binIds[first_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
@@ -428,7 +447,6 @@ class HierarchyReachabilityPlotter:
             # color leaves by maximum ancestor coherence score
             scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, d)
-            #Z = sp_hierarchy.single(self._ddists)
             (_T, coeffs) = hierarchy.fcluster_coeffs(Z,
                                                      dict(self._profile.mapping.iterindices()),
                                                      self._cf.disagreement,
@@ -443,7 +461,7 @@ class HierarchyReachabilityPlotter:
         
         
         hplot = BarPlotter(
-            height=x,
+            height=h,
             colours=colours,
             xlabel=xlabel,
             ylabel="dendist",
@@ -458,23 +476,17 @@ class HierarchyReachabilityPlotter:
 class HierarchyRemovedPlotter:
     def __init__(self, profile):
         self._profile = profile
-        ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
-        ddist = ce.distances()
-        (o, d) = distance.reachability_order(ddist)
-        Z = hierarchy.linkage_from_reachability(o, d)
-        #Z = sp_hierarchy.single(ddist)
-        self._Z = Z
         self._cf = ClassificiationConsensusFinder(self._profile.mapping)
+        self._Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
         (_r, self._node_dict) = to_tree(self._Z, rd=True)
         
     def plot(self,
              label="count",
              fileName=""):
         
-        binIds = self._profile.binIds
-        T = np.arange(len(binIds))
-        (nodes, bids) = sp_hierarchy.leaders(self._Z, binIds[binIds!=0])
-        nodes = np.concatenate((nodes, np.flatnonzero(binIds==0)))
+        ce = cluster.ClassificationClusterEngine(self._profile)
+        T = ce.fcluster(self._Z)
+        (nodes, bids) = sp_hierarchy.leaders(self._Z, T)
         rootancestors = hierarchy.ancestors(self._Z, nodes)
         rootancestors_set = set(rootancestors)
         if label=="tag":
@@ -519,14 +531,7 @@ class BinDistancePlotter:
     def __init__(self, profile, colourmap='HSV'):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
-        ce = FeatureGlobalRankAndClassificationClusterEngine(self._profile)
-        ((x, y), w) = ce.feature_global_ranks()
-        self._x = x
-        self._y = y
-        self._w = w
-        self._c = sp_distance.pdist(self._profile.contigGCs[:, None], lambda a, b: (a+b)/2)
-        self._h = sp_distance.pdist(self._profile.binIds[:, None], lambda a, b: a!=0 and a==b).astype(bool)
-        
+
     def plot(self,
              bid,
              origin,
@@ -535,9 +540,11 @@ class BinDistancePlotter:
         n = self._profile.numContigs
         bin_indices = BinManager(self._profile).getBinIndices(bid)
         if origin=="mediod":
-            bin_condensed_indices = [distance.condensed_index(n, bi, bj) for (i, bi) in enumerate(bin_indices[:-1]) for bj in bin_indices[i+1:]]
-            #bin_squareform_indices = distance.pcoords(bin_indices, n)
-            origin = distance.mediod(np_linalg.norm((self._x[bin_condensed_indices], self._y[bin_condensed_indices]), axis=0))
+            bin_condensed_indices = [distance.condensed_index(n, bin_indices[i], bin_indices[j]) for (i, j) in distance.pairs(len(bin_indices))]
+            x = self._profile.distances.covDists[bin_condensed_indices]
+            y = self._profile.distances.kmerDists[bin_condensed_indices]
+            w = self._profile.distances.weights[bin_condensed_indices]
+            origin = distance.mediod(np_linalg.norm((x, y), axis=0) * w)
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
         elif origin=="max_length":
@@ -546,12 +553,14 @@ class BinDistancePlotter:
             raise ValueError("Invalid `origin` argument parameter value: `%s`" % origin)
         
         bi = bin_indices[origin]
-        condensed_indices = [distance.condensed_index(n, bi, i) for i in range(n) if i != bi]
-        fplot = FeaturePlotter(self._x[condensed_indices],
-                               self._y[condensed_indices],
-                               colours=self._c[condensed_indices],
+        condensed_indices = [distance.condensed_index(n, bi, i) for i in bin_indices if i is not bi] 
+        c = sp_distances.cdist(self._profile.contigGCs[[bi], None], self._profile.contigGCs[:, None], lambda a, b: (a+b)/2)[0]
+        h = sp_distances.cdist(self._profile.binIds[[bi], None], self._profile.binIds[:, None], lambda a, b: a!=0 and a==b)[0].astype(bool)
+        fplot = FeaturePlotter(self._profile.distances.covDists[condensed_indices],
+                               self._profile.distances.kmerDists[condensed_indices],
+                               colours=c,
                                sizes=20,
-                               edgecolours=np.where(self._h[condensed_indices], 'r', 'k'),
+                               edgecolours=np.where(h, 'r', 'k'),
                                colourmap=self._colourmap,
                                xlabel="cov", ylabel="kmer")
         fplot.plot(fileName)

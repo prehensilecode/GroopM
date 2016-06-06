@@ -187,7 +187,10 @@ class core_command_configure:
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
         parser.add_argument('-s', '--size', type=int, default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
         parser.add_argument('-P', '--points', type=int, default=20, help="minimum number of contigs which define a core")
-        parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
+        parser.add_argument('-f', '--force', action="store_true", help="overwrite existing DB file without prompting")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--save_distances', help="keep file of computed distances file after making bins")
+        group.add_argument('--use_saved_distances', help="name of computed distances file to use")
         parser.set_defaults(run=self)
     
     def __call__(_self, options):
@@ -200,6 +203,8 @@ class core_command_configure:
                minLength=options.cutoff,
                minSize=options.size,
                minPts=options.points,
+               newDsFile=options.save_distances,
+               useDsFile=options.use_saved_distances,
                force=options.force)
         
         
@@ -295,10 +300,10 @@ class markers_command_configure:
         if options.bids is not None:
             bids = options.bids
         mx = groopm.MarkerExtractor(options.dbname,
-                                    options.markerfile,
                                     folder=options.out_folder
                                     )
         mx.extractMappingInfo(timer,
+                              markerFileName=options.markerfile,
                               bids=bids,
                               prefix=options.prefix)
             
@@ -400,7 +405,6 @@ class plot_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
@@ -408,6 +412,9 @@ class plot_command_configure:
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--save_distances', help="keep file of computed distances file after making bins")
+        group.add_argument('--use_saved_distances', help="name of computed distances file to use")
         parser.set_defaults(run=self)
 
     def __call__(_self, options):
@@ -424,7 +431,9 @@ class plot_command_configure:
                    bids=options.bids,
                    origin=options.origin,
                    colorMap=options.colormap,
-                   prefix=options.prefix)
+                   prefix=options.prefix,
+                   useDsFile=options.use_saved_distances,
+                   newDsFile=options.save_distances)
                    
                            
 class reach_command_configure:
@@ -432,7 +441,6 @@ class reach_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
         parser.add_argument('-c', '--cutoff', type=int, help="cutoff contig size for core creation")
         parser.add_argument('-s', '--size', type=int, default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
@@ -466,7 +474,6 @@ class tree_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-c', '--cutoff', type=int, help="cutoff contig size for core creation")
         parser.add_argument('-s', '--size', type=int, default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
         parser.add_argument('-P', '--points', type=int, default=20, help="minimum number of contigs which define a core")

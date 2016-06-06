@@ -60,6 +60,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
 class _Classification:
     """
     Class for carrying gene taxonomic classification data around, constructed 
@@ -302,11 +303,11 @@ class ProfileManager:
             if(loadReachability):
                 if(verbose):
                     print "    Loading bin assignments"
-                (prof.reachPos, prof.reachDists) = dm.getReachabilityData(self.dbFileName, indices=prof.indices)
+                (prof.reachOrder, prof.reachDists) = dm.getReachabilityOrdering(self.dbFileName, indices=prof.indices)
             else:
                 # we need zeros as positional indicies then...
-                prof.reachPos = np.zeros(prof.numContigs, dtype=int)
-                prof.reachDists = np.zeros(prof.numContigs, dtype=float)
+                prof.reachOrder = np.array([], dtype=int)
+                prof.reachDists = np.zeros([], dtype=float)
 
             if(loadMarkers):
                 if verbose:
@@ -437,13 +438,22 @@ class ProfileManager:
             dists.profile = prof
         
         except:
-            print "Error loading distance store:", self.dsFileName, sys.exc_info()[0]
+            print "Error loading distance store:", dsFileName, sys.exc_info()[0]
             raise
                 
         if(not silent):
             print "    %s" % timer.getTimeStamp()
             
         return dists
+        
+    def cleanUpDistances(self, dsFileName):
+        """Delete distance store file"""
+        
+        try:
+            os.remove(dsFileName)
+        except:
+            print "Error removing distance store:", dsFileName, sys.exc_info()[0]
+            raise
         
     def setBinAssignments(self, profile, nuke=False):
         """Save bins into the DB
@@ -460,9 +470,9 @@ class ProfileManager:
         """Save mapping distances
         
         dataManager.setReachability needs GLOBAL indices
-        { global_index : (order, distance) }
+        [(global_index, distance)]
         """
-        updates = dict(zip(profile.indices, zip(profile.reachabilityOrder, profile.reachabilityDistance)))
+        updates = zip(profile.indices[profile.reachOrder], profile.reachDists)
         DataManager().setMappingDistances(self.dbFileName, updates)
 
     def promptOnOverwrite(self, minimal=False):

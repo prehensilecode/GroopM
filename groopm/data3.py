@@ -197,7 +197,7 @@ class DataManager:
     #
     # ** Reachability **
     #table = 'reachability'                                                     # [NEW in version 6]
-    reachability_desc = [('position', int),
+    reachability_desc = [('contig', int),
                          ('distance', float)
                          ]
     #
@@ -430,12 +430,12 @@ class DataManager:
                 #------------------------
                 # Add a table for reachability info
                 #------------------------
-                reachability_data = np.array([(0, 0)]*num_cons, dtype=self.reachability_desc)
+                reachability_data = np.array([], dtype=self.reachability_desc)
                 h5file.create_table(meta_group,
                                     'reachability',
                                     reachability_data,
                                     title="Reachability information",
-                                    expectedrows=num_cons
+                                    expectedrows=1
                                     )
                                     
                 #------------------------
@@ -1011,7 +1011,7 @@ class DataManager:
         classification_data = np.array([tuple(i) for i in tax_table], dtype=DB6_classification_desc)
         
         DB6_reachability_desc = self.reachability_desc
-        reachability_data = np.array([(0, 0)]*num_cons, dtype=DB6_reachability_desc)
+        reachability_data = np.array([], dtype=DB6_reachability_desc)
         
         DB6_markers_desc = self.markers_desc
         markers_data = np.array(zip(marker_names, marker_counts), dtype=DB6_markers_desc)
@@ -1065,8 +1065,8 @@ class DataManager:
             h5file.create_table(meta_group,
                                 'reachability',
                                 reachability_data,
-                                title="Reachability information",
-                                expectedrows=num_cons
+                                title="Reachability ordering",
+                                expectedrows=1
                                 )
                                 
             # markers
@@ -1240,21 +1240,19 @@ class DataManager:
 #------------------------------------------------------------------------------
 # GET TABLES - REACHABILITY
 
-    def getReachabilityData(self, dbFileName, indices=[]):
+    def getReachabilityOrdering(self, dbFileName, indices=[]):
         """Load reachability data
         
-        Returns a tuple: (positions, distances)
+        Returns a tuple: (ordered_indices, distances)
         """
+        if indices==[]:
+            condition = "contig >= 0"
+        else:
+            condition = " | ".join(["contig == %d" % i for i in indices])
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            (pos, dists) = zip([(x["position"], x["distance"]) for x in self.iterrows(h5file.root.reachability, indices)])
+            (indices, dists) = zip(*[(x["contig"], x["distance"]) for x in h5file.root.reachability.where(condition)])
+        return (np.array(indices), np.array(dists))
         
-        if indices == []:
-            return (np.array(pos), np.array(dists))
-            
-        # shrink positions to be adjacent
-        shrink_pos = np.empty(len(indices), dtype=int)
-        shrink_pos[np.argsort(pos)] = np.arange(1, len(indices)+1) # positions start at 1
-        return (shrink_pos, np.array(dists))
         
 #------------------------------------------------------------------------------
 # GET TABLES - MARKERS
@@ -1429,25 +1427,14 @@ class DataManager:
 #------------------------------------------------------------------------------
 #  SET OPERATIONS - REACHABILITY
         
-    def setReachability(self, dbFileName, updates={}):
+    def setReachability(self, dbFileName, updates=[]):
         """Set per-contig reachability
 
-        updates is a dictionary which looks like:
-        { tableRow : (order, distance) }
+        updates is a list of (contig, distance) pairs in reachability order
         """
         
-        # prepare reachability table image
-        num_cons = self.getNumContigs(dbFileName)
-        order = [0]*num_cons
-        dists = [0.]*num_cons
-                
-        # now apply the updates
-        for (tr, update) in updates.iteritems():
-            order[tr] = update[0]+1 # 0 means not used for clustering
-            dists[tr] = update[1]
-
-        # build the new contigs table image
-        reachability_data = np.array(zip(order, dists),
+        # build the new reachability table image
+        reachability_data = np.array(updates,
                                      dtype=self.reachability_desc)
           
         # Update database 
@@ -1462,8 +1449,8 @@ class DataManager:
             h5file.create_table('/',
                                 'tmp_reachability',
                                 reachability_data,
-                                title="Reachability information",
-                                expectedrows=num_cons)
+                                title="Reachability ordering",
+                                expectedrows=len(updates))
 
             # rename the tmp tables to overwrite
             h5file.rename_node("/", 'reachability', 'tmp_reachability', overwrite=True)
@@ -1773,7 +1760,7 @@ class BamParser:
 
 class MappingParser:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
-    def parse(self, fp, cid2Indices, cfe):
+    def parse(self, fp, cid2Indices, cfe=None):
         contig_indices = []
         map_markers = []
         map_taxstrings = []
@@ -1939,11 +1926,11 @@ class DistanceManager:
                 cov_profiles = dm.getCoverages(dbFileName, indices=indices)
                 ksigs = dm.getKmerSigs(dbFileName, indices=indices)
                 con_lengths = dm.getContigLengths(dbFileName, indices=indices)
-                (cov_dists, kmer_dists, w, den_dists) = de.getDistances(cov_profiles,
-                                                                        ksigs,
-                                                                        con_lengths,
-                                                                        minSize=minSize,
-                                                                        minPts=minPts)
+                (cov_dists, kmer_dists, w, den_dists) = de.makeDistances(cov_profiles,
+                                                                         ksigs,
+                                                                         con_lengths,
+                                                                         minSize=minSize,
+                                                                         minPts=minPts)
                                                                 
                 #------------------------
                 # write profile distances
@@ -2129,8 +2116,9 @@ class DistanceManager:
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
     
-    def getDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize, minPts):
-        print "Reticulating splines"
+    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize, minPts, silent=False):
+        if(not silent):
+            print "    Reticulating splines"
         features = (covProfiles, kmerSigs)
         raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
         weights = sp_distance.pdist(contigLengths[:, None], operator.mul)

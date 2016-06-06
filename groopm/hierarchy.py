@@ -60,6 +60,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ############################################################################### 
+
 def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=False):
     """Find flat clusters by maximising cluster coefficient scores for nodes a
     hierarchical clustering.
@@ -266,7 +267,6 @@ def fcluster_merge(Z, merge, return_nodes=False):
             leaf_max_nodes[current_leaves] = n+i
     
     (_, bids) = np.unique(leaf_max_nodes, return_inverse=True)
-    bids += 1 # start bin ids from 1
     
     if not return_nodes:
         return bids 
@@ -295,22 +295,43 @@ def flatten_nodes(Z):
 
 
 def linkage_from_reachability(o, d):
-    """Hierarchical clustering from reachability ordering and distances"""
+    """Hierarchical clustering from reachability ordering and distances
+    
+    Paramters
+    ---------
+    o : ndarray
+        1-D array. `o[i]` is the index of the original observation reached `i`th
+        in the reachability traversal.
+    d : ndarray
+        1-D array. `d[i]` is the distance to the `o[i]`th observation in the 
+        reachabililty traversal.
+    
+    Returns
+    -------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering. 
+        See `scipy.cluster.hierarchy.linkage` for information on encoding.
+    """
     o = np.asarray(o)
     d = np.asarray(d)
     n = len(o)
     Z = np.empty((n - 1, 4), dtype=d.dtype)
     
-    ordered_dists = d[o]
-    sorting_indices = np.hstack((ordered_dists[1:].argsort()+1, 0))
+    sorting_indices = np.concatenate((d[1:].argsort()+1, [0])) # pretend first observation is largest
+    # dict of { node_id: (range_from, range_to) }
+    # this encodes the range of `o` of observations below the node with `node_id` in the hierarchy
+    # the root node with id `2*n-2` contains the whole dataset
     indices_dict = dict([(2*n-2, (0, n))])
     
     for i in range(n-2, -1, -1):
         (low, high) = indices_dict.pop(n+i)
-        split = sorting_indices[i]
+        split = sorting_indices[i] # split using index of the next largest observation
         if split == low + 1:
             left_node = o[low]
         else:
+            # we determine the iteration at which left_node will be split next by finding the node's
+            # position in the distance ordering `sorting_indices` of the largest descendent
+            # observation. This iteration corresponds to the row in Z encoding the node.
             left_node = np.flatnonzero(np.logical_and(low <= sorting_indices[:i], sorting_indices[:i] < split))[-1]+n
             indices_dict[left_node] = (low, split)
             
@@ -324,7 +345,7 @@ def linkage_from_reachability(o, d):
             Z[i, :2] = np.array([left_node, right_node])
         else:
             Z[i, :2] = np.array([right_node, left_node])
-        Z[i, 2] = ordered_dists[split]
+        Z[i, 2] = d[split]
         Z[i, 3] = high - low
         
     return Z
