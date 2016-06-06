@@ -229,7 +229,7 @@ def test_reachability_order():
                         [0, 1, 4, 3, 2],
                         "`reachability_order` returns reachability traversal order")
     assert_equal_arrays(d,
-                        [0, 17.7, 70.0, 14.4, 50.8],
+                        [0, 17.7, 50.8, 14.4, 70.0],
                         "`reachability_order` returns reachability distances when traversing points")
                         
     

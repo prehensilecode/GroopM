@@ -1040,9 +1040,8 @@ class DataManager:
         
         with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
             mappings_group = h5file.create_group("/", "mappings", "Contig mappings")
-            profileDistances_group = h5file.create_group("/", "profileDistances", "Pairwise profile distances")
-            mappingDistances_group = h5file.create_group("/", "mappingDistances", "Pairwise mapping distances")
             meta_group = h5file.get_node("/", "meta")
+            profile_group = h5file.get_node("/", "profile")
                 
             # mappings
             h5file.create_table(mappings_group,

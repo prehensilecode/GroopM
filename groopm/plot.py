@@ -67,7 +67,7 @@ from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import FeatureGlobalRankAndClassificationClusterEngine
+from cluster import ClassificationClusterEngine
 from classification import ClassificationManager
 import hierarchy
 

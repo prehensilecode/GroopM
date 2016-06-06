@@ -68,6 +68,8 @@ from classification import ClassificationManager
 ###############################################################################
 
 class CoreCreator:
+    """Top level class for making bins"""
+    
     def __init__(self, dbFileName):
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
@@ -112,7 +114,7 @@ class CoreCreator:
                                    )
         
         ce = ClassificationClusterEngine(profile)
-        ce.makeBins(timer, out_bins=profile.binIds, out_reach_pos=profile.reachPos, out_reach_dist=profile.reachDist)
+        ce.makeBins(timer, out_bins=profile.binIds, out_reach_order=profile.reachOrder, out_reach_dists=profile.reachDist)
         
         bm = BinManager(profile)
         bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
@@ -129,7 +131,8 @@ class CoreCreator:
 # Hierarchical clustering
 class HierarchicalClusterEngine:
     """Hierarchical clustering algorthm"""
-    def makeBins(self, timer, out_bins, out_reach_pos, out_reach_dist):
+    
+    def makeBins(self, timer, out_bins, out_reach_order, out_reach_dists):
         """Run binning algorithm"""
         
         print "Computing cluster hierarchy"
@@ -142,8 +145,8 @@ class HierarchicalClusterEngine:
         print "Finding cores"
         T = self.fcluster(Z)
         out_bins[...] = T+1 #bins start from 1
-        out_reach_pos[...] = o
-        out_reach_dist[...] = d
+        out_reach_order[...] = o
+        out_reach_dists[...] = d
         print "    %s bins made." % len(set(out_bins).difference([0]))
         print "    %s" % timer.getTimeStamp()
             
@@ -158,6 +161,7 @@ class HierarchicalClusterEngine:
         
 class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
+    
     def __init__(self, profile):
         self._profile = profile
     

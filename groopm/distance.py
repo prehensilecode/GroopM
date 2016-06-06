@@ -197,7 +197,9 @@ def reachability_order(Y):
     Returns
     -------
     o : ndarray
-        1-D array of indices of leaf nodes in traversal order.
+        1-D array of indices of original observations in traversal order.
+    d : ndarray
+        1-D array. `d[i]` is the `i`th traversal distance.
     """
     n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
@@ -212,7 +214,7 @@ def reachability_order(Y):
         o[i] = closest
         to_visit[closest] = False
         d[to_visit] = np.minimum(d[to_visit], dm[closest, to_visit])
-    return (o, d)
+    return (o, d[o])
     
     
 #condensed_index_vectorised = np.vectorize(condensed_index, otypes=[np.intp])

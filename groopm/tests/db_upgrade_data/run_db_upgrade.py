@@ -30,6 +30,7 @@ import sys
 
 # groopm imports
 from groopm.data3 import DataManager
+from groopm.groopmTimekeeper import TimeKeeper
 
 ###############################################################################
 ###############################################################################
@@ -42,7 +43,8 @@ if __name__ == '__main__':
     except IndexError:
         print "USAGE: %s DATABASE" % sys.argv[0]
         sys.exit(1)
-    DataManager().checkAndUpgradeDB(dbFileName, silent=False)
+    timer = TimeKeeper()
+    DataManager().checkAndUpgradeDB(dbFileName, timer, silent=False)
 
 ###############################################################################
 ###############################################################################

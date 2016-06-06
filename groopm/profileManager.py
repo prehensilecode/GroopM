@@ -38,7 +38,7 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
+__author__ = "Michael Imelfort, Tim Lamberton"
 __copyright__ = "Copyright 2012/2013"
 __credits__ = ["Michael Imelfort", "Tim Lamberton"]
 __license__ = "GPL3"

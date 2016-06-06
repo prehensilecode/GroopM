@@ -234,7 +234,7 @@ class MarkerExtractor:
         
         profile = self.loadProfile(timer, bids, cutoff)
         bm = BinManager(profile)
-        dm = sp_distance.squareform(profile.mapping.classification.distances())
+        dm = sp_distance.squareform(profile.mapping.classification.makeDistances())
         
         # load markers from file
         cid2Indices = dict(zip(profile.contigNames, range(profile.numContigs)))

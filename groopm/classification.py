@@ -60,6 +60,7 @@ class ClassificationManager:
     """Wraps a connectivity matrix and determines consensus classifications by
     finding `cliques` (fully-connected subgraphs) in the matrix.
     """
+    
     def __init__(self, mapping):
         self._classification = mapping.classification
         self._mC = mapping.makeConnectivity()
