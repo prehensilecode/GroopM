@@ -51,8 +51,9 @@ import scipy.spatial.distance as sp_distance
 import sys
 
 # GroopM imports
-from data3 import DataManager, ClassificationEngine
+from data3 import DataManager, ClassificationEngine, DistanceManager
 from utils import group_iterator
+import distance
 
 np.seterr(all='raise')
 
@@ -92,7 +93,7 @@ class _Classification:
         return [t+self._taxons[i] for (t, i) in zip(self._ce.TAGS, self._table[index]) if i!=0]
     
     def makeDistances(self):
-        return sp_distance.pdist(self._table, self._ce.distance)
+        return sp_distance.pdist(self._table, self._ce.getDistance)
         
         
         
@@ -107,7 +108,7 @@ class _Mappings:
         `rowIndices[i]` is the row index in `profile` of mapping `i`.
     mapIndices : ndarray
         `indices[i]` is the index into the pytables structure of mapping `i`
-    markers : ndarray
+    markerNames : ndarray
         `markerNames[i]` is the marker id for mapping `i`.
     classification : _Classificaton object
         See above.
@@ -119,7 +120,7 @@ class _Mappings:
     
     def itergroups(self):
         """Returns an iterator of marker group ids and indices."""
-        return group_iterator(self.markers)
+        return group_iterator(self.markerNames)
         
     def iterindices(self):
         """Returns an iterator of profile and marker indices."""
@@ -184,10 +185,6 @@ class _Profile:
         `contigLengths[i]` is the length in bp of contig `i`.
     binIds : ndarray
         `binIds[i]` is the bin id assigned to contig `i`.
-    reachPos : ndarray
-        `reachPos[i]` is the reachability order position of contig `i`.
-    reachDist : ndarray
-        `reachDist[i]` is the reachability distance of contig `i`.
         
     
     # metadata
@@ -201,6 +198,10 @@ class _Profile:
         See above.
     distances : _Distances object
         See above.
+    reachOrder : ndarray
+        `reachOrder[i]` is the contig index in position `i` of reachability order.
+    reachDists : ndarray
+        `reachDists[i]` is the reachability distance of position `i`.
     """
     pass
     
@@ -243,25 +244,34 @@ class ProfileManager:
         dm.checkAndUpgradeDB(self.dbFileName, timer, silent=silent)
         try:
             prof = _Profile()
-            
-            # Stoit names
-            prof.numStoits = dm.getNumStoits(self.dbFileName)
-            if(loadStoitNames):
-                prof.stoitNames = np.array(dm.getStoitColNames(self.dbFileName).split(","))
 
             # Conditional filter
             condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
             prof.indices = dm.getConditionalIndices(self.dbFileName,
                                                     condition=condition)
-
+                                                    
             # Collect contig data
             if(verbose):
                 print "    Loaded indices with condition:", condition
-            prof.numContigs = len(prof.indices)
+            
+            if(loadReachability):
+                if(verbose):
+                    print "    Loading reachability ordering"
+                (prof.indices, prof.reachDists) = dm.getReachabilityOrder(self.dbFileName, indices=prof.indices)
+                prof.numContigs = len(prof.indices)
+                prof.reachOrder = np.arange(prof.numContigs)
+                                
+                if prof.numContigs == 0:
+                    print "    ERROR: No previously clustered contigs loaded using condition:", condition
+                    return
+            else:
+                prof.numContigs = len(prof.indices)
+                prof.reachOrder = np.zeros(prof.numContigs, dtype=int)
+                prof.reachDists = np.zeros(prof.numContigs, dtype=float)
 
-            if prof.numContigs == 0:
-                print "    ERROR: No contigs loaded using condition:", condition
-                return
+                if prof.numContigs == 0:
+                    print "    ERROR: No contigs loaded using condition:", condition
+                    return
 
             if(not silent):
                 print "    Working with: %d contigs" % prof.numContigs
@@ -269,8 +279,8 @@ class ProfileManager:
             if(loadCovProfiles):
                 if(verbose):
                     print "    Loading coverage profiles"
-                prof.covProfiles = dm.getCoverageProfiles(self.dbFileName, indices=prof.indices)
-                prof.normCoverages = dm.getCoverageNorms(self.dbFileName, indices=prof.indices)
+                prof.covProfiles = dm.getCoverages(self.dbFileName, indices=prof.indices)
+                prof.normCoverages = dm.getNormCoverages(self.dbFileName, indices=prof.indices)
 
             if(loadKmerSigs):
                 if(verbose):
@@ -299,51 +309,52 @@ class ProfileManager:
             else:
                 # we need zeros as bin indicies then...
                 prof.binIds = np.zeros(prof.numContigs, dtype=int)
-                
-            if(loadReachability):
-                if(verbose):
-                    print "    Loading bin assignments"
-                (prof.reachOrder, prof.reachDists) = dm.getReachabilityOrdering(self.dbFileName, indices=prof.indices)
-            else:
-                # we need zeros as positional indicies then...
-                prof.reachOrder = np.array([], dtype=int)
-                prof.reachDists = np.zeros([], dtype=float)
 
             if(loadMarkers):
                 if verbose:
                     print "    Loading marker data"
-                
                 map_indices = dm.getMappingContigs(self.dbFileName)
                 map_markers = dm.getMappingMarkers(self.dbFileName)
-                map_table = dm.getClassification(self.dbFileName)
-                indices2Rows = dict(zip(prof.indices, range(prof.numContigs)))
                 
+                indices_2_rows = dict(zip(prof.indices, range(prof.numContigs)))
                 map_row_indices = []
                 map_keep = []
-                for (i, index) in map_indices:
+                for (i, index) in enumerate(map_indices):
                     try:
-                        row = indices2Rows[index]
-                    except:
-                        pass
+                        row = indices_2_rows[index]
+                    except KeyError:
+                        continue
                     map_row_indices.append(row)
                     map_keep.append(i)
-                map_row_indices = np.array(map_row_indices)
-                map_keep = np.array(map_keep)
                     
-                marker_names = dm.getMarkerNames(self.dbFileName)
-                taxon_names = dm.getTaxonNames(self.dbFileName)
-                
                 markers = _Mappings()
-                markers.rowIndices = map_row_indices
-                markers.indices = map_keep
-                markers.markerNames = marker_names[map_markers[map_keep]]
-                markers.numMappings = len(map_keep)
+                markers.rowIndices = np.array(map_row_indices)
+                markers.indices = np.array(map_keep, dtype=int)
                 
-                classification = _Classification()
-                classification._table = map_table[:, map_keep]
-                classificaiton._taxons = taxon_names
-                markers.classification = classification
+                if verbose:
+                    print "    Loading marker names"
+                marker_names = dm.getMarkerNames(self.dbFileName)
+                markers.markerNames = marker_names[map_markers][markers.indices]
+                markers.numMappings = len(markers.indices)
+                
+                classif = _Classification()
+                
+                if verbose:
+                    print "    Loading marker classifications"
+                map_table = dm.getClassification(self.dbFileName)
+                classif._table = map_table[map_keep]
+                
+                if verbose:
+                    print "    Loading marker taxons"
+                classif._taxons = dm.getTaxonNames(self.dbFileName)
+                markers.classification = classif
                 prof.mapping = markers
+                
+            # Stoit names
+            prof.numStoits = dm.getNumStoits(self.dbFileName)
+            if(loadStoitNames):
+                print "    Loading stoit names"
+                prof.stoitNames = np.array(dm.getStoitNames(self.dbFileName).split(","))
             
         except:
             print "Error loading DB:", self.dbFileName, sys.exc_info()[0]
@@ -372,6 +383,10 @@ class ProfileManager:
         
         File is created if it doesn't exist
         """
+        if(silent):
+            verbose=False
+        if verbose:
+            print "Loading distances from:", dsFileName
         
         # check if file exists
         make_file = True
@@ -382,7 +397,7 @@ class ProfileManager:
         except IOError:
             pass
              
-        stm = DistanceStoreManager()
+        stm = DistanceManager()
         if make_file:
             stm.createDistanceStore(timer,
                                     dsFileName,
@@ -400,11 +415,11 @@ class ProfileManager:
         
         try:                    
             con_names = stm.getContigNames(dsFileName)
-            cid2Indices = dict(zip(con_names, range(len(con_names))))
+            cid_2_indices = dict(zip(con_names, range(len(con_names))))
             indices = []
             for name in prof.contigNames:
                 try:
-                    i = cid2Indices[name]
+                    i = cid_2_indices[name]
                 except KeyError:
                     pass
                     raise DistanceStoreContigNotFoundException("ERROR: No pre-computed distances for contig %s" % name)
@@ -435,7 +450,7 @@ class ProfileManager:
                 dists.denDists = stm.getDensityDistances(dsFileName, indices=condensed_indices)
         
             dists.numDists = len(condensed_indices)
-            dists.profile = prof
+            prof.distances = dists
         
         except:
             print "Error loading distance store:", dsFileName, sys.exc_info()[0]
@@ -444,7 +459,7 @@ class ProfileManager:
         if(not silent):
             print "    %s" % timer.getTimeStamp()
             
-        return dists
+        return prof
         
     def cleanUpDistances(self, dsFileName):
         """Delete distance store file"""
@@ -466,14 +481,14 @@ class ProfileManager:
                                         assignments,
                                         nuke=nuke)
                                    
-    def setReachability(self, profile):
+    def setReachabilityOrder(self, profile):
         """Save mapping distances
         
-        dataManager.setReachability needs GLOBAL indices
+        dataManager.setReachabilityOrder needs GLOBAL indices
         [(global_index, distance)]
         """
         updates = zip(profile.indices[profile.reachOrder], profile.reachDists)
-        DataManager().setMappingDistances(self.dbFileName, updates)
+        DataManager().setReachabilityOrder(self.dbFileName, updates)
 
     def promptOnOverwrite(self, minimal=False):
         """Check that the user is ok with possibly overwriting the DB"""

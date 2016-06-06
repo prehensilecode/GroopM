@@ -51,11 +51,13 @@ __current_GMDS_version__ = 1
 ###############################################################################
 
 import sys
+import operator
 from os.path import splitext as op_splitext, basename as op_basename
 from string import maketrans as s_maketrans
 
 import tables
 import numpy as np
+import numpy.linalg as np_linalg
 import scipy.spatial.distance as sp_distance
 
 # GroopM imports
@@ -112,7 +114,7 @@ class DataManager:
     #------------------------
     # **Kmer Signature**
     #table = 'kms'
-    kms_desc = lambda mers: [(mer, float) for mer in mers]
+    kms_desc = lambda self, mers: [(mer, float) for mer in mers]
     #
     # **Kmer Vals**
     #table = 'kpca'                                                             # [DEL in version 6]
@@ -120,7 +122,7 @@ class DataManager:
     #
     # **Coverage profile**
     #table = 'coverage'
-    coverage_desc = lambda cols: [(col, float) for col in cols]
+    coverage_desc = lambda self, cols: [(col, float) for col in cols]
     #
     # **Transformed coverage profile**
     #table = 'transCoverage'                                                    # [DEL in version 6]
@@ -257,7 +259,7 @@ class DataManager:
                 profile_group = h5file.create_group("/", "profile", "Assembly profiles")
                 meta_group = h5file.create_group("/", "meta", "Associated metadata")
                 links_group = h5file.create_group("/", "links", "Paired read link information")
-                mapping_group = h5file.create_group("/", "mappings", "Contig mappings")
+                mappings_group = h5file.create_group("/", "mappings", "Contig mappings")
                 
                 #------------------------
                 # parse contigs
@@ -298,7 +300,7 @@ class DataManager:
                                                                                   cid_2_indices,
                                                                                   threads)
                 tot_cov = [sum(profile) for profile in cov_profiles]
-                good_indices = np.flatnonzero(tot_cov)
+                good_indices = [i for (i, cov) in enumerate(tot_cov) if cov > 0]
                 bad_indices = [i for i in range(num_cons) if i not in good_indices]
 
                 if len(bad_indices) > 0:
@@ -327,8 +329,9 @@ class DataManager:
                 #------------------------
                 with open(markerFile, "r") as f:
                     try:
-                        (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names) = mapper.parse(f, cid2Indices, cfe)
-                        num_markers = len(contig_indices)
+                        (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names) = mapper.parse(f, cid_2_indices, cfe)
+                        num_mappings = len(contig_indices)
+                        num_markers = len(marker_names)
                     except:
                         print "Error parsing mapping data"
                         raise
@@ -372,7 +375,7 @@ class DataManager:
                 #------------------------
                 # write mappings
                 #------------------------
-                mappings_data = np.array([marker_indices, contig_indices], dtype=self.mappings_desc)
+                mappings_data = np.array(zip(marker_indices, contig_indices), dtype=self.mappings_desc)
                 h5file.create_table(mappings_group,
                                     "mappings",
                                     mappings_data,
@@ -384,8 +387,8 @@ class DataManager:
                 # write classifications
                 #------------------------
                 classification_data = np.array([tuple(i) for i in tax_table], dtype=self.classification_desc)
-                h5file.create_table(mapping_group,
-                                    'classificaiton',
+                h5file.create_table(mappings_group,
+                                    "classification",
                                     classification_data,
                                     title="Mapping classifications",
                                     expectedrows=num_mappings
@@ -441,8 +444,8 @@ class DataManager:
                 #------------------------
                 # Table for markers
                 #------------------------    
-                markers_data = np.array([marker_names, marker_counts], dtype=self.markers_desc)
-                h5file.create_table(meta,
+                markers_data = np.array(zip(marker_names, marker_counts), dtype=self.markers_desc)
+                h5file.create_table(meta_group,
                                     "markers",
                                     markers_data,
                                     title="Marker information",
@@ -452,8 +455,8 @@ class DataManager:
                 #------------------------
                 # Table for taxons
                 #------------------------
-                taxons_data = np.array([taxon_names], dtype=self.taxons_desc)
-                h5file.create_table(meta,
+                taxons_data = np.array([(i,) for i in taxon_names], dtype=self.taxons_desc)
+                h5file.create_table(meta_group,
                                     "taxons",
                                     taxons_data,
                                     title="Taxon information",
@@ -463,9 +466,9 @@ class DataManager:
                 #------------------------
                 # Add metadata
                 #------------------------
-                meta_data = np.array([(str.join(',',stoitColNames),
+                meta_data = np.array([(",".join(stoitColNames),
                                        len(stoitColNames),
-                                       str.join(',',kse.kmerCols),
+                                       ",".join(kse.kmerCols),
                                        kmerSize,
                                        len(kse.kmerCols),
                                        num_cons,
@@ -1160,17 +1163,17 @@ class DataManager:
     def getMappingContigs(self, dbFileName):
         """Load mapping contig indices"""
         with tables.open_file(dbFileName, "r", root_uep="/mappings") as h5file:
-            return np.array([list(x) for x in h5file.root.mappings["contig"]])
+            return np.array([x for x in h5file.root.mappings.cols.contig])
             
     def getMappingMarkers(self, dbFileName):
         """Load mapping marker ids"""
         with tables.open_file(dbFileName, "r", root_uep="/mappings") as h5file:
-            return np.array([list(x) for x in h5file.root.mappings["markers"]])
+            return np.array([x for x in h5file.root.mappings.cols.marker])
             
     def getClassification(self, dbFileName):
         """Load classification table"""
         with tables.open_file(dbFileName, "r", root_uep="/mappings") as h5file:
-            return np.array([list(x) for x in h5file.root.classification])
+            return np.array([list(x.fetch_all_fields()) for x in h5file.root.classification])
            
 #------------------------------------------------------------------------------
 # GET LINKS
@@ -1239,7 +1242,7 @@ class DataManager:
 #------------------------------------------------------------------------------
 # GET TABLES - REACHABILITY
 
-    def getReachabilityOrdering(self, dbFileName, indices=[]):
+    def getReachabilityOrder(self, dbFileName, indices=[]):
         """Load reachability data
         
         Returns a tuple: (ordered_indices, distances)
@@ -1259,7 +1262,7 @@ class DataManager:
     def getMarkerNames(self, dbFileName):
         """Load marker names"""
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            return np.array([x["markerid"] for x in h5file.root.markers])
+            return np.array([x for x in h5file.root.markers.cols.markerid])
             
     def getMarkerStats(self, dbFileName):
         """Load data from markers table
@@ -1346,12 +1349,12 @@ class DataManager:
         # get the contigs table image
         with tables.open_file(dbFileName, mode='r', root_uep='/meta') as h5file:
             if nuke:
-                (con_names, con_lengths, con_gcs) = zip(*[(x[0], x[2], x[3]) for x in self.iterrows(h5file.root.contigs, indices)])
+                (con_names, con_lengths, con_gcs) = zip(*[(x["cid"], x["length"], x["gc"]) for x in h5file.root.contigs])
                 num_cons = len(con_lengths)
                 # clear all bin assignments
                 bins = [0]*num_cons
             else:
-                (con_names, bins, con_lengths, con_gcs) = zip(*[tuple(x) for x in self.iterrows(h5file.root.contigs, indices)])
+                (con_names, bins, con_lengths, con_gcs) = zip(*[tuple(x) for x in h5file.root.contigs])
         
         # now apply the updates
         for tr in updates.keys():
@@ -1426,7 +1429,7 @@ class DataManager:
 #------------------------------------------------------------------------------
 #  SET OPERATIONS - REACHABILITY
         
-    def setReachability(self, dbFileName, updates=[]):
+    def setReachabilityOrder(self, dbFileName, updates=[]):
         """Set per-contig reachability
 
         updates is a list of (contig, distance) pairs in reachability order
@@ -1760,6 +1763,7 @@ class BamParser:
 class MappingParser:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
     def parse(self, fp, cid2Indices, cfe=None):
+        print "Parsing mappings"
         contig_indices = []
         map_markers = []
         map_taxstrings = []
@@ -1899,8 +1903,7 @@ class DistanceManager:
     # ** Contigs **
     #table = 'contigs'
     contigs_desc = [('cid', '|S512'),
-                    ('length', int),
-                    ('gc', float)
+                    ('length', int)
                     ]       
 
 #------------------------------------------------------------------------------
@@ -1921,37 +1924,38 @@ class DistanceManager:
                 meta_group = h5file.create_group("/", "meta", "Associated metadata")
                 
                 indices = dm.getConditionalIndices(dbFileName, condition='(length >= %d)' % minLength)
+                num_cons = len(indices)
                 con_names = dm.getContigNames(dbFileName, indices=indices)
                 cov_profiles = dm.getCoverages(dbFileName, indices=indices)
                 ksigs = dm.getKmerSigs(dbFileName, indices=indices)
                 con_lengths = dm.getContigLengths(dbFileName, indices=indices)
-                (cov_dists, kmer_dists, w, den_dists) = de.makeDistances(cov_profiles,
-                                                                         ksigs,
-                                                                         con_lengths,
-                                                                         minSize=minSize,
-                                                                         minPts=minPts)
+                (cov_dists, kmer_dists, weights, den_dists) = de.makeDistances(cov_profiles,
+                                                                               ksigs,
+                                                                               con_lengths,
+                                                                               minSize=minSize,
+                                                                               minPts=minPts)
                                                                 
                 #------------------------
                 # write profile distances
                 #------------------------
                 """Set contig pair distances"""
-                distances_data = np.array([coverage_dists,
+                distances_data = np.array(zip(cov_dists,
                                            kmer_dists,
                                            weights,
-                                           density_dists,
-                                           ],
+                                           den_dists,
+                                           ),
                                           dtype=self.distances_desc)
                 h5file.create_table(profile_group,
                                     "distances",
                                     distances_data,
                                     "Pairwise profile distances",
-                                    expectedrows=len(coverage_dists)
+                                    expectedrows=len(cov_dists)
                                     )
 
                 #------------------------
                 # Add a table for the contigs
                 #------------------------
-                contigs_data = np.array(zip(con_names, con_lengths, con_gcs),
+                contigs_data = np.array(zip(con_names, con_lengths),
                                         dtype=self.contigs_desc)
                 h5file.create_table(meta_group,
                                     'contigs',
@@ -1985,12 +1989,28 @@ class DistanceManager:
         return True
             
 #------------------------------------------------------------------------------
+# GET TABLES - GENERIC
+            
+    def iterrows(self, table, rows):
+        """iterate selected rows of table"""
+        if(len(rows) != 0):
+            return (table[x] for x in rows)
+        else:
+            return (x.fetch_all_fields() for x in table)
+            
+    def readrows(self, table, rows, field=None):
+        if(len(rows) != 0):
+            return table.read_coordinates(rows, field=field)
+        else:
+            return table.read(field=field)
+            
+#------------------------------------------------------------------------------
 # GET TABLES - DISTANCES
 
     def getCoverageDistances(self, dsFileName, indices=[]):
         """Load pairwise coverage distances"""
         with tables.open_file(dsFileName, 'r', root_uep='/profile') as h5file:
-            return np.array([x["coverageDist"] for x in self.iterrows(h5file.root.distances, indices)])
+            return np.array([x for x in self.readrows(h5file.root.distances, indices, "covDist")])
             
     def getKmerDistances(self, dsFileName, indices=[]):
         """Load pairwise kmer distances"""
@@ -2005,7 +2025,7 @@ class DistanceManager:
     def getDensityDistances(self, dsFileName, indices=[]):
         """Load pairwise density distances"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
-            return np.array([x["denDist"] for x in self.iterrows(h5file.root.distances, indices)])
+            return np.array([x for x in self.readrows(h5file.root.distances, indices, "denDist")])
                          
 #------------------------------------------------------------------------------
 # GET TABLES - CONTIGS
@@ -2115,12 +2135,15 @@ class DistanceManager:
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
     
-    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize, minPts, silent=False):
+    def makeDistances(self, covProfiles, kmerSigs, contigLengths, minSize, minPts, silent=False):
+
         if(not silent):
-            print "    Reticulating splines"
+            print "    Computing pairwise contig distances"
         features = (covProfiles, kmerSigs)
         raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
         weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+        if not silent:
+            print "    Reticulating splines"
         scale_factor = 1. / weights.sum()
         scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
         rank_norms = np_linalg.norm(scaled_ranks, axis=0)

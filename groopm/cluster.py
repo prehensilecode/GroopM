@@ -74,10 +74,12 @@ class CoreCreator:
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
         
-    def loadProfile(self, timer, dsFileName, minLength, force):
+    def loadProfile(self, timer, dsFileName, minLength, minSize, minPts, force):
         return self._pm.loadDistances(timer,
                                       dsFileName,
                                       minLength=minLength,
+                                      minSize=minSize,
+                                      minPts=minPts,
                                       loadMarkers=True,
                                       loadBins=False,
                                       force=force)
@@ -110,11 +112,16 @@ class CoreCreator:
         profile = self.loadProfile(timer,
                                    dsFileName,
                                    minLength=minLength,
+                                   minSize=minSize,
+                                   minPts=minPts,
                                    force=force_dists
                                    )
         
         ce = ClassificationClusterEngine(profile)
-        ce.makeBins(timer, out_bins=profile.binIds, out_reach_order=profile.reachOrder, out_reach_dists=profile.reachDist)
+        ce.makeBins(timer,
+                    out_bins=profile.binIds,
+                    out_reach_order=profile.reachOrder,
+                    out_reach_dists=profile.reachDists)
         
         bm = BinManager(profile)
         bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
@@ -122,6 +129,7 @@ class CoreCreator:
         # Now save all the stuff to disk!
         print "Saving bins"
         self._pm.setBinAssignments(profile, nuke=True)
+        self._pm.setReachabilityOrder(profile)
         print "    %s" % timer.getTimeStamp()
         
         if not keep_dists:
