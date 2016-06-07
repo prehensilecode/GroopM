@@ -123,9 +123,6 @@ class BinPlotter:
             if fileName=="":
                 break
         print "    %s" % timer.getTimeStamp()
-        
-        if not keep_dists:
-            self._pm.cleanUpDistances(dsFileName)
 
         
 class ReachabilityPlotter:
@@ -417,12 +414,14 @@ class HierarchyReachabilityPlotter:
             colours[binned_indices] = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
             
             # label stretches with bin ids
-            last_indices = binned_indices[flag[1:]]
+            last_indices = np.flatnonzero(flag[1:])
             first_indices = np.concatenate(([0], last_indices[:-1]+1))
-            group_centers = (first_indices+last_indices+1)*0.5
-            group_heights = np.array([h[s:e+1].max() for (s, e) in zip(first_indices, last_indices)])
-            group_labels = binIds[first_indices].astype(str)
-            k = np.in1d(binIds[first_indices], bids)
+            last_binned_indices = binned_indices[last_indices]
+            first_binned_indices = binned_indices[first_indices]
+            group_centers = (first_binned_indices+last_binned_indices+1)*0.5
+            group_heights = np.array([h[s:e+1].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
+            group_labels = binIds[first_binned_indices].astype(str)
+            k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
         elif highlight=="markers":
@@ -526,7 +525,8 @@ class BinDistancePlotter:
         n = self._profile.numContigs
         bin_indices = BinManager(self._profile).getBinIndices(bid)
         if origin=="mediod":
-            bin_condensed_indices = [distance.condensed_index(n, bin_indices[i], bin_indices[j]) for (i, j) in zip(*distance.pairs(len(bin_indices)))]
+            (i, j) = distance.pairs(len(bin_indices))
+            bin_condensed_indices = distance.condensed_index(n, bin_indices[i], bin_indices[j])
             x = self._x[bin_condensed_indices]
             y = self._y[bin_condensed_indices]
             w = self._w[bin_condensed_indices]

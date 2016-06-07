@@ -111,6 +111,8 @@ class _Mappings:
         `indices[i]` is the index into the pytables structure of mapping `i`
     markerNames : ndarray
         `markerNames[i]` is the marker id for mapping `i`.
+    markerTaxstrings : ndarray
+        `markerTaxstrings[i]` is the taxstring for mapping `i`.
     classification : _Classificaton object
         See above.
         
@@ -203,6 +205,7 @@ class ProfileManager:
                  loadBins=False,
                  loadReachability=False,
                  loadMarkers=True,
+                 loadTaxstrings=False,
                  minLength=None,
                  bids=[],
                  removeBins=False
@@ -309,6 +312,11 @@ class ProfileManager:
                 marker_names = dm.getMarkerNames(self.dbFileName)
                 markers.markerNames = marker_names[map_markers][markers.indices]
                 markers.numMappings = len(markers.indices)
+                
+                if loadTaxstrings:
+                    if verbose:
+                        print "    Loading marker taxonomies"
+                    markers.taxstrings = dm.getMappingTaxstrings(self.dbFileName)
                 
                 classif = _Classification()
                 
