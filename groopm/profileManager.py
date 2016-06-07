@@ -316,7 +316,8 @@ class ProfileManager:
                 if loadTaxstrings:
                     if verbose:
                         print "    Loading marker taxonomies"
-                    markers.taxstrings = dm.getMappingTaxstrings(self.dbFileName)
+                    taxstrings = dm.getMappingTaxstrings(self.dbFileName)
+                    markers.taxstrings = taxstrings[markers.indices]
                 
                 classif = _Classification()
                 
@@ -328,6 +329,7 @@ class ProfileManager:
                 if verbose:
                     print "    Loading marker taxons"
                 classif._taxons = dm.getTaxonNames(self.dbFileName)
+                
                 markers.classification = classif
                 prof.mapping = markers
                 

@@ -387,7 +387,7 @@ class HierarchyReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="bins",
+             highlight="markers",
              fileName=""):
         
         h = self._profile.reachDists
@@ -427,7 +427,7 @@ class HierarchyReachabilityPlotter:
         elif highlight=="markers":
             # color leaves by maximum ancestor coherence score
             scores = np.zeros(self._profile.numContigs)
-            Z = hierarchy.linkage_from_reachability(o, d)
+            Z = hierarchy.linkage_from_reachability(o, h)
             (_T, coeffs) = hierarchy.fcluster_coeffs(Z,
                                                      dict(self._profile.mapping.iterindices()),
                                                      self._cf.disagreement,
