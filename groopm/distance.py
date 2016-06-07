@@ -79,14 +79,14 @@ def mediod(Y):
 
     return index
     
-
+    
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
         return _rank_with_ties(array, weights=weights)
     return np.apply_along_axis(_rank_with_ties, axis, array, weights=weights)
 
-
+@profile
 def density_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
@@ -129,7 +129,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
     return dd
         
-
+@profile
 def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -160,7 +160,7 @@ def core_distance_weighted(Y, weights, minWt):
     
     return core_dist
             
-        
+@profile        
 def core_distance(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
@@ -184,7 +184,7 @@ def core_distance(Y, minPts):
     dm.sort(axis=1)
     return dm[:, np.minimum(n-1, minPts)]
 
-    
+@profile    
 def reachability_order(Y):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -294,6 +294,7 @@ def condensed_index_(n, i, j):
     
       
 # helper
+@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)

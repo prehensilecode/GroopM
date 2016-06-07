@@ -2023,7 +2023,8 @@ class DistanceManager:
         """Load pairwise weights"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
             return self.readrows(h5file.root.distances, indices, "weight")
-            
+    
+    @profile
     def getDensityDistances(self, dsFileName, indices=[]):
         """Load pairwise density distances"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
@@ -2137,6 +2138,7 @@ class DistanceManager:
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
     
+    @profile
     def makeDistances(self, covProfiles, kmerSigs, contigLengths, minSize, minPts, silent=False):
 
         if(not silent):
