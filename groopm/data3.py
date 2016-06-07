@@ -1821,6 +1821,7 @@ class ClassificationEngine:
         taxons: ndarray
             Array of taxonomic classification strings.
         """
+        print "Parsing taxstrings"
         n = len(taxstrings)
         taxon_dict = { "": 1 }
         counter = 1
@@ -2133,30 +2134,7 @@ class DistanceManager:
 ###############################################################################
 ###############################################################################
 ############################################################################### 
-            
-class ProfileDistanceEngine:
-    """Simple class for computing profile feature distances"""
-    
-    def makeDistances(self, covProfiles, kmerSigs, contigLengths, minSize, minPts, silent=False):
 
-        if(not silent):
-            print "    Computing pairwise contig distances"
-        features = (covProfiles, kmerSigs)
-        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
-        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-        scale_factor = 1. / weights.sum()
-        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
-        
-        if not silent:
-            print "    Reticulating splines"
-        rank_norms = np_linalg.norm(scaled_ranks, axis=0)
-        if minSize is None:
-            minWt = None
-        else:
-            minWt = (minSize - contigLengths) * contigLengths
-        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
-        
-        return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
                 
 
 ###############################################################################

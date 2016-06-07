@@ -138,31 +138,6 @@ class _Mappings:
         
         return dm
         
-        
-class _Distances:
-    """Class for carrying profile distance data around, constructed using ProfileManager class.
-    
-    Fields
-    ------
-    # contig data
-    covDists : ndarray
-        `covDists[i]` is the coverage distance of the pair of contigs represented by
-        the condensed index `i`.
-    kmerDists : ndarray
-        `kmerDists[i]` is kmer signature distance of contig pair `i`.
-    weights : ndarray
-        `weights[i]` is the distance weight of contig pair `i`
-    denDists : ndarray
-        `denDists[i]` is the density distance of contig pair `i`.
-        
-    
-    # metadata
-    numDists : int
-        Number of pairs of contigs, corresponds to length of above arrays.
-    """
-    pass
-        
-        
 class _Profile:
     """Class for carrying profile data around, construct using ProfileManager class.
     
@@ -196,8 +171,6 @@ class _Profile:
     numStoits : int
         Corresponds to number of columns of covProfiles array.
     mappings : _Mappings object
-        See above.
-    distances : _Distances object
         See above.
     reachOrder : ndarray
         `reachOrder[i]` is the contig index in position `i` of reachability order.
@@ -365,112 +338,6 @@ class ProfileManager:
             
         return prof
         
-    def loadDistances(self, 
-                      timer,
-                      dsFileName,
-                      minPts,
-                      minSize,
-                      verbose=True,              # many to some output messages
-                      silent=False,              # some to no output messages
-                      loadCoverageDistances=False,
-                      loadKmerDistances=False,
-                      loadWeights=False,
-                      loadDensityDistances=True,
-                      minLength=None,
-                      force=False,
-                      **kwargs):
-        """Load profile distances from distance store file
-        
-        File is created if it doesn't exist
-        """
-        if(silent):
-            verbose=False
-        if verbose:
-            print "Loading distances from:", dsFileName
-        
-        # check if file exists
-        make_file = True
-        try:
-            with open(dsFileName) as f:
-                if (not force):
-                    make_file = False
-        except IOError:
-            pass
-            
-        prof = self.loadData(timer,
-                             verbose=verbose,
-                             silent=silent,
-                             minLength=minLength,
-                             loadContigNames=True,
-                             **kwargs)
-             
-        stm = DistanceManager()
-        if make_file:
-            stm.createDistanceStore(timer,
-                                    dsFileName,
-                                    self.dbFileName,
-                                    indices=prof.indices,
-                                    minSize=minSize,
-                                    minPts=minPts)
-                                    
-        
-        try:                    
-            con_names = stm.getContigNames(dsFileName)
-            cid_2_indices = dict(zip(con_names, range(len(con_names))))
-            indices = []
-            for name in prof.contigNames:
-                try:
-                    i = cid_2_indices[name]
-                except KeyError:
-                    pass
-                    raise DistanceStoreContigNotFoundException("ERROR: No pre-computed distances for contig %s" % name)
-                indices.append(i)
-            num_contigs = len(indices)
-            condensed_indices = [distance.condensed_index(len(con_names), indices[i], indices[j]) for (i, j) in zip(*distance.pairs(num_contigs))]
-            
-            dists = _Distances()
-            
-            if loadCoverageDistances:
-                if(verbose):
-                    print "    Loading coverage distances"
-                dists.covDists = stm.getCoverageDistances(dsFileName, indices=condensed_indices)
-                
-            if loadKmerDistances:
-                if verbose:
-                    print "    Loading kmer distances"
-                dists.kmerDists = stm.getKmerDistances(dsFileName, indices=condensed_indices)
-                
-            if loadWeights:
-                if verbose:
-                    print "    Loading distance weights"
-                dists.weights = stm.getWeights(dsFileName, indices=condensed_indices)
-                
-            if loadDensityDistances:
-                if verbose:
-                    print "    Loading density distances"
-                dists.denDists = stm.getDensityDistances(dsFileName, indices=condensed_indices)
-        
-            dists.numDists = len(condensed_indices)
-            prof.distances = dists
-        
-        except:
-            print "Error loading distance store:", dsFileName, sys.exc_info()[0]
-            raise
-                
-        if(not silent):
-            print "    %s" % timer.getTimeStamp()
-            
-        return prof
-        
-    def cleanUpDistances(self, dsFileName):
-        """Delete distance store file"""
-        
-        try:
-            os.remove(dsFileName)
-        except:
-            print "Error removing distance store:", dsFileName, sys.exc_info()[0]
-            raise
-        
     def setBinAssignments(self, profile, nuke=False):
         """Save bins into the DB
         
@@ -543,4 +410,3 @@ def _getConditionString(minLength=None, maxLength=None, bids=None, removeBins=Fa
 ###############################################################################
 ###############################################################################
 ###############################################################################
-

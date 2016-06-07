@@ -74,50 +74,28 @@ class CoreCreator:
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
         
-    def loadProfile(self, timer, dsFileName, minLength, minSize, minPts, force):
-        return self._pm.loadDistances(timer,
-                                      dsFileName,
-                                      minSize=minSize,
-                                      minPts=minPts,
-                                      minLength=minLength,
-                                      loadMarkers=True,
-                                      loadBins=False,
-                                      force=force)
+    def loadProfile(self, timer, minLength):
+        return self._pm.loadData(timer,
+                                 minLength=minLength,
+                                 loadMarkers=True,
+                                 loadBins=False)
         
     def run(self,
             timer,
             minLength,
             minSize,
             minPts,
-            useDsFile=None,
-            newDsFile=None,
             force=False):
         # check that the user is OK with nuking stuff...
         if not force and not self._pm.promptOnOverwrite():
             return
         
-        if useDsFile is not None:
-            dsFileName = useDsFile
-            force_dists = False
-            keep_dists = True
-        elif newDsFile is not None:
-            dsFileName = newDsFile
-            force_dists = True
-            keep_dists = True
-        else:
-            dsFileName = self._dbFileName+".ds"
-            force_dists = True
-            keep_dists = False
             
         profile = self.loadProfile(timer,
-                                   dsFileName,
-                                   minLength=minLength,
-                                   minSize=minSize,
-                                   minPts=minPts,
-                                   force=force_dists
+                                   minLength=minLength
                                    )
         
-        ce = ClassificationClusterEngine(profile)
+        ce = ClassificationClusterEngine(profile, minPts=minPts, minSize=minSize)
         ce.makeBins(timer,
                     out_bins=profile.binIds,
                     out_reach_order=profile.reachOrder,
@@ -132,9 +110,6 @@ class CoreCreator:
         self._pm.setBinAssignments(profile, nuke=True)
         print "    %s" % timer.getTimeStamp()
         
-        if not keep_dists:
-            self._pm.cleanUpDistances(dsFileName)
-        
         
 # Hierarchical clustering
 class HierarchicalClusterEngine:
@@ -143,8 +118,11 @@ class HierarchicalClusterEngine:
     def makeBins(self, timer, out_bins, out_reach_order, out_reach_dists):
         """Run binning algorithm"""
         
-        print "Computing cluster hierarchy"
+        print "Getting distance info"
         dists = self.distances()
+        print "    %s" % timer.getTimeStamp()
+        
+        print "Computing cluster hierarchy"
         print "Clustering 2^%f.2 pairs" % np.log2(len(dists))
         (o, d) = distance.reachability_order(dists)
         Z = hierarchy.linkage_from_reachability(o, d)
@@ -170,11 +148,20 @@ class HierarchicalClusterEngine:
 class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     
-    def __init__(self, profile):
+    def __init__(self, profile, minPts, minSize):
         self._profile = profile
+        self._minPts = minPts
+        self._minSize = minSize
     
     def distances(self):
-        return self._profile.distances.denDists
+        de = ProfileDistanceEngine()
+        (_cov_dists, _kmer_dists, _weights, den_dists) = de.makeDistances(self._profile.covProfiles,
+                                                                          self._profile.kmerSigs,
+                                                                          self._profile.contigLengths,
+                                                                          return_density_distances=True,
+                                                                          minPts=self._minPts,
+                                                                          minSize=self._minSize)
+        return den_dists
     
     def fcluster(self, Z):
         cf = ClassificationManager(self._profile.mapping)
@@ -278,10 +265,40 @@ class CorrelationClusterEngine(MediodsClusterEngine):
     def recruit(self, origin, putative_members):
         (covRanks, kmerRanks) = tuple(dm[0] for dm in self.feature_ranks([origin]))
         return recruit.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
-        
+              
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-   
+class ProfileDistanceEngine:
+    """Simple class for computing profile feature distances"""
+    
+    def makeDistances(self, covProfiles, kmerSigs, contigLengths, return_density_distances=False, minSize=None, minPts=None, silent=False):
+
+        if(not silent):
+            print "Computing pairwise contig distances"
+        features = (covProfiles, kmerSigs)
+        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
+        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+        scale_factor = 1. / weights.sum()
+        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
+        
+        if not return_density_distances:
+            return (scaled_ranks[0], scaled_ranks[1], weights)
+            
+        if not silent:
+            print "Reticulating splines"
+        rank_norms = np_linalg.norm(scaled_ranks, axis=0)
+        if minSize is None:
+            minWt = None
+        else:
+            minWt = (minSize - contigLengths) * contigLengths
+        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
+        
+        return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
+        
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################

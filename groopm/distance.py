@@ -238,61 +238,6 @@ def pairs(n):
     return np.triu_indices(n, k=1)
     
     
-def pcoords_(idx, n):
-    idx = np.asarray(idx).ravel()
-    (iu, ju) = np.triu_indices(idx.size, k=1)
-    return condensed_index_(n, idx[iu], idx[ju])
-  
-  
-def ccoords_(idxA, idxB, n):
-    idxA = np.asarray(idxA).ravel()
-    idxB = np.asarray(idxB).ravel()
-    (rows, cols) = np.ix_(idxA, idxB)
-    return condensed_index_(n, rows, cols)
-  
-  
-def condensed_index_(n, i, j):
-    """Returns indices in a condensed matrix corresponding to input
-    coordinates, or -1 for diagonal elements.
-    
-    From the numpy documentation for `squareform` the element of the condensed
-    matrix `v` containing the distance between points `i` and `j` is
-    `{n choose 2} - {n-i choose 2} + (j-i-1)`.
-    
-    Equivalently, the starting element for the `i`th row is the number of
-    elements in the `i` higher rows minus the number of non-upper diagonal
-    elements of the top left `i+1`-by-`i+1` matrix. The element index can be
-    computed using:
-        ``index of first element of row i = n*i - i*(i+1)/2``
-    
-    E.g. at row 3 in the matrix below, there are
-    ``3*n (x's and +'s) - 6 x's = 3*n-6 +'s``.
-    
-    x + + + + ...
-    x x + + + ...
-    x x x + + ...
-    - - - - i ...
-    
-    The corresponding element for the `j`th column is found by incrementing by
-    the distance from the centre diagonal (the `i+1`th column) to the `j`th
-    column. The element index can be computed using:
-        ``index of column j = index of first element of row i + j - i - 1``
-    
-    E.g. at row 2 and column 5 in the matrix below, the difference between the
-    element `j` and `i` is ``5 (column of `j`) - (2+1) (column of `i`) = 2``.
-    
-    x + + + + + ...
-    x x + + + + ...
-    - - - i + j ...
-    """
-    
-    # must have row < col
-    ii = np.where(j < i, j, i)
-    jj = np.where(i > j, i, j)
-    return np.where(ii==jj, -1, n*(n-1)//2 - (n-ii)*(n-ii-1)//2 + jj-ii-1)
-    #return n*ii - ii*(ii+1)//2 + jj-ii-1
-    
-      
 # helper
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""

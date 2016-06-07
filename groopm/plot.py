@@ -67,7 +67,7 @@ from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine
 from classification import ClassificationManager
 import hierarchy
 
@@ -87,20 +87,12 @@ class BinPlotter:
         if self._outDir is not None:
             makeSurePathExists(self._outDir)
 
-    def loadProfile(self, timer, dsFileName, minSize, minPts, force):
-        return self._pm.loadDistances(timer,
-                                      dsFileName,
-                                      minSize=minSize,
-                                      minPts=minPts,
-                                      loadMarkers=False,
-                                      loadBins=True,
-                                      removeBins=True,
-                                      loadCoverageDistances=True,
-                                      loadKmerDistances=True,
-                                      loadWeights=True,
-                                      loadDensityDistances=False,
-                                      bids=[0],
-                                      force=force)
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer,
+                                 loadMarkers=False,
+                                 loadBins=True,
+                                 removeBins=True,
+                                 bids=[0])
 
     def plot(self,
              timer,
@@ -108,26 +100,9 @@ class BinPlotter:
              origin="mediod",
              colorMap="HSV",
              prefix="BIN",
-             minSize=None,
-             minPts=None,
-             useDsFile=None,
-             newDsFile=None
             ):
-        
-        if useDsFile is not None:
-            dsFileName = useDsFile
-            force_dists = False
-            keep_dists = True
-        elif newDsFile is not None:
-            dsFileName = newDsFile
-            force_dists = True
-            keep_dists = True
-        else:
-            dsFileName = self._dbFileName+".ds"
-            force_dists = True
-            keep_dists = False
             
-        profile = self.loadProfile(timer, dsFileName, minSize=minSize, minPts=minPts, force=force_dists)
+        profile = self.loadProfile(timer)
 
         bm = BinManager(profile)
         if bids is None or len(bids) == 0:
@@ -538,6 +513,10 @@ class BinDistancePlotter:
     def __init__(self, profile, colourmap='HSV'):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
+        (self._x, self._y, self._w) = ProfileDistanceEngine().makeDistances(self._profile.covProfiles,
+                                                                            self._profile.kmerSigs,
+                                                                            self._profile.contigLengths
+                                                                            )
 
     def plot(self,
              bid,
@@ -548,9 +527,9 @@ class BinDistancePlotter:
         bin_indices = BinManager(self._profile).getBinIndices(bid)
         if origin=="mediod":
             bin_condensed_indices = [distance.condensed_index(n, bin_indices[i], bin_indices[j]) for (i, j) in zip(*distance.pairs(len(bin_indices)))]
-            x = self._profile.distances.covDists[bin_condensed_indices]
-            y = self._profile.distances.kmerDists[bin_condensed_indices]
-            w = self._profile.distances.weights[bin_condensed_indices]
+            x = self._x[bin_condensed_indices]
+            y = self._y[bin_condensed_indices]
+            w = self._w[bin_condensed_indices]
             origin = distance.mediod(np_linalg.norm((x, y), axis=0) * w)
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
@@ -563,9 +542,9 @@ class BinDistancePlotter:
         not_bi = np.array([i for i in range(n) if i!=bi])
         condensed_indices = distance.condensed_index(n, bi, not_bi)
         x = np.zeros(n, dtype=float)
-        x[not_bi] = self._profile.distances.covDists[condensed_indices]
+        x[not_bi] = self._x[condensed_indices]
         y = np.zeros(n, dtype=float)
-        y[not_bi] = self._profile.distances.kmerDists[condensed_indices]
+        y[not_bi] = self._y[condensed_indices]
         c = sp_distance.cdist(self._profile.contigGCs[[bi], None], self._profile.contigGCs[:, None], lambda a, b: (a+b)/2)[0]
         h = sp_distance.cdist(self._profile.binIds[[bi], None], self._profile.binIds[:, None], lambda a, b: a!=0 and a==b)[0].astype(bool)
         fplot = FeaturePlotter(x,
