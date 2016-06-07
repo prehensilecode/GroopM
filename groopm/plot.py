@@ -422,7 +422,6 @@ class HierarchyReachabilityPlotter:
             group_heights = np.array([h[s:e+1].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
             group_labels = binIds[first_binned_indices].astype(str)
             k = np.in1d(binIds[first_binned_indices], bids)
-            print binIds[first_binned_indices], bids
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
         elif highlight=="markers":

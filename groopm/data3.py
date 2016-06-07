@@ -151,13 +151,14 @@ class DataManager:
     #------------------------
     # **Mappings***
     #table = 'mappings'
-    mappings_desc = [('marker', int),              # marker name id
-                     ('contig', int)               # reference to index in meta/contigs
+    mappings_desc = [('marker', int),               # marker name id
+                     ('contig', int),               # reference to index in meta/contigs
+                     ('taxstring', '|S512')         # original taxstring
                      ]
     #
     # **Mapping classifications***
     #table = 'classification'
-    classification_desc = [('domain', int),        # taxon name id
+    classification_desc = [('domain', int),         # taxon name id
                            ('phylum', int),
                            ('class', int),
                            ('order', int),
@@ -329,7 +330,7 @@ class DataManager:
                 #------------------------
                 with open(markerFile, "r") as f:
                     try:
-                        (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names) = mapper.parse(f, cid_2_indices, cfe)
+                        (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid_2_indices, cfe)
                         num_mappings = len(contig_indices)
                         num_markers = len(marker_names)
                     except:
@@ -375,7 +376,7 @@ class DataManager:
                 #------------------------
                 # write mappings
                 #------------------------
-                mappings_data = np.array(zip(marker_indices, contig_indices), dtype=self.mappings_desc)
+                mappings_data = np.array(zip(marker_indices, contig_indices, taxstrings), dtype=self.mappings_desc)
                 h5file.create_table(mappings_group,
                                     "mappings",
                                     mappings_data,
@@ -1170,6 +1171,11 @@ class DataManager:
         with tables.open_file(dbFileName, "r", root_uep="/mappings") as h5file:
             return np.array([x for x in h5file.root.mappings.cols.marker])
             
+    def getMappingTaxstrings(self, dbFileName):
+        """Load mapping contig indices"""
+        with tables.open_file(dbFileName, "r", root_uep="/mappings") as h5file:
+            return np.array([x for x in h5file.root.mappings.cols.taxstring])
+            
     def getClassification(self, dbFileName):
         """Load classification table"""
         with tables.open_file(dbFileName, "r", root_uep="/mappings") as h5file:
@@ -1771,25 +1777,13 @@ class MappingParser:
                 map_taxstrings.append(l[2])
             except IndexError:
                 map_taxstrings.append("")
-        
+        contig_indices = np.array(contig_indices)
+        map_markers = np.array(map_markers)
+        map_taxstrings = np.array(map_taxstrings)
         (marker_names, marker_indices, marker_counts) = np.unique(map_markers, return_inverse=True, return_counts=True)
         (tax_table, taxon_names) = cfe.parse(map_taxstrings)
-        return (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names)
-        
-    def getWantedTaxstrings(self, fp, wanted, out_dict):
-        """Do the heavy lifting of parsing"""
-        print "Parsing mappings"
-        reader = CSVReader()
-        for l in reader.readCSV(fp, "\t"):
-            cid = l[0]
-            if (cid in wanted):
-                try:
-                    taxstring = l[2]
-                except IndexError:
-                    taxstring = ""
-                out_dict[cid] = taxstring
-        
-                    
+        return (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, map_taxstrings)
+  
 ###############################################################################
 ###############################################################################
 ###############################################################################
@@ -2134,12 +2128,3 @@ class DistanceManager:
 ###############################################################################
 ###############################################################################
 ############################################################################### 
-
-                
-
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-
-

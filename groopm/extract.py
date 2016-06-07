@@ -197,6 +197,7 @@ class BinExtractor:
         bam_parser.extract(threads=threads,
                            verbose=verbose)
                            
+                           
 class MarkerExtractor:
     def __init__(self,
                  dbFileName,
@@ -213,6 +214,7 @@ class MarkerExtractor:
         return self._pm.loadData(timer,
                                  loadBins=True,
                                  loadMarkers=True,
+                                 loadTaxstrings=True,
                                  minLength=cutoff,
                                  bids=[0] if removeBins else bids,
                                  removeBins=removeBins,
@@ -220,7 +222,6 @@ class MarkerExtractor:
         
     def extractMappingInfo(self,
                            timer,
-                           markerFileName,
                            bids=[],
                            prefix='',
                            separator='\t',
@@ -236,17 +237,7 @@ class MarkerExtractor:
         bm = BinManager(profile)
         dm = sp_distance.squareform(profile.mapping.classification.makeDistances())
         
-        # load markers from file
-        taxstrings = {}
-        reader = MappingParser()
-        try:
-            with open(markerFileName, 'r') as f:
-                reader.getWantedTaxstrings(f, profile.contigNames, out_dict=taxstrings)
-        except:
-            print "Error reading marker file:", markerFileName, sys.exc_info()[0]
-            raise
-
-        # now print out the sequences
+        # now print out the marker info
         print "Writing files"
         for bid in bm.getBids():
             file_name = os.path.join(self._outDir, "%s_bin_%d.txt" % (prefix, bid))
@@ -256,14 +247,15 @@ class MarkerExtractor:
             
             labels = profile.mapping.markerNames[idx]
             cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
+            taxstrings = profile.mapping.taxstrings[idx]
             dists = dm[np.ix_(idx, idx)]
             
             try:
                 with open(file_name, 'w') as f:
                     #labels and lineages
                     f.write('#info table\n%s\n' % separator.join(['label', 'taxonomy', 'contig_name']))
-                    for (label, cname) in zip(labels, cnames):
-                        f.write('%s\n' % separator.join([label, '\'%s\'' % taxstrings[cname], cname]))
+                    for (label, taxstring, cname) in zip(labels, taxstrings, cnames):
+                        f.write('%s\n' % separator.join([label, '\'%s\'' % taxstring, cname]))
                     
                     #distance table
                     f.write('\n#distance table\n')

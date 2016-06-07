@@ -279,7 +279,6 @@ class markers_command_configure:
     
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
         parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
         parser.add_argument('-o', '--out_folder', default="", help="write to this folder (None for current dir)")
         parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
@@ -298,7 +297,6 @@ class markers_command_configure:
                                     folder=options.out_folder
                                     )
         mx.extractMappingInfo(timer,
-                              markerFileName=options.markerfile,
                               bids=bids,
                               prefix=options.prefix)
             
