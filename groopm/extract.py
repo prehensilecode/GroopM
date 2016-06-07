@@ -123,7 +123,7 @@ class BinExtractor:
                     print "Error when guessing contig file mimetype"
                     raise
                 with gm_open(file_name, "r") as f:
-                    contigs = cp.getWantedSeqs(f, profile.contigNames, storage=contigs)
+                    cp.getWantedSeqs(f, profile.contigNames, out_dict=contigs)
         except:
             print "Could not parse contig file:",fasta[0],sys.exc_info()[0]
             raise
@@ -237,25 +237,13 @@ class MarkerExtractor:
         dm = sp_distance.squareform(profile.mapping.classification.makeDistances())
         
         # load markers from file
-        cid2Indices = dict(zip(profile.contigNames, range(profile.numContigs)))
-        cid2Taxstrings = {}
-        reader = CSVParser()
+        taxstrings = {}
+        reader = MappingParser()
         try:
             with open(markerFileName, 'r') as f:
-                for l in reader.parse(f, "\t"):
-                    try:
-                        contig_index = cid2Indices[l[0]]
-                    except:
-                        continue
-                        
-                    try:
-                        taxstring = l[2]
-                    except IndexError:
-                        taxstring = ""
-                    
-                    cid2Taxstrings[l[0]] = taxstring
+                reader.getWantedTaxstrings(f, profile.contigNames, out_dict=taxstrings)
         except:
-            print "Error reading marker file:", markerfileName, sys.exc_info()[0]
+            print "Error reading marker file:", markerFileName, sys.exc_info()[0]
             raise
 
         # now print out the sequences
@@ -268,15 +256,14 @@ class MarkerExtractor:
             
             labels = profile.mapping.markerNames[idx]
             cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
-            taxstrings = np.array([cid2Taxstring[name] for name in cnames])
             dists = dm[np.ix_(idx, idx)]
             
             try:
                 with open(file_name, 'w') as f:
                     #labels and lineages
                     f.write('#info table\n%s\n' % separator.join(['label', 'taxonomy', 'contig_name']))
-                    for (label, tax, cname) in zip(labels, taxstrings, cnames):
-                        f.write('%s\n' % separator.join([label, '\'%s\'' % tax, cname]))
+                    for (label, cname) in zip(labels, cnames):
+                        f.write('%s\n' % separator.join([label, '\'%s\'' % taxstrings[cname], cname]))
                     
                     #distance table
                     f.write('\n#distance table\n')

@@ -217,8 +217,7 @@ def reachability_order(Y):
     return (o, d[o])
     
     
-#condensed_index_vectorised = np.vectorize(condensed_index, otypes=[np.intp])
-def condensed_index(n, i, j):
+def condensed_index_(n, i, j):
     """
     Calculate the condensed index of element (i, j) in an n x n condensed
     matrix.
@@ -229,6 +228,10 @@ def condensed_index(n, i, j):
         return n * i - (i * (i + 1) // 2) + (j - i - 1)
     elif i > j:
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
+    print i, j
+        
+        
+condensed_index = np.vectorize(condensed_index_, otypes=[np.intp])
     
     
 def pairs(n):

@@ -77,9 +77,9 @@ class CoreCreator:
     def loadProfile(self, timer, dsFileName, minLength, minSize, minPts, force):
         return self._pm.loadDistances(timer,
                                       dsFileName,
-                                      minLength=minLength,
                                       minSize=minSize,
                                       minPts=minPts,
+                                      minLength=minLength,
                                       loadMarkers=True,
                                       loadBins=False,
                                       force=force)
@@ -128,8 +128,8 @@ class CoreCreator:
 
         # Now save all the stuff to disk!
         print "Saving bins"
-        self._pm.setBinAssignments(profile, nuke=True)
         self._pm.setReachabilityOrder(profile)
+        self._pm.setBinAssignments(profile, nuke=True)
         print "    %s" % timer.getTimeStamp()
         
         if not keep_dists:

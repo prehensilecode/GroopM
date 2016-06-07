@@ -49,6 +49,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 import sys
+import os
 
 # GroopM imports
 from data3 import DataManager, ClassificationEngine, DistanceManager
@@ -244,27 +245,26 @@ class ProfileManager:
         dm.checkAndUpgradeDB(self.dbFileName, timer, silent=silent)
         try:
             prof = _Profile()
-
-            # Conditional filter
-            condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
-            prof.indices = dm.getConditionalIndices(self.dbFileName,
-                                                    condition=condition)
-                                                    
+                 
             # Collect contig data
-            if(verbose):
-                print "    Loaded indices with condition:", condition
-            
             if(loadReachability):
+                (prof.indices, prof.reachDists) = dm.getReachabilityOrder(self.dbFileName)
                 if(verbose):
-                    print "    Loading reachability ordering"
-                (prof.indices, prof.reachDists) = dm.getReachabilityOrder(self.dbFileName, indices=prof.indices)
+                    print "    Loaded previously clustered contigs in reachability ordering"
                 prof.numContigs = len(prof.indices)
                 prof.reachOrder = np.arange(prof.numContigs)
                                 
                 if prof.numContigs == 0:
-                    print "    ERROR: No previously clustered contigs loaded using condition:", condition
+                    print "    ERROR: No previously clustered contigs. Please run `core` step before proceeding."
                     return
             else:
+                # Conditional filter
+                condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
+                prof.indices = dm.getConditionalIndices(self.dbFileName,
+                                                    condition=condition)
+                if(verbose):
+                    print "    Loaded indices with condition:", condition
+                    
                 prof.numContigs = len(prof.indices)
                 prof.reachOrder = np.zeros(prof.numContigs, dtype=int)
                 prof.reachDists = np.zeros(prof.numContigs, dtype=float)
@@ -354,7 +354,7 @@ class ProfileManager:
             prof.numStoits = dm.getNumStoits(self.dbFileName)
             if(loadStoitNames):
                 print "    Loading stoit names"
-                prof.stoitNames = np.array(dm.getStoitNames(self.dbFileName).split(","))
+                prof.stoitNames = np.array(dm.getCovColNames(self.dbFileName).split(","))
             
         except:
             print "Error loading DB:", self.dbFileName, sys.exc_info()[0]
@@ -368,6 +368,8 @@ class ProfileManager:
     def loadDistances(self, 
                       timer,
                       dsFileName,
+                      minPts,
+                      minSize,
                       verbose=True,              # many to some output messages
                       silent=False,              # some to no output messages
                       loadCoverageDistances=False,
@@ -375,8 +377,6 @@ class ProfileManager:
                       loadWeights=False,
                       loadDensityDistances=True,
                       minLength=None,
-                      minPts=None,
-                      minSize=None,
                       force=False,
                       **kwargs):
         """Load profile distances from distance store file
@@ -396,22 +396,23 @@ class ProfileManager:
                     make_file = False
         except IOError:
             pass
-             
-        stm = DistanceManager()
-        if make_file:
-            stm.createDistanceStore(timer,
-                                    dsFileName,
-                                    self.dbFileName,
-                                    minLength=minLength,
-                                    minSize=minSize,
-                                    minPts=minPts)
-                                    
+            
         prof = self.loadData(timer,
                              verbose=verbose,
                              silent=silent,
                              minLength=minLength,
                              loadContigNames=True,
                              **kwargs)
+             
+        stm = DistanceManager()
+        if make_file:
+            stm.createDistanceStore(timer,
+                                    dsFileName,
+                                    self.dbFileName,
+                                    indices=prof.indices,
+                                    minSize=minSize,
+                                    minPts=minPts)
+                                    
         
         try:                    
             con_names = stm.getContigNames(dsFileName)

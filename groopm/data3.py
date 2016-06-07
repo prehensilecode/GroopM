@@ -860,7 +860,7 @@ class DataManager:
                                      norm_coverages,
                                      kPCA_1,
                                      raw_coverages,
-                                     self.getStoitNames(dbFileName))
+                                     self.getCovColNames(dbFileName))
         # now CT stores the transformed coverages and other important information
         # we will write this to the database
                                      
@@ -1242,19 +1242,14 @@ class DataManager:
 #------------------------------------------------------------------------------
 # GET TABLES - REACHABILITY
 
-    def getReachabilityOrder(self, dbFileName, indices=[]):
+    def getReachabilityOrder(self, dbFileName):
         """Load reachability data
         
         Returns a tuple: (ordered_indices, distances)
         """
-        if indices==[]:
-            condition = "contig >= 0"
-        else:
-            condition = " | ".join(["contig == %d" % i for i in indices])
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            (indices, dists) = zip(*[(x["contig"], x["distance"]) for x in h5file.root.reachability.where(condition)])
+            (indices, dists) = zip(*[(x["contig"], x["distance"]) for x in h5file.root.reachability])
         return (np.array(indices), np.array(dists))
-        
         
 #------------------------------------------------------------------------------
 # GET TABLES - MARKERS
@@ -1324,7 +1319,7 @@ class DataManager:
         """return the value of numBins in the metadata tables"""
         return self._getMeta(dbFileName)['numBins']
 
-    def getStoitNames(self, dbFileName):
+    def getCovColNames(self, dbFileName):
         """return the value of stoitColNames in the metadata tables"""
         return self._getMeta(dbFileName)['stoitColNames']
 
@@ -1362,20 +1357,20 @@ class DataManager:
 
         # build the new contigs table image
         contigs_data = np.array(zip(con_names, bins, con_lengths, con_gcs),
-                                dtype=self.meta_desc)
+                                dtype=self.contigs_desc)
         
         # build the new bins table image
-        (bid, num_members) = np.unique(bids, return_counts=True)
-        updates = [(bid, num_members, False) for (bid, num_members) in zip(bid, num_members)] #isLikelyChimeric is always false
+        (bids, num_members) = np.unique(bins, return_counts=True)
+        updates = [(bid, num_members, False) for (bid, num_members) in zip(bids, num_members)] #isLikelyChimeric is always false
         bins_data = np.array(updates, dtype=self.bins_desc)
         
         # update num bins metadata
-        num_bins = len(bid) - int(0 in bid)
+        num_bins = len(bids) - int(0 in bids)
         meta = self._getMeta(dbFileName)
         meta['numBins'] = num_bins  
         if num_bins > 0:
-            meta['isClustered'] = True
-        meta_data = np.array([meta], dtype=self.bins_desc)
+            meta['clustered'] = True
+        meta_data = np.array([meta], dtype=self.meta_desc)
                                 
           
         # Let's do the update atomically... 
@@ -1402,7 +1397,7 @@ class DataManager:
                                 'tmp_bins',
                                 bins_data,
                                 title="Bin information",
-                                expectedrows=len(bid))
+                                expectedrows=len(bids))
                 
             # update meta table
             try:
@@ -1440,7 +1435,7 @@ class DataManager:
                                      dtype=self.reachability_desc)
           
         # Update database 
-        with tables.open_file(dbFileName, mode='a', root_uep='/reachability') as h5file:
+        with tables.open_file(dbFileName, mode='a', root_uep='/meta') as h5file:
             
             try:
                 # get rid of any failed attempts
@@ -1466,19 +1461,19 @@ class DataManager:
         data_arrays = []
 
         if fields == ['all']:
-            fields = ['contig', 'size', 'gc', 'bin', 'coverage', 'ncoverage', 'mers', 'reach']
+            fields = ['names', 'sizes', 'gc', 'bins', 'coverage', 'ncoverage', 'mers']
 
         num_fields = len(fields)
         data_converters = []
 
         try:
             for field in fields:
-                if field == 'contig':
+                if field == 'names':
                     header_strings.append('cid')
                     data_arrays.append(self.getContigNames(dbFileName))
                     data_converters.append(lambda x : x)
 
-                elif field == 'size':
+                elif field == 'sizes':
                     header_strings.append('size')
                     data_arrays.append(self.getContigLengths(dbFileName))
                     data_converters.append(lambda x : str(x))
@@ -1488,16 +1483,16 @@ class DataManager:
                     data_arrays.append(self.getContigGCs(dbFileName))
                     data_converters.append(lambda x : str(x))
 
-                elif field == 'bin':
+                elif field == 'bins':
                     header_strings.append('bid')
                     data_arrays.append(self.getBins(dbFileName))
                     data_converters.append(lambda x : str(x))
 
                 elif field == 'coverage':
-                    stoits = self.getStoitColNames(dbFileName).split(',')
+                    stoits = self.getCovColNames(dbFileName).split(',')
                     for stoit in stoits:
                         header_strings.append(stoit)
-                    data_arrays.append(self.getCoverageProfiles(dbFileName))
+                    data_arrays.append(self.getCoverages(dbFileName))
                     data_converters.append(lambda x : separator.join(["%0.4f" % i for i in x]))
                     
                 elif field == 'ncoverage':
@@ -1511,12 +1506,6 @@ class DataManager:
                         header_strings.append(mer)
                     data_arrays.append(self.getKmerSigs(dbFileName))
                     data_converters.append(lambda x : separator.join(["%0.4f" % i for i in x]))
-                    
-                elif field == "reach":
-                    header_strings.append('rpos')
-                    header_strings.append('rdist')
-                    data_arrays.append(self.getReachabilityData(dbFileName))
-                    data_converters.append(lambda x: separator.join(["%d" % x[0], "%0.4f" % x[1]]))
         except:
             print "Error when reading DB:", dbFileName, sys.exc_info()[0]
             raise
@@ -1606,13 +1595,13 @@ class ContigParser:
 
       return float(gc) / (gc + at)
 
-    def getWantedSeqs(self, contigFile, wanted, storage={}):
+    def getWantedSeqs(self, contigFile, wanted, out_dict):
         """Do the heavy lifting of parsing"""
         print "Parsing contigs"
-        for cid,seq in self.readFasta(contigFile):
+        reader = FastaReader()
+        for cid,seq in reader.readFasta(contigFile):
             if(cid in wanted):
-                storage[cid] = seq
-        return storage
+                out_dict[cid] = seq
 
         
 ###############################################################################
@@ -1763,6 +1752,7 @@ class BamParser:
 class MappingParser:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
     def parse(self, fp, cid2Indices, cfe=None):
+        """Do the heavy lifting of parsing"""
         print "Parsing mappings"
         contig_indices = []
         map_markers = []
@@ -1785,6 +1775,19 @@ class MappingParser:
         (marker_names, marker_indices, marker_counts) = np.unique(map_markers, return_inverse=True, return_counts=True)
         (tax_table, taxon_names) = cfe.parse(map_taxstrings)
         return (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names)
+        
+    def getWantedTaxstrings(self, fp, wanted, out_dict):
+        """Do the heavy lifting of parsing"""
+        print "Parsing mappings"
+        reader = CSVReader()
+        for l in reader.readCSV(fp, "\t"):
+            cid = l[0]
+            if (cid in wanted):
+                try:
+                    taxstring = l[2]
+                except IndexError:
+                    taxstring = ""
+                out_dict[cid] = taxstring
         
                     
 ###############################################################################
@@ -1885,7 +1888,7 @@ class DistanceManager:
     # **Profile condensed distances***
     #table = 'distances'
     distances_desc = [('merDist', float),
-                      ('coverageDist', float),
+                      ('covDist', float),
                       ('weight', float),
                       ('denDist', float)
                       ]
@@ -1909,7 +1912,7 @@ class DistanceManager:
 #------------------------------------------------------------------------------
 # DB CREATION / INITIALISATION
 
-    def createDistanceStore(self, timer, dsFileName, dbFileName, minLength, minSize, minPts):
+    def createDistanceStore(self, timer, dsFileName, dbFileName, indices, minSize, minPts):
         """Main wrapper for parsing all input files"""
         
         # load all the passed vars
@@ -1923,7 +1926,6 @@ class DistanceManager:
                 profile_group = h5file.create_group("/", "profile", "Assembly profiles")
                 meta_group = h5file.create_group("/", "meta", "Associated metadata")
                 
-                indices = dm.getConditionalIndices(dbFileName, condition='(length >= %d)' % minLength)
                 num_cons = len(indices)
                 con_names = dm.getContigNames(dbFileName, indices=indices)
                 cov_profiles = dm.getCoverages(dbFileName, indices=indices)
@@ -2010,22 +2012,22 @@ class DistanceManager:
     def getCoverageDistances(self, dsFileName, indices=[]):
         """Load pairwise coverage distances"""
         with tables.open_file(dsFileName, 'r', root_uep='/profile') as h5file:
-            return np.array([x for x in self.readrows(h5file.root.distances, indices, "covDist")])
+            return self.readrows(h5file.root.distances, indices, "covDist")
             
     def getKmerDistances(self, dsFileName, indices=[]):
         """Load pairwise kmer distances"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
-            return np.array([x["merDist"] for x in self.iterrows(h5file.root.distances, indices)])
+            return self.readrows(h5file.root.distances, indices, "merDist")
             
     def getWeights(self, dsFileName, indices=[]):
         """Load pairwise weights"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
-            return np.array([x["weight"] for x in self.iterrows(h5file.root.distances, indices)])
+            return self.readrows(h5file.root.distances, indices, "weight")
             
     def getDensityDistances(self, dsFileName, indices=[]):
         """Load pairwise density distances"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
-            return np.array([x for x in self.readrows(h5file.root.distances, indices, "denDist")])
+            return self.readrows(h5file.root.distances, indices, "denDist")
                          
 #------------------------------------------------------------------------------
 # GET TABLES - CONTIGS
@@ -2142,12 +2144,16 @@ class ProfileDistanceEngine:
         features = (covProfiles, kmerSigs)
         raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
         weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-        if not silent:
-            print "    Reticulating splines"
         scale_factor = 1. / weights.sum()
         scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
+        
+        if not silent:
+            print "    Reticulating splines"
         rank_norms = np_linalg.norm(scaled_ranks, axis=0)
-        minWt = (minSize - contigLengths) * contigLengths
+        if minSize is None:
+            minWt = None
+        else:
+            minWt = (minSize - contigLengths) * contigLengths
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
         
         return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
