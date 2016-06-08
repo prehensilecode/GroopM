@@ -63,7 +63,8 @@ class ClassificationManager:
     
     def __init__(self, mapping):
         self._classification = mapping.classification
-        self._mC = mapping.makeConnectivity()
+        self._d = 1
+        self._mC = mapping.makeConnectivity(d=self._d)
         
     def maxClique(self, indices):
         """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
@@ -88,7 +89,7 @@ class ClassificationManager:
         consensus_tag = ""
         level = 7
         for i in q:
-            tags = [t for t in zip(range(7-self._level), self._classification.tags(i))]
+            tags = [t for t in zip(range(7-self._d), self._classification.tags(i))]
             if len(tags) > 0:
                 (o, t) = tags[-1]
                 if level > o:

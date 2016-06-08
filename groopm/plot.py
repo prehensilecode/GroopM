@@ -110,6 +110,7 @@ class BinPlotter:
         else:
             bm.checkBids(bids)
 
+        print "    Initialising plotter"
         fplot = BinDistancePlotter(profile, colourmap=colorMap)
         print "    %s" % timer.getTimeStamp()
         
@@ -154,6 +155,7 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
+        print "    Initialising plotter"
         fplot = HierarchyReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
@@ -183,6 +185,7 @@ class TreePlotter:
         
         profile = self.loadProfile(timer)
 
+        print "    Initialising plotter"
         fplot = HierarchyRemovedPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
@@ -386,7 +389,7 @@ class HierarchyReachabilityPlotter:
         
     def plot(self,
              bids,
-             label="count",
+             label="tag",
              highlight="markers",
              fileName=""):
         
