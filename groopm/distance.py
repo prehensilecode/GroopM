@@ -125,8 +125,8 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
         else:
             core_dists = pts_dists
     
-    inds = pairs(n)
-    dd = np.maximum(np.minimum(core_dists[inds[0]], core_dists[inds[1]]), Y)
+    (i, j) = pairs(n)
+    dd = np.maximum(np.minimum(core_dists[i], core_dists[j]), Y)
     return dd
         
 

@@ -66,9 +66,16 @@ class ClassificationManager:
         self._d = 1
         self._mC = mapping.makeConnectivity(d=self._d)
         
+    def BCubed(self, indices):
+        """Compute BCubed metrics"""
+        corr = self._mC[np.ix_(indices, indices)].sum(axis=1)
+        prec = corr / len(indices)
+        recall = corr / self._mC[indices].sum(axis=1)
+        return (prec, recall)
+        
     def maxClique(self, indices):
-        """Compute a maximal set `P(i)` of indices j such that `C[j,k] == True`
-        for all pairs `j`,`k` from `Q(i)"""
+        """Compute a maximal set of indices such that `C[j,k] == True`
+        for all pairs `j`,`k` from set"""
         if len(indices) == 0:
             return np.array([], dtype=np.intp)
         return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])

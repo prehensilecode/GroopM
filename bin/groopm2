@@ -182,20 +182,26 @@ class parse_command_configure:
 class core_command_configure:
     description = "Load saved data and make bin cores"
     
+    DEFAULT_SIZE = 1000000
+    DEFAULT_POINTS = 20
+    
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
-        parser.add_argument('-s', '--size', type=int, default=1000000, help="cumulative size of contigs which define a core, regardless of number of contigs")
-        parser.add_argument('-P', '--points', type=int, default=20, help="minimum number of contigs which define a core")
+        parser.add_argument('-s', '--size', type=int, help="cumulative size of contigs which define a core, regardless of number of contigs (default if --points unspecified: %d)" % self.DEFAULT_SIZE)
+        parser.add_argument('-P', '--points', type=int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
         parser.add_argument('-f', '--force', action="store_true", help="overwrite existing DB file without prompting")
         parser.set_defaults(run=self)
     
-    def __call__(_self, options):
+    def __call__(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in core creation mode..." % __version__
         print "*******************************************************************************"
         cc = groopm.CoreCreator(options.dbname)
+        if options.size is None and options.points is None:
+            options.size = self.DEFAULT_SIZE
+            options.points = self.DEFAULT_POINTS
         cc.run(timer,
                minLength=options.cutoff,
                minSize=options.size,
