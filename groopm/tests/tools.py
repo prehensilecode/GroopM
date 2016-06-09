@@ -32,16 +32,16 @@ import scipy.cluster.hierarchy as sp_hierarchy
 ###############################################################################
 ###############################################################################
 
-def assert_equal_arrays(a, b, message):
-    return assert_true(np.all(np.asarray(a) == np.asarray(b)), message)
+def equal_arrays(a, b):
+    return np.all(np.asarray(a) == np.asarray(b))
 
     
-def assert_almost_equal_arrays(a, b, message):
-    return assert_true(np.all(np.around(a, 6) == np.around(b, 6)), message)
+def almost_equal_arrays(a, b):
+    return np.all(np.around(a, 6) == np.around(b, 6))
     
     
-def assert_isomorphic(T1, T2, message):
-    return assert_true(sp_hierarchy.is_isomorphic(T1, T2) and sp_hierarchy.is_isomorphic(T2, T1), message)
+def is_isomorphic(T1, T2):
+    return sp_hierarchy.is_isomorphic(T1, T2) and sp_hierarchy.is_isomorphic(T2, T1)
 
 ###############################################################################
 ###############################################################################

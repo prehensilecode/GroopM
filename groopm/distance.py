@@ -110,7 +110,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
         Condensed distance matrix of pairwise density distances.
     """
     n = sp_distance.num_obs_y(Y)
-    do_weights = weights is not None
+    do_weights = minWt is not None
     do_pts = minPts is not None
     if (do_weights and minWt is None) or not (do_weights or do_pts):
         raise ValueError("Specify either 'weights' and 'minWt' or 'minPts' parameter values")
