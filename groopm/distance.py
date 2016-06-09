@@ -154,10 +154,10 @@ def core_distance_weighted(Y, weights, minWt):
     wm = sp_distance.squareform(weights)
     sorting_indices = dm.argsort(axis=1)
     core_dist = np.empty(n, dtype=Y.dtype)
+    m = np.empty(n, dtype=int)
     for i in range(n):
         minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() < minWt[i]))
         core_dist[i] = dm[i, sorting_indices[i, np.minimum(n-1, minPts)]]
-    
     return core_dist
             
 @profile        
