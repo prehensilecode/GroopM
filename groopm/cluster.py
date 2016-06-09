@@ -292,7 +292,7 @@ class ProfileDistanceEngine:
         if minSize is None:
             minWt = None
         else:
-            minWt = np.minimum(minSize - contigLengths, 0) * contigLengths
+            minWt = np.maximum(minSize - contigLengths, 0) * contigLengths
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
         
         return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
