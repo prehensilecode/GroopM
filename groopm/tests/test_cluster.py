@@ -23,26 +23,74 @@ __maintainer__ = "Tim Lamberton"
 __email__ = "tim.lamberton@gmail.com"
 
 ###############################################################################
+
 from nose.tools import assert_true
 import numpy as np
-import scipy.cluster.hierarchy as sp_hierarchy
+
+# local imports
+from tools import equal_arrays
+from groopm.cluster import ClusterCoeffEngine
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-def equal_arrays(a, b):
-    return np.all(np.asarray(a) == np.asarray(b))
-
+class CoeffEngineTester(ClusterCoeffEngine):
+    def __init__(self, leaf_data, coeff_fn):
+        self.getLeafData = lambda: leaf_data
+        self.getCoeff = lambda data: coeff_fn(data)
     
-def almost_equal_arrays(a, b):
-    return np.all(np.around(a, 6) == np.around(b, 6))
+def test_ClusterCoeffEngine():
+    #
+    """
+    Z describes tree:
+        0---+
+        2-+ |-6
+        1 |-5
+        |-4
+        3
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 1., 3.],
+                  [0., 5., 2., 4.]])
+                  
     
+                   
+    """Assign Z leaf data:
+        0:[1]--+
+        2:[]-+ |-6
+        1:[] |-5
+        |-4--+
+        3:[]    
+    """
+    assert_true(equal_arrays(CoeffEngineTester({0:[1]}, max).makeCoeffs(Z),
+                             [1, 0, 0, 0, 0, 0, 1]),
+                "computes max coefficients in the case of a single non-zero coeff")
+                                
+    """Assign leaf data:
+        0:[]----+
+        2:[1]-+ |-6
+        1:[1] |-5
+        |-4---+
+        3:[]    
+    """
+    assert_true(equal_arrays(CoeffEngineTester({1:[1], 2:[1]}, sum).makeCoeffs(Z),
+                             [0, 1, 1, 0, 1, 2, 2]),
+                "computes max sum coefficients in case of pair of coeffs")
+                                              
+    """Assign leaf data:
+        0:[]------+
+        2:[1]---+ |-6
+        1:[2,2] |-5
+        |-4-----+
+        3:[1,0]    
+    """
+    assert_true(equal_arrays(CoeffEngineTester({1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x)).makeCoeffs(Z),
+                             [0, 0, 0, 1, 2, 2, 2]),
+                "returns max range coefficients when a higher leaf is lower valued")
     
-def is_isomorphic(T1, T2):
-    return sp_hierarchy.is_isomorphic(T1, T2) and sp_hierarchy.is_isomorphic(T2, T1)
-
+                        
 ###############################################################################
 ###############################################################################
 ###############################################################################

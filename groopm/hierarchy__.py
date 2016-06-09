@@ -61,17 +61,21 @@ np.seterr(all='raise')
 ###############################################################################
 ############################################################################### 
 
-def fcluster_coeffs(Z, coeffs, merge="max", return_coeffs=False, return_nodes=False):
-    """Make flat clusters
+def fcluster_coeffs(Z, leaf_data, coeff_fn, return_coeffs=False, return_nodes=False):
+    """Find flat clusters by maximising cluster coefficient scores for nodes a
+    hierarchical clustering.
     
     Parameters
     ----------
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
-    coeffs : ndarray
-        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
-        the `i`th singleton node, and for `i>=n` is the value for the cluster
-        encoded by the `(i-n)`-th row in `Z`.
+    leaf_data : dict
+        Dictionary with leaf node ids as keys with values corresponding to
+        lists of values to be passed to coeff_fn
+    coeff_fn : function
+        Function called at each node in `Z` with the concatenation of values 
+        from `leaf_data` for all descendent leaves of the node, and computes
+        the node coefficient.
     return_coeffs : bool
         If True, also return array of cluster coefficients.
     return_nodes : bool
@@ -88,30 +92,22 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_coeffs=False, return_nodes=Fa
     nodes : ndarray
         1-D array. `nodes[i]` is the cluster index corresponding to the flat cluster 
         of the `i`th original observation. Only provided if `return_nodes` is True.
+        
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
-    coeffs = np.asarray(coeffs)
     
+    coeffs = coeffs_linkage(Z, leaf_data, coeff_fn)
     flat_ids = flatten_nodes(Z)
-    if merge=="max":
-        fun = np.maximum
-    elif merge=="sum":
-        fun = np.add
-    else:
-        raise ValueError("Invalid parameter value for argument 'merge' must be one of 'max', 'sum'.")
-    
-    coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # Giving zero scores to descendents of equal height means child scores will be propagated
-    #coeffs[n:] = coeffs[flat_ids+n] # Giving equal scores to descendents of equal height means child scores will be propagated
-    
-    to_merge = maxcoeffs(Z, coeffs, fun)[n:] == coeffs[n:]
-    to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
+    coeffs[n:] = coeffs[flat_ids+n] # Map coefficient scores to descendents of equal height
+    merge = maxcoeffs(Z, coeffs)[n:] == coeffs[n:]
+    merge = merge[flat_ids] # Map merge value to descendents of equal height
     
     if not (return_nodes or return_coeffs):
-        return fcluster_merge(Z, to_merge)
+        return fcluster_merge(Z, merge)
         
     (T, M) = fcluster_merge(Z,
-                            to_merge,
+                            merge,
                             return_nodes=True)
         
     out = (T,)
@@ -121,7 +117,75 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_coeffs=False, return_nodes=Fa
         out += (M,)
     return out
     
-def maxcoeffs(Z, coeffs, fun=np.maximum):
+    
+def coeffs_linkage(Z, leaf_data, coeff_fn):
+    """Compute coefficients for hierarchical clustering.
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    leaf_data : dict
+        Dictionary with leaf node ids as keys with values corresponding to
+        lists of values to be passed to coeff_fn
+    coeff_fn : function
+        Function called at each node in `Z` with the concatenation of values 
+        from `leaf_data` for all descendent leaves of the node, and computes
+        the node coefficient.
+        
+    Returns
+    -------
+    coeffs : ndarray
+        `coeffs[i]` for `i<n` is defines the coefficient for the `i`th
+        singleton node, and for `i>=n` is the coefficient for the cluster
+        encoded by the `(i-n)`-th row in `Z`.
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    
+    node_data = dict()
+    coeffs = np.zeros(2*n-1, dtype=int)
+    
+    # Compute leaf clusters
+    for (i, indices) in leaf_data.iteritems():
+        node_data[i] = indices
+        coeffs[i] = coeff_fn(indices)
+        
+    # Bottom-up traversal
+    for i in range(n-1):
+        left_child = int(Z[i, 0])
+        right_child = int(Z[i, 1])
+        current_node = n+i
+        
+        # update leaf cache
+        try:
+            left_data = node_data[left_child]
+            del node_data[left_child]
+        except:
+            left_data = []
+        try:
+            right_data = node_data[right_child]
+            del node_data[right_child]
+        except:
+            right_data = []
+            
+        current_data = left_data + right_data
+        if current_data != []:
+            node_data[current_node] = current_data
+        
+        # We only need to compute a new coefficient for new sets of data points, i.e. if
+        # both left and right child clusters have data points.
+        if left_data == []:
+            coeffs[current_node] = coeffs[right_child]
+        elif right_data == []:
+            coeffs[current_node] = coeffs[left_child]
+        else:
+            coeffs[current_node] = coeff_fn(current_data)
+            
+    return coeffs
+            
+
+def maxcoeffs(Z, coeffs):
     """Compute the maximum coefficient of cluster nodes and their descendents.
     
     Parameters
@@ -132,9 +196,6 @@ def maxcoeffs(Z, coeffs, fun=np.maximum):
         `coeffs[i]` for `i<n` is defines the taxonomic measure value for
         the `i`th singleton node, and for `i>=n` is the value for the cluster
         encoded by the `(i-n)`-th row in `Z`.
-    fun : function
-        `fun(a, b)` is used to determine the combined best score of the
-        child nodes to propogate.
         
     Returns
     -------
@@ -152,80 +213,13 @@ def maxcoeffs(Z, coeffs, fun=np.maximum):
         right_child = int(Z[i, 1])
         current_node = n+i
         current_coeff = max_coeffs[current_node]
-        current_max_coeff = np.maximum(current_coeff, fun(max_coeffs[left_child], max_coeffs[right_child]))
+        current_max_coeff = np.max([current_coeff, max_coeffs[left_child], max_coeffs[right_child]])
         max_coeffs[current_node] = current_max_coeff
     
     return max_coeffs
     
     
-def iterlinkage(Z):
-    """Iterate over cluster hierarchy"""
-    Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    
-    # Store cluster leaves
-    leaves_dict = dict([(i, [i]) for i in range(n)])
-    
-    # Bottom-up traversal
-    for i in range(n-1):
-        left_child = int(Z[i, 0])
-        right_child = int(Z[i, 1])
-        current_node = n+i
-        
-        # update leaf cache
-        current_leaves = leaves_dict[left_child] + leaves_dict[right_child]
-        del leaves_dict[left_child]
-        del leaves_dict[right_child]
-        leaves_dict[current_node] = current_leaves
-        
-        yield current_leaves
-    
-    
 def fcluster_merge(Z, merge, return_nodes=False):
-    """Partition a hierarchical clustering by flattening clusters.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    merge : ndarray
-        Boolean array. `merge[i]` indicates whether the cluster represented by
-        `Z[i, :]` should be flattened.
-    return_nodes : bool
-        If True, also return array of flat cluster root nodes.
-        
-    Returns
-    -------
-    T : ndarray
-        1-D array. `T[i]` is the flat cluster number to which original
-        observation `i` belongs.
-    nodes : ndarray
-        1-D array. `nodes[i]` is the cluster index corresponding to the flat
-        cluster of the `i`th original obseration. Only provided if
-        `return_nodes` is True.
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    
-    # Compute leaf clusters
-    leaf_max_nodes = np.arange(n)
-    
-    for (i, leaves) in enumerate(iterlinkage(Z)):
-        if merge[i]:
-            leaf_max_nodes[leaves] = n+i
-    
-    (_, bids) = np.unique(leaf_max_nodes, return_inverse=True)
-    
-    if not return_nodes:
-        return bids 
-        
-    out = (bids,)
-    if return_nodes:
-        out += (leaf_max_nodes,)
-    return out
-    
-    
-def fcluster_merge_(Z, merge, return_nodes=False):
     """Partition a hierarchical clustering by flattening clusters.
     
     Parameters

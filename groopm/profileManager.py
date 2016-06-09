@@ -129,7 +129,7 @@ class _Mappings:
         """Returns an iterator of profile and marker indices."""
         return group_iterator(self.rowIndices)
                  
-    def makeConnectivity(self, d=1):
+    def makeConnectivity(self, d):
         """Connectivity matrix to specified distance"""
         dm = sp_distance.squareform(self.classification.makeDistances() <= d)
         

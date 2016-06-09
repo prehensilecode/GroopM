@@ -164,15 +164,14 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         return den_dists
     
     def fcluster(self, Z):
-        cf = ClassificationManager(self._profile.mapping)
-        return hierarchy.fcluster_coeffs(Z,
-                                         dict(self._profile.mapping.iterindices()),
-                                         cf.disagreement)
-     
+        ce = BCubedCoeffEngine(self._profile)
+        return hierarchy.fcluster_coeffs(Z, ce.makeCoeffs(Z), merge="sum")
+                                         
+            
 ###############################################################################
 ###############################################################################
 ###############################################################################
-###############################################################################
+###############################################################################          
    
 # Mediod clustering
 class MediodsClusterEngine:
@@ -293,11 +292,96 @@ class ProfileDistanceEngine:
         if minSize is None:
             minWt = None
         else:
-            minWt = (minSize - contigLengths) * contigLengths
+            minWt = np.minimum(minSize - contigLengths, 0) * contigLengths
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
         
         return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
         
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+class ClusterCoeffEngine:
+    """Cluster using disagreement of leaf data"""
+  
+    def makeCoeffs(self, Z):
+        """Compute coefficients for hierarchical clustering"""
+        Z = np.asarray(Z)
+        n = Z.shape[0]+1
+        
+        node_data = dict(self.getLeafData())
+        coeffs = np.zeros(2*n-1, dtype=int)
+        
+        # Compute leaf clusters
+        for (i, indices) in node_data.iteritems():
+            coeffs[i] = self.getCoeff(indices)
+            
+        # Bottom-up traversal
+        for i in range(n-1):
+            left_child = int(Z[i, 0])
+            right_child = int(Z[i, 1])
+            current_node = n+i
+            
+            # update leaf cache
+            try:
+                left_data = node_data[left_child]
+                del node_data[left_child]
+            except:
+                left_data = []
+            try:
+                right_data = node_data[right_child]
+                del node_data[right_child]
+            except:
+                right_data = []
+                
+            current_data = left_data + right_data
+            if current_data != []:
+                node_data[current_node] = current_data
+            
+            # We only need to compute a new coefficient for new sets of data points, i.e. if
+            # both left and right child clusters have data points.
+            if left_data == []:
+                coeffs[current_node] = coeffs[right_child]
+            elif right_data == []:
+                coeffs[current_node] = coeffs[left_child]
+            else:
+                coeffs[current_node] = self.getCoeff(current_data)
+                
+        return coeffs
+        
+    def getLeafData(self):
+        pass #subclass to override
+        
+    def getCoeff(self, node_data):
+        """Compute coefficients using concatenated leaf data"""
+        pass # subclass to override
+        
+        
+class DisagreementCoeffEngine(ClusterCoeffEngine):
+    """Cluster using disagreement of leaf data"""
+    
+    def __init__(self, profile):
+        self._profile = profile
+        self.getCoeff = ClassificationManager(self._profile.mapping).disagreement
+        
+    def getLeafData(self):
+        return dict(self._profile.mapping.iterindices())
+
+        
+class BCubedCoeffEngine(ClusterCoeffEngine):
+    """Cluster using BCubed precision"""
+    
+    def __init__(self, profile):
+        self._profile = profile
+        self._cf = ClassificationManager(self._profile.mapping)
+        
+    def getCoeff(self, indices):
+        return self._cf.BCubed(indices)[0].sum()
+        
+    def getLeafData(self):
+        return dict(self._profile.mapping.iterindices())
+     
 ###############################################################################
 ###############################################################################
 ###############################################################################

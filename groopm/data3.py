@@ -1001,7 +1001,7 @@ class DataManager:
         markerFile = raw_input('\nPlease specify file containing contigs, mapped markers and taxonomies: ')
         with open(markerFile, 'r') as f:
             try:
-                (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names) = mapper.parse(f, cid2Indices, cfe)
+                (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid2Indices, cfe)
                 num_mappings = len(contig_indices)
                 num_markers = len(marker_names)
             except:
@@ -1009,7 +1009,7 @@ class DataManager:
                 raise
                                          
         DB6_mappings_desc = self.mappings_desc
-        mappings_data = np.array(zip(marker_indices, contig_indices), dtype=DB6_mappings_desc)
+        mappings_data = np.array(zip(marker_indices, contig_indices, taxstrings), dtype=DB6_mappings_desc)
         
         DB6_classification_desc = self.classification_desc
         classification_data = np.array([tuple(i) for i in tax_table], dtype=DB6_classification_desc)

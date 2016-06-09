@@ -29,7 +29,6 @@ import numpy as np
 import numpy.random as np_random
 
 # local imports
-from tools import assert_equal_arrays
 from groopm.utils import (group_iterator,)
 
 ###############################################################################

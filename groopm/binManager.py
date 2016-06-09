@@ -147,7 +147,7 @@ class BinManager:
         
         return out
         
-    def unbinLowQualityAssignments(self, out_bins, minSize=0, minPts=0):
+    def unbinLowQualityAssignments(self, out_bins, minSize, minPts):
         """Check bin assignment quality"""
         low_quality = []
         stats = self.getBinStats(out_bins)
@@ -168,7 +168,7 @@ def _isGoodBin(binSize, binPts, minSize, minPts):
     """Does this bin meet my exacting requirements?"""
 
     # contains enough bp or enough contigs
-    return binSize >= minSize or binPts >= minPts
+    return (minSize is not None and binSize >= minSize) or (minPts is not None and binPts >= minPts)
     
 
 ###############################################################################

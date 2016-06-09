@@ -67,7 +67,7 @@ from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine, BCubedCoeffEngine
 from classification import ClassificationManager
 import hierarchy
 
@@ -110,6 +110,7 @@ class BinPlotter:
         else:
             bm.checkBids(bids)
 
+        print "    Initialising plotter"
         fplot = BinDistancePlotter(profile, colourmap=colorMap)
         print "    %s" % timer.getTimeStamp()
         
@@ -154,6 +155,7 @@ class ReachabilityPlotter:
         else:
             bm.checkBids(bids)
             
+        print "    Initialising plotter"
         fplot = HierarchyReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
@@ -183,6 +185,7 @@ class TreePlotter:
         
         profile = self.loadProfile(timer)
 
+        print "    Initialising plotter"
         fplot = HierarchyRemovedPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
@@ -387,7 +390,7 @@ class HierarchyReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="markers",
+             highlight="bins",
              fileName=""):
         
         h = self._profile.reachDists
@@ -429,8 +432,8 @@ class HierarchyReachabilityPlotter:
             scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, h)
             (_T, coeffs) = hierarchy.fcluster_coeffs(Z,
-                                                     dict(self._profile.mapping.iterindices()),
-                                                     self._cf.disagreement,
+                                                     BCubedCoeffEngine(self._profile).makeCoeffs(Z),
+                                                     merge="sum",
                                                      return_coeffs=True)
             coeffs = coeffs[o]
             smap = plt_cm.ScalarMappable(cmap=self._colourmap)
