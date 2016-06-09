@@ -302,7 +302,7 @@ class ProfileDistanceEngine:
 ###############################################################################
 ###############################################################################
 
-class CoefficientEngine:
+class ClusterCoeffEngine:
     """Cluster using disagreement of leaf data"""
   
     def makeCoeffs(self, Z):
@@ -358,7 +358,7 @@ class CoefficientEngine:
         pass # subclass to override
         
         
-class DisagreementCoeffEngine(CoefficientEngine):
+class DisagreementCoeffEngine(ClusterCoeffEngine):
     """Cluster using disagreement of leaf data"""
     
     def __init__(self, profile):
@@ -369,7 +369,7 @@ class DisagreementCoeffEngine(CoefficientEngine):
         return dict(self._profile.mapping.iterindices())
 
         
-class BCubedCoeffEngine(CoefficientEngine):
+class BCubedCoeffEngine(ClusterCoeffEngine):
     """Cluster using BCubed precision"""
     
     def __init__(self, profile):

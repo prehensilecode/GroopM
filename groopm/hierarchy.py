@@ -91,6 +91,7 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_coeffs=False, return_nodes=Fa
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
+    coeffs = np.asarray(coeffs)
     
     flat_ids = flatten_nodes(Z)
     if merge=="max":

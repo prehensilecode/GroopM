@@ -26,7 +26,7 @@ __email__ = "tim.lamberton@gmail.com"
 
 # system imports
 from nose.tools import assert_true
-from tools import assert_equal_arrays
+from tools import equal_arrays
 import numpy as np
 import numpy.random as np_random
 from groopm.classification import greedy_clique_by_elimination
@@ -37,6 +37,7 @@ from groopm.classification import greedy_clique_by_elimination
 ###############################################################################
                                     
 def test_greedy_clique_by_elimination():
+    #
     C = np.array([[True , True , False],
                   [True , True , False],
                   [False, False, True ]]) # 0, 1 in clique
@@ -45,9 +46,9 @@ def test_greedy_clique_by_elimination():
     indices_perm = np.empty(3, dtype=int)
     indices_perm[node_perm] = np.arange(3)
     
-    assert_equal_arrays(greedy_clique_by_elimination(C_perm),
-                        np.sort(indices_perm[:2]),
-                        "`greedy_clique_by_elimination` returns indices of clique")
+    assert_true(equal_arrays(greedy_clique_by_elimination(C_perm),
+                             np.sort(indices_perm[:2])),
+                "returns indices of clique")
     
     # two cliques with n-1 connecting edges
     C = np.array([[True , True , True , False, True , True ],
@@ -62,7 +63,7 @@ def test_greedy_clique_by_elimination():
     indices_perm[node_perm] = np.arange(6)
     
     assert_true(len(greedy_clique_by_elimination(C_perm)) == 3,
-                "`greedy_clique_by_elimination` computes correct clique size for two highly connected equal sized cliques")
+                "computes correct clique size for two highly connected equal sized cliques")
                 
     # two cliques with universally connected link node
     C = np.array([[True , True , True , True , False, False],
@@ -76,9 +77,9 @@ def test_greedy_clique_by_elimination():
     indices_perm = np.empty(6, dtype=int)
     indices_perm[node_perm] = np.arange(6)
     
-    assert_equal_arrays(greedy_clique_by_elimination(C_perm),
-                        np.sort(indices_perm[:4]),
-                        "`greedy_clique_by_elimination` computes the larger of two overlapping cliques")
+    assert_true(equal_arrays(greedy_clique_by_elimination(C_perm),
+                             np.sort(indices_perm[:4])),
+                "computes the larger of two overlapping cliques")
                 
 
 ###############################################################################

@@ -31,8 +31,7 @@ import numpy.random as np_random
 # local imports
 from tools import equal_arrays, is_isomorphic
 import groopm.distance as distance
-from groopm.hierarchy import (coeffs_linkage,
-                              maxcoeffs,
+from groopm.hierarchy import (maxcoeffs,
                               fcluster_merge,
                               flatten_nodes,
                               fcluster_coeffs,
@@ -197,7 +196,7 @@ def test_fcluster_merge():
     assert_true(equal_arrays(M, [0, 4, 2, 4]),
                 "returns cluster roots for skewed tree with lower valued "
                 "internal coefficient")
-    assert_true(isomorphic(T, [1, 2, 3, 2]),
+    assert_true(is_isomorphic(T, [1, 2, 3, 2]),
                "returns flat cluster indices for skewed tree with lower "
                "valued internal coefficient")
                       
@@ -232,7 +231,7 @@ def test_fcluster_merge():
                             return_nodes=True)
     assert_true(equal_arrays(M, [7, 7, 6, 6, 6]),
                 "computes cluster roots for balanced tree")
-    assert_true(isomorphic(T, [1, 1, 2, 2, 2]),
+    assert_true(is_isomorphic(T, [1, 1, 2, 2, 2]),
                 "computes flat cluster indices for balanced tree")
                         
     """Assign merges:

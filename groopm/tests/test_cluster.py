@@ -26,71 +26,69 @@ __email__ = "tim.lamberton@gmail.com"
 
 from nose.tools import assert_true
 import numpy as np
-import numpy.random as np_random
 
 # local imports
-from tools import assert_equal_arrays, assert_isomorphic
-import groopm.distance as distance
-from groopm.hierarchy import (coeffs_linkage,
-                              maxcoeffs,
-                              fcluster_merge,
-                              flatten_nodes,
-                              fcluster_coeffs,
-                              linkage_from_reachability,
-                              ancestors,
-                             )
+from tools import equal_arrays
+from groopm.cluster import ClusterCoeffEngine
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
-###############################################################################              
-def test_coeffs_linkage():
+###############################################################################
+
+class CoeffEngineTester(ClusterCoeffEngine):
+    def __init__(self, leaf_data, coeff_fn):
+        self.getLeafData = lambda: leaf_data
+        self.getCoeff = lambda data: coeff_fn(data)
+    
+def test_ClusterCoeffEngine():
+    #
     """
     Z describes tree:
-        0-------+
-        2---+   |-6
-        1   |-5-+
-        |-4-+
+        0---+
+        2-+ |-6
+        1 |-5
+        |-4
         3
     """
     Z = np.array([[1., 3., 1., 2.],
                   [2., 4., 1., 3.],
                   [0., 5., 2., 4.]])
+                  
+    
                    
     """Assign Z leaf data:
-        0:[1]------+
-        2:[]---+   |-6
-        1:[]   |-5-+
-        |----4-+
+        0:[1]--+
+        2:[]-+ |-6
+        1:[] |-5
+        |-4--+
         3:[]    
     """
-    assert_equal_arrays(coeffs_linkage(Z, {0:[1]}, max),
-                        [1, 0, 0, 0, 0, 0, 1],
-                        "`coeffs_linkage` computes coefficients in the case of "
-                        "a single non-zero coeff")
+    assert_true(equal_arrays(CoeffEngineTester({0:[1]}, max).makeCoeffs(Z),
+                             [1, 0, 0, 0, 0, 0, 1]),
+                "computes max coefficients in the case of a single non-zero coeff")
                                 
     """Assign leaf data:
-        0:[]--------+
-        2:[1]---+   |-6
-        1:[1]   |-5-+
-        |-----4-+
+        0:[]----+
+        2:[1]-+ |-6
+        1:[1] |-5
+        |-4---+
         3:[]    
     """
-    assert_equal_arrays(coeffs_linkage(Z, {1:[1], 2:[1]}, sum),
-                        [0, 1, 1, 0, 1, 2, 2],
-                        "`coeffs_linkage` computes coefficients in case of a "
-                        "non-zero leaf and larger valued internal coeff")
+    assert_true(equal_arrays(CoeffEngineTester({1:[1], 2:[1]}, sum).makeCoeffs(Z),
+                             [0, 1, 1, 0, 1, 2, 2]),
+                "computes max sum coefficients in case of pair of coeffs")
                                               
     """Assign leaf data:
-        0:[]--------+
-        2:[1]---+   |-6
-        1:[2,2] |-5-+
-        |----4--+
+        0:[]------+
+        2:[1]---+ |-6
+        1:[2,2] |-5
+        |-4-----+
         3:[1,0]    
     """
-    assert_equal_arrays(coeffs_linkage(Z, {1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x)),
-                        [0, 0, 0, 1, 2, 2, 2],
-                        "`coeffs_linkage` returns max coefficients when a higher leaf is lower valued")
+    assert_true(equal_arrays(CoeffEngineTester({1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x)).makeCoeffs(Z),
+                             [0, 0, 0, 1, 2, 2, 2]),
+                "returns max range coefficients when a higher leaf is lower valued")
     
                         
 ###############################################################################
