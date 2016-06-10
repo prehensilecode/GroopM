@@ -64,13 +64,15 @@ class ClassificationManager:
     def __init__(self, mapping):
         self._classification = mapping.classification
         self._d = 1
-        self._mC = mapping.makeConnectivity(d=self._d)
+        Y = np.logical_or(mapping.makeDistances(), self._classification.makeDistances() >= self._d)
+        self._mC = np.logical_not(sp_distance.squareform(Y)).astype(float)
+        #self._mC = mapping.makeConnectivity(d=self._d)
         
     def BCubed(self, indices):
         """Compute BCubed metrics"""
-        corr = self._mC[np.ix_(indices, indices)].sum(axis=1)
-        prec = corr / len(indices)
-        recall = corr / self._mC[indices].sum(axis=1)
+        correct = self._mC[np.ix_(indices, indices)].sum(axis=1)
+        prec = correct / len(indices)
+        recall = correct / self._mC[indices].sum(axis=1)
         return (prec, recall)
         
     def maxClique(self, indices):

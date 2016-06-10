@@ -123,7 +123,7 @@ class HierarchicalClusterEngine:
         print "    %s" % timer.getTimeStamp()
         
         print "Computing cluster hierarchy"
-        print "Clustering 2^%f.2 pairs" % np.log2(len(dists))
+        print "Clustering 2^%.2f pairs" % np.log2(len(dists))
         (o, d) = distance.reachability_order(dists)
         Z = hierarchy.linkage_from_reachability(o, d)
         print "    %s" % timer.getTimeStamp()
@@ -292,7 +292,9 @@ class ProfileDistanceEngine:
         if minSize is None:
             minWt = None
         else:
-            minWt = np.maximum(minSize - contigLengths, 0) * contigLengths
+            v = np.full(len(contigLengths), contigLengths.min())
+            #v = contigLengths
+            minWt = np.maximum(minSize - v, 0) * v
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
         
         return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
@@ -372,12 +374,14 @@ class DisagreementCoeffEngine(ClusterCoeffEngine):
 class BCubedCoeffEngine(ClusterCoeffEngine):
     """Cluster using BCubed precision"""
     
-    def __init__(self, profile):
+    def __init__(self, profile, alpha=0.5):
         self._profile = profile
         self._cf = ClassificationManager(self._profile.mapping)
+        self._alpha = alpha
         
     def getCoeff(self, indices):
-        return self._cf.BCubed(indices)[0].sum()
+        (prec, recall) = self._cf.BCubed(indices)
+        return self._alpha * prec.sum() + (1 - self._alpha) * recall.sum()
         
     def getLeafData(self):
         return dict(self._profile.mapping.iterindices())

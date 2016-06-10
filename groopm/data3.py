@@ -324,6 +324,7 @@ class DataManager:
                     con_ksigs = con_ksigs[good_indices]
 
                 num_cons = len(good_indices)
+                cid_2_indices = dict(zip(con_names, range(num_cons)))
                 
                 #------------------------
                 # parse mapping files

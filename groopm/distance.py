@@ -228,7 +228,6 @@ def condensed_index_(n, i, j):
         return n * i - (i * (i + 1) // 2) + (j - i - 1)
     elif i > j:
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
-    print i, j
         
         
 condensed_index = np.vectorize(condensed_index_, otypes=[np.intp])
