@@ -67,7 +67,7 @@ from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine, BCubedCoeffEngine
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine, BCubedEngine
 from classification import ClassificationManager
 import hierarchy
 
@@ -436,7 +436,7 @@ class HierarchyReachabilityPlotter:
             scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, h)
             (_T, coeffs) = hierarchy.fcluster_coeffs(Z,
-                                                     BCubedCoeffEngine(self._profile).makeCoeffs(Z),
+                                                     BCubedEngine(self._profile).makeScores(Z),
                                                      merge="sum",
                                                      return_coeffs=True)
             coeffs = coeffs[o]

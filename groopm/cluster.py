@@ -164,8 +164,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         return den_dists
     
     def fcluster(self, Z):
-        ce = BCubedCoeffEngine(self._profile)
-        return hierarchy.fcluster_coeffs(Z, ce.makeCoeffs(Z), merge="sum")
+        ce = DisagreementEngine(self._profile)
+        return hierarchy.fcluster_coeffs(Z, ce.makeScores(Z), merge="max")
                                          
             
 ###############################################################################
@@ -304,10 +304,10 @@ class ProfileDistanceEngine:
 ###############################################################################
 ###############################################################################
 
-class ClusterCoeffEngine:
+class ClusterQualityEngine:
     """Cluster using disagreement of leaf data"""
   
-    def makeCoeffs(self, Z):
+    def makeScores(self, Z):
         """Compute coefficients for hierarchical clustering"""
         Z = np.asarray(Z)
         n = Z.shape[0]+1
@@ -317,7 +317,7 @@ class ClusterCoeffEngine:
         
         # Compute leaf clusters
         for (i, indices) in node_data.iteritems():
-            coeffs[i] = self.getCoeff(indices)
+            coeffs[i] = self.getScore(indices)
             
         # Bottom-up traversal
         for i in range(n-1):
@@ -348,39 +348,56 @@ class ClusterCoeffEngine:
             elif right_data == []:
                 coeffs[current_node] = coeffs[left_child]
             else:
-                coeffs[current_node] = self.getCoeff(current_data)
+                coeffs[current_node] = self.getScore(current_data)
                 
         return coeffs
         
     def getLeafData(self):
         pass #subclass to override
         
-    def getCoeff(self, node_data):
+    def getScore(self, node_data):
         """Compute coefficients using concatenated leaf data"""
         pass # subclass to override
         
         
-class DisagreementCoeffEngine(ClusterCoeffEngine):
+class DisagreementEngine(ClusterQualityEngine):
     """Cluster using disagreement of leaf data"""
     
     def __init__(self, profile):
         self._profile = profile
-        self.getCoeff = ClassificationManager(self._profile.mapping).disagreement
+        self.getScore = ClassificationManager(self._profile.mapping).disagreement
+        
+    def getLeafData(self):
+        return dict(self._profile.mapping.iterindices())
+        
+        
+class PurityEngine(ClusterQualityEngine):
+    """Cluster using disagreement of leaf data"""
+    
+    def __init__(self, profile, alpha=0.5):
+        self._profile = profile
+        self._alpha = alpha
+        self._cm = ClassificationManager(self._profile.mapping)
+        
+    def getScore(self, indices):
+        (prec, recall) = self._cm.purity(indices)
+        F = prec * recall * 1. / (self._alpha * prec + (1 - self._alpha) * recall)
+        return len(indices) * F
         
     def getLeafData(self):
         return dict(self._profile.mapping.iterindices())
 
         
-class BCubedCoeffEngine(ClusterCoeffEngine):
+class BCubedEngine(ClusterQualityEngine):
     """Cluster using BCubed precision"""
     
     def __init__(self, profile, alpha=0.5):
         self._profile = profile
-        self._cf = ClassificationManager(self._profile.mapping)
         self._alpha = alpha
+        self._cm = ClassificationManager(self._profile.mapping)
         
-    def getCoeff(self, indices):
-        (prec, recall) = self._cf.BCubed(indices)
+    def getScore(self, indices):
+        (prec, recall) = self._cm.BCubed(indices)
         return self._alpha * prec.sum() + (1 - self._alpha) * recall.sum()
         
     def getLeafData(self):
