@@ -388,45 +388,12 @@ class MarkerCheckEngine(ClusterQualityEngine):
         return f
         
         
-class DisagreementEngine(ClusterQualityEngine):
+class DisagreementEngine_(ClusterQualityEngine):
     """Cluster using disagreement of leaf data"""
     
     def __init__(self, profile):
         self._profile = profile
         self.getScore = ClassificationManager(self._profile.mapping).disagreement
-        
-    def getLeafData(self):
-        return dict(self._profile.mapping.iterindices())
-        
-        
-class PurityEngine(ClusterQualityEngine):
-    """Cluster using disagreement of leaf data"""
-    
-    def __init__(self, profile, alpha=0.5):
-        self._profile = profile
-        self._alpha = alpha
-        self._cm = ClassificationManager(self._profile.mapping)
-        
-    def getScore(self, indices):
-        (prec, recall) = self._cm.purity(indices)
-        F = prec * recall * 1. / (self._alpha * prec + (1 - self._alpha) * recall)
-        return len(indices) * F
-        
-    def getLeafData(self):
-        return dict(self._profile.mapping.iterindices())
-
-        
-class BCubedEngine(ClusterQualityEngine):
-    """Cluster using BCubed precision"""
-    
-    def __init__(self, profile, alpha=0.5):
-        self._profile = profile
-        self._alpha = alpha
-        self._cm = ClassificationManager(self._profile.mapping)
-        
-    def getScore(self, indices):
-        (prec, recall) = self._cm.BCubed(indices)
-        return self._alpha * prec.sum() + (1 - self._alpha) * recall.sum()
         
     def getLeafData(self):
         return dict(self._profile.mapping.iterindices())
