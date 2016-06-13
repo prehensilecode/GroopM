@@ -104,7 +104,7 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_coeffs=False, return_nodes=Fa
     coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # Giving zero scores to descendents of equal height means child scores will be propagated
     #coeffs[n:] = coeffs[flat_ids+n] # Giving equal scores to descendents of equal height means child scores will be propagated
     
-    to_merge = maxcoeffs(Z, coeffs, fun)[n:] == coeffs[n:]
+    to_merge = np.logical_and(maxcoeffs(Z, coeffs, fun)[n:] == coeffs[n:], coeffs[n:] > 0)
     to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
     
     if not (return_nodes or return_coeffs):
@@ -120,6 +120,7 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_coeffs=False, return_nodes=Fa
     if return_nodes:
         out += (M,)
     return out
+    
     
 def maxcoeffs(Z, coeffs, fun=np.maximum):
     """Compute the maximum coefficient of cluster nodes and their descendents.
@@ -209,20 +210,20 @@ def fcluster_merge(Z, merge, return_nodes=False):
     n = Z.shape[0]+1
     
     # Compute leaf clusters
-    leaf_max_nodes = np.arange(n)
+    leaders = np.arange(n)
     
     for (i, leaves) in enumerate(iterlinkage(Z)):
         if merge[i]:
-            leaf_max_nodes[leaves] = n+i
+            leaders[leaves] = n+i
     
-    (_, bids) = np.unique(leaf_max_nodes, return_inverse=True)
+    (_, bids) = np.unique(leaders, return_inverse=True)
     
     if not return_nodes:
         return bids 
         
     out = (bids,)
     if return_nodes:
-        out += (leaf_max_nodes,)
+        out += (leaders,)
     return out
     
     
@@ -358,7 +359,30 @@ def linkage_from_reachability(o, d):
     return Z
     
     
-def ancestors(Z, indices, inclusive=False):
+def clustering_index(o, d, T):
+    """Compute slope coefficients for bins"""
+    
+    o = np.asarray(o)
+    d = np.asarray(d)
+    T = np.asarray(T)
+    n = len(o)
+    flag = np.concatenate(([False], T[o[1:]]!=T[o[:-1]])) # previous nodes in ordering not in same bin
+    num_bins = len(np.unique(T))
+    if num_bins!=np.count_nonzero(flag):
+        raise ValueError("Bins are not contiguous sections of reachability ordering")
+    bids = flag.cumsum()
+    max_dist_inside = np.zeros(num_bids, dtype=d.dtype)
+    for i in np.flatnonzero(np.logical_not(flag)):
+        max_dist_inside[bids[i]] = max(max_dist_inside[bids[i]], d[i])
+    min_dist_between = d[flag]
+    min_dist_between[:-1] = np.minimum(min_dist_between[:-1], min_dist_between[1:])
+    
+    return min_dist_between / max_dist_inside
+    
+    
+    
+    
+def ancestors_(Z, indices, inclusive=False):
     """Compute ancestor node indices.
     
     Parameters
