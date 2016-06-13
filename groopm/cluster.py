@@ -164,8 +164,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         return den_dists
     
     def fcluster(self, Z):
-        ce = DisagreementEngine(self._profile)
-        return hierarchy.fcluster_coeffs(Z, ce.makeScores(Z), merge="max")
+        ce = MarkerCheckEngine(self._profile)
+        return hierarchy.fcluster_coeffs(Z, ce.makeScores(Z), merge="sum")
                                          
             
 ###############################################################################
@@ -313,7 +313,7 @@ class ClusterQualityEngine:
         n = Z.shape[0]+1
         
         node_data = dict(self.getLeafData())
-        coeffs = np.zeros(2*n-1, dtype=int)
+        coeffs = np.zeros(2*n-1, dtype=float)
         
         # Compute leaf clusters
         for (i, indices) in node_data.iteritems():
@@ -358,6 +358,34 @@ class ClusterQualityEngine:
     def getScore(self, node_data):
         """Compute coefficients using concatenated leaf data"""
         pass # subclass to override
+        
+        
+class MarkerCheckEngine(ClusterQualityEngine):
+    """Cluster using taxonomy and marker completeness"""
+    
+    def __init__(self, profile):
+        self._alpha = 0.5
+        self._d = 1
+        self._mapping = profile.mapping
+        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
+        self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
+        self._mscalefactors = 1./self._mcounts
+        
+    def getLeafData(self):
+        return dict(self._mapping.iterindices())
+        
+    def getScore(self, indices):
+        """Compute modified completeness and precision scores"""
+        # number of unique markers that are taxonomically coherence with each item in cluster
+        indices = np.asarray(indices)
+        correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
+        # item precision is fraction of cluster that is correct
+        prec = correct * 1. / len(indices)
+        # item completeness is fraction of taxonomically coherent markers in data set in cluster
+        compl = (correct * self._mscalefactors[indices])
+        f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
+        return f
         
         
 class DisagreementEngine(ClusterQualityEngine):
