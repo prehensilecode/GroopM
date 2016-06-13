@@ -128,8 +128,21 @@ class _Mappings:
     def iterindices(self):
         """Returns an iterator of profile and marker indices."""
         return group_iterator(self.rowIndices)
+        
+    def makeDistances(self):
+        """"Distance matrix using shared group membership"""
+        n = self.numMappings
+        Y = np.zeros(n*(n-1)//2, dtype=bool)
+        
+        # larger distance between mappings to the same single copy marker
+        for (_, m) in self.itergroups():
+            m = np.array(m)
+            (i, j) = distance.pairs(len(m))
+            Y[distance.condensed_index(n, m[i], m[j])] = True
+            
+        return Y
                  
-    def makeConnectivity(self, d):
+    def makeConnectivity_(self, d):
         """Connectivity matrix to specified distance"""
         dm = sp_distance.squareform(self.classification.makeDistances() <= d)
         

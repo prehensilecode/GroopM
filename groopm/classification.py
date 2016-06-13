@@ -64,13 +64,15 @@ class ClassificationManager:
     def __init__(self, mapping):
         self._classification = mapping.classification
         self._d = 1
-        self._mC = mapping.makeConnectivity(d=self._d)
+        Y = np.logical_or(mapping.makeDistances(), self._classification.makeDistances() >= self._d)
+        self._mC = np.logical_not(sp_distance.squareform(Y)).astype(float)
+        #self._mC = mapping.makeConnectivity(d=self._d)
         
     def BCubed(self, indices):
         """Compute BCubed metrics"""
-        corr = self._mC[np.ix_(indices, indices)].sum(axis=1)
-        prec = corr / len(indices)
-        recall = corr / self._mC[indices].sum(axis=1)
+        correct = self._mC[np.ix_(indices, indices)].sum(axis=1)
+        prec = correct * 1. / len(indices)
+        recall = correct * 1. / self._mC[indices].sum(axis=1)
         return (prec, recall)
         
     def maxClique(self, indices):
@@ -79,6 +81,19 @@ class ClassificationManager:
         if len(indices) == 0:
             return np.array([], dtype=np.intp)
         return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
+        
+    def purity(self, indices):
+        """Compute purity using largest clique"""
+        indices = np.asarray(indices)
+        clique = indices[self.maxClique(indices)]
+        try:
+            prec = len(clique) * 1. / len(indices)
+        except ZeroDivisionError:
+            return (1, 0)
+        match_all = np.flatnonzero(np.all(self._mC[clique], axis=0))
+        best_clique_size = len(self.maxClique(match_all))
+        recall = len(clique) / best_clique_size
+        return (prec, recall)
         
     def disagreement(self, indices):
         """Compute size difference between 2 largest cliques"""

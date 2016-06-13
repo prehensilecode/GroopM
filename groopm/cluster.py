@@ -123,7 +123,7 @@ class HierarchicalClusterEngine:
         print "    %s" % timer.getTimeStamp()
         
         print "Computing cluster hierarchy"
-        print "Clustering 2^%f.2 pairs" % np.log2(len(dists))
+        print "Clustering 2^%.2f pairs" % np.log2(len(dists))
         (o, d) = distance.reachability_order(dists)
         Z = hierarchy.linkage_from_reachability(o, d)
         print "    %s" % timer.getTimeStamp()
@@ -164,8 +164,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         return den_dists
     
     def fcluster(self, Z):
-        ce = BCubedCoeffEngine(self._profile)
-        return hierarchy.fcluster_coeffs(Z, ce.makeCoeffs(Z), merge="sum")
+        ce = MarkerCheckEngine(self._profile)
+        return hierarchy.fcluster_coeffs(Z, ce.makeScores(Z), merge="sum")
                                          
             
 ###############################################################################
@@ -292,7 +292,9 @@ class ProfileDistanceEngine:
         if minSize is None:
             minWt = None
         else:
-            minWt = np.maximum(minSize - contigLengths, 0) * contigLengths
+            v = np.full(len(contigLengths), contigLengths.min())
+            #v = contigLengths
+            minWt = np.maximum(minSize - v, 0) * v
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
         
         return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
@@ -302,20 +304,20 @@ class ProfileDistanceEngine:
 ###############################################################################
 ###############################################################################
 
-class ClusterCoeffEngine:
+class ClusterQualityEngine:
     """Cluster using disagreement of leaf data"""
   
-    def makeCoeffs(self, Z):
+    def makeScores(self, Z):
         """Compute coefficients for hierarchical clustering"""
         Z = np.asarray(Z)
         n = Z.shape[0]+1
         
         node_data = dict(self.getLeafData())
-        coeffs = np.zeros(2*n-1, dtype=int)
+        coeffs = np.zeros(2*n-1, dtype=float)
         
         # Compute leaf clusters
         for (i, indices) in node_data.iteritems():
-            coeffs[i] = self.getCoeff(indices)
+            coeffs[i] = self.getScore(indices)
             
         # Bottom-up traversal
         for i in range(n-1):
@@ -346,38 +348,85 @@ class ClusterCoeffEngine:
             elif right_data == []:
                 coeffs[current_node] = coeffs[left_child]
             else:
-                coeffs[current_node] = self.getCoeff(current_data)
+                coeffs[current_node] = self.getScore(current_data)
                 
         return coeffs
         
     def getLeafData(self):
         pass #subclass to override
         
-    def getCoeff(self, node_data):
+    def getScore(self, node_data):
         """Compute coefficients using concatenated leaf data"""
         pass # subclass to override
         
         
-class DisagreementCoeffEngine(ClusterCoeffEngine):
+class MarkerCheckEngine(ClusterQualityEngine):
+    """Cluster using taxonomy and marker completeness"""
+    
+    def __init__(self, profile):
+        self._alpha = 0.5
+        self._d = 1
+        self._mapping = profile.mapping
+        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
+        self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
+        self._mscalefactors = 1./self._mcounts
+        
+    def getLeafData(self):
+        return dict(self._mapping.iterindices())
+        
+    def getScore(self, indices):
+        """Compute modified completeness and precision scores"""
+        # number of unique markers that are taxonomically coherence with each item in cluster
+        indices = np.asarray(indices)
+        correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
+        # item precision is fraction of cluster that is correct
+        prec = correct * 1. / len(indices)
+        # item completeness is fraction of taxonomically coherent markers in data set in cluster
+        compl = (correct * self._mscalefactors[indices])
+        f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
+        return f
+        
+        
+class DisagreementEngine(ClusterQualityEngine):
     """Cluster using disagreement of leaf data"""
     
     def __init__(self, profile):
         self._profile = profile
-        self.getCoeff = ClassificationManager(self._profile.mapping).disagreement
+        self.getScore = ClassificationManager(self._profile.mapping).disagreement
+        
+    def getLeafData(self):
+        return dict(self._profile.mapping.iterindices())
+        
+        
+class PurityEngine(ClusterQualityEngine):
+    """Cluster using disagreement of leaf data"""
+    
+    def __init__(self, profile, alpha=0.5):
+        self._profile = profile
+        self._alpha = alpha
+        self._cm = ClassificationManager(self._profile.mapping)
+        
+    def getScore(self, indices):
+        (prec, recall) = self._cm.purity(indices)
+        F = prec * recall * 1. / (self._alpha * prec + (1 - self._alpha) * recall)
+        return len(indices) * F
         
     def getLeafData(self):
         return dict(self._profile.mapping.iterindices())
 
         
-class BCubedCoeffEngine(ClusterCoeffEngine):
+class BCubedEngine(ClusterQualityEngine):
     """Cluster using BCubed precision"""
     
-    def __init__(self, profile):
+    def __init__(self, profile, alpha=0.5):
         self._profile = profile
-        self._cf = ClassificationManager(self._profile.mapping)
+        self._alpha = alpha
+        self._cm = ClassificationManager(self._profile.mapping)
         
-    def getCoeff(self, indices):
-        return self._cf.BCubed(indices)[0].sum()
+    def getScore(self, indices):
+        (prec, recall) = self._cm.BCubed(indices)
+        return self._alpha * prec.sum() + (1 - self._alpha) * recall.sum()
         
     def getLeafData(self):
         return dict(self._profile.mapping.iterindices())

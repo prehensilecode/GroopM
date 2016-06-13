@@ -154,6 +154,7 @@ def maxcoeffs(Z, coeffs, fun=np.maximum):
         current_coeff = max_coeffs[current_node]
         current_max_coeff = np.maximum(current_coeff, fun(max_coeffs[left_child], max_coeffs[right_child]))
         max_coeffs[current_node] = current_max_coeff
+        #print current_coeff - (max_coeffs[left_child] + max_coeffs[right_child])
     
     return max_coeffs
     

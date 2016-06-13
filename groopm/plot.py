@@ -67,7 +67,7 @@ from utils import makeSurePathExists
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine, BCubedCoeffEngine
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine, BCubedEngine
 from classification import ClassificationManager
 import hierarchy
 
@@ -344,6 +344,7 @@ class BarAxisPlotter:
                  colours,
                  xticks=[],
                  xticklabels=[],
+                 xticklabel_rotation="horizontal",
                  xlabel="",
                  ylabel="",
                  text=[],
@@ -354,6 +355,7 @@ class BarAxisPlotter:
         self.ylabel = ylabel
         self.xticks = xticks
         self.xticklabels = xticklabels
+        self.xticklabel_rotation = xticklabel_rotation
         self.text = text
         self.colourbar = colourbar
         
@@ -367,7 +369,7 @@ class BarAxisPlotter:
         ax.set_ylabel(self.ylabel)
         ax.set_xticks(self.xticks)
         ax.set_xticklabels(self.xticklabels,
-                           rotation="horizontal")
+                           rotation=self.xticklabel_rotation)
         for (x, y, text) in self.text:
             ax.text(x, y, text, ha='center', va='bottom')
                            
@@ -399,17 +401,19 @@ class HierarchyReachabilityPlotter:
             iloc = dict(zip(o, range(len(o))))
             (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "count"
+            xticklabel_rotation = "horizontal"
         elif label=="tag":
+            #bin_members = np.flatnonzero(np.in1d(binIds, bids))
             iloc = dict(zip(o, range(len(o))))
             (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
+            xticklabel_rotation = "vertical"
         else:
             raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
         
         if highlight=="bins":
             # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
-            
             binned_indices = np.flatnonzero(binIds > 0)
             flag = np.concatenate(([False], binIds[binned_indices[1:]] != binIds[binned_indices[:-1]], [True]))
             iflag = np.cumsum(flag[:-1])
@@ -432,7 +436,7 @@ class HierarchyReachabilityPlotter:
             scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, h)
             (_T, coeffs) = hierarchy.fcluster_coeffs(Z,
-                                                     BCubedCoeffEngine(self._profile).makeCoeffs(Z),
+                                                     BCubedEngine(self._profile).makeScores(Z),
                                                      merge="sum",
                                                      return_coeffs=True)
             coeffs = coeffs[o]
@@ -451,6 +455,7 @@ class HierarchyReachabilityPlotter:
             ylabel="dendist",
             xticks=xticks,
             xticklabels=xticklabels,
+            xticklabel_rotation=xticklabel_rotation,
             text=text,
             colourbar=smap,
             )
