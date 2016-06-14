@@ -77,7 +77,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class BinPlotter:
+class BinPlotManager:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, folder=None):
         self._pm = ProfileManager(dbFileName)
@@ -126,7 +126,7 @@ class BinPlotter:
         print "    %s" % timer.getTimeStamp()
 
         
-class ReachabilityPlotter:
+class ReachabilityPlotManager:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, folder=None):
         self._pm = ProfileManager(dbFileName)
@@ -156,7 +156,7 @@ class ReachabilityPlotter:
             bm.checkBids(bids)
             
         print "    Initialising plotter"
-        fplot = HierarchyReachabilityPlotter(profile)
+        fplot = ProfileReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
@@ -165,7 +165,7 @@ class ReachabilityPlotter:
         print "    %s" % timer.getTimeStamp()
         
         
-class TreePlotter:
+class TreePlotManager:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, folder=None):
         self._pm = ProfileManager(dbFileName)
@@ -186,7 +186,7 @@ class TreePlotter:
         profile = self.loadProfile(timer)
 
         print "    Initialising plotter"
-        fplot = HierarchyRemovedPlotter(profile)
+        fplot = TreePlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
@@ -305,6 +305,7 @@ class DendrogramAxisPlotter:
     def __init__(self, Z,
                  link_colour_func,
                  leaf_label_func,
+                 colourbar=None,
                  xlabel="", ylabel=""):
         """
         Fields
@@ -320,17 +321,21 @@ class DendrogramAxisPlotter:
         self.leaf_label_func = leaf_label_func
         self.xlabel = xlabel
         self.ylabel = ylabel
+        self.colourbar = colourbar
     
     def __call__(self, ax, fig):
         sp_hierarchy.dendrogram(self.Z, ax=ax, p=4000,
                                 truncate_mode='lastp',
-                                distance_sort='ascending',
+                                #distance_sort='ascending',
                                 color_threshold=0,
                                 leaf_label_func=self.leaf_label_func,
                                 link_color_func=self.link_colour_func)
         
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
+        
+        if self.colourbar is not None:
+            fig.colorbar(self.colourbar, ax=ax)
         
     
 class DendrogramPlotter(Plotter2D):
@@ -383,7 +388,7 @@ class BarPlotter(Plotter2D):
         
 
 # Tree plotters
-class HierarchyReachabilityPlotter:
+class ProfileReachabilityPlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
         self._cf = ClassificationManager(self._profile.mapping)
@@ -392,7 +397,7 @@ class HierarchyReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="bins",
+             highlight="coeffs",
              fileName=""):
         
         h = self._profile.reachDists
@@ -403,13 +408,12 @@ class HierarchyReachabilityPlotter:
             xlabel = "count"
             xticklabel_rotation = "horizontal"
         elif label=="tag":
-            #bin_members = np.flatnonzero(np.in1d(binIds, bids))
             iloc = dict(zip(o, range(len(o))))
             (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
             xticklabel_rotation = "vertical"
         else:
-            raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
+            raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
         if highlight=="bins":
             # alternate red and black stretches for different bins
@@ -431,21 +435,32 @@ class HierarchyReachabilityPlotter:
             k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
-        elif highlight=="markers":
+        elif highlight in ["support", "coeffs"]:
             # color leaves by maximum ancestor coherence score
-            scores = np.zeros(self._profile.numContigs)
             Z = hierarchy.linkage_from_reachability(o, h)
-            (_T, coeffs) = hierarchy.fcluster_coeffs(Z,
-                                                     MarkerCheckEngine(self._profile).makeScores(Z),
-                                                     merge="sum",
-                                                     return_coeffs=True)
-            coeffs = coeffs[o]
-            smap = plt_cm.ScalarMappable(cmap=self._colourmap)
+            n = Z.shape[0]+1
+            flat_ids = hierarchy.flatten_nodes(Z)
+            scores = MarkerCheckEngine(self._profile).makeScores(Z)
+            scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
+            if highlight=="support":
+                scores = hierarchy.support(Z, scores, operator.add)
+            elif highlight=="coeffs":
+                scores[n:] = scores[n:] / Z[:, 3]
+            splits = hierarchy.reachability_splits(h)
+            coeffs = np.zeros(n, dtype=float)
+            coeffs[splits[:-1]] = scores[n+flat_ids]
+            Z = hierarchy.linkage_from_reachability(o, h)
+            if highlight=="support":
+                smap = plt_cm.ScalarMappable(cmap=getColorMap('Spectral'),
+                                             norm=plt_colors.Normalize(vmin=-coeffs.max(), vmax=coeffs.max(), clip=True)
+                                             )
+            else:
+                smap = plt_cm.ScalarMappable(cmap=self._colourmap)
             smap.set_array(coeffs)
             colours = smap.to_rgba(coeffs)
             text = []
         else:
-            raise ValueError("Invalid `highlight` argument parameter value: `%s`" % highlight)
+            raise ValueError("Parameter value for 'highlight' argument must be one of 'bins', 'support', 'coeffs'. Got '%s'." % highlight)
         
         
         hplot = BarPlotter(
@@ -462,19 +477,23 @@ class HierarchyReachabilityPlotter:
         hplot.plot(fileName)
         
 
-class HierarchyRemovedPlotter:
-    def __init__(self, profile):
+class TreePlotter:
+    def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
         self._cf = ClassificationManager(self._profile.mapping)
+        self._ce = MarkerCheckEngine(self._profile)
+        self._colourmap = getColorMap(colourmap)
         self._Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
         (_r, self._node_dict) = sp_hierarchy.to_tree(self._Z, rd=True)
         
     def plot(self,
              label="count",
+             colour="support",
              fileName=""):
         
-        ce = ClassificationClusterEngine(self._profile)
-        T = ce.fcluster(self._Z)
+        n = self._Z.shape[0]+1
+        coeffs = self._ce.makeScores(self._Z)
+        T = hierarchy.fcluster_coeffs(self._Z, coeffs, merge="sum")
         (nodes, bids) = sp_hierarchy.leaders(self._Z, T.astype('i'))
         rootancestors = hierarchy.ancestors(self._Z, nodes)
         rootancestors_set = set(rootancestors)
@@ -488,11 +507,33 @@ class HierarchyRemovedPlotter:
             leaf_label_func=self.leaf_label_coeff
             xlabel="coeff"
         else:
-            raise ValueError("Invalid `label` argument parameter value: `%s`" % label)
+            raise ValueError("Parameter value for argument 'label' must be one of 'tag', 'count', 'coeff'. Got '%s'" % label)
+            
+        if colour=="clusters":
+            colour_set = dict([(k, 'r') for k in range(2*n-1) if k not in rootancestors_set])
+        elif colour in ["nzcoeffs", "support"]:
+            flat_ids = hierarchy.flatten_nodes(self._Z)
+            flat_coeffs = coeffs.copy()
+            flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
+            support = hierarchy.support(self._Z, flat_coeffs, np.add)
+            support[n:] = support[n+flat_ids]
+            if True:
+                to_merge = support >= 0
+            else:
+                to_merge = support > 0
+            
+            #lowest_ratio = np.max(reach_ratios[np.flatnonzero(is_between[n:])])
+            if colour=="support":
+                colour_set = dict([(k, 'r' if support[k] > 0 else 'b') for k in np.flatnonzero(support>=0)])
+            elif colour=="nzcoeffs":
+                colour_set = dict([(k, 'r') for k in np.flatnonzero(flat_coeffs!=0)])
+        else:
+            raise ValueError("Parameter value for argument 'colour' must be one of 'clusters', 'nzcoeffs', 'support'. Got '%s'" % colour)
+           
         
         hplot = DendrogramPlotter(
             self._Z,
-            link_colour_func=lambda k: 'k' if k in rootancestors_set else 'r',
+            link_colour_func=lambda k: colour_set[k] if k in colour_set else 'k',
             leaf_label_func=leaf_label_func,
             xlabel=xlabel, ylabel="dendist"
         )
@@ -503,7 +544,7 @@ class HierarchyRemovedPlotter:
         return np.flatnonzero(np.in1d(self._profile.mapping.rowIndices, leaves))
         
     def leaf_label_coeff(self, k):
-        coeff = self._cf.disagreement(self.indices(k))
+        coeff = self._ce.getScore(self.indices(k))
         return '' if count <= 0 else str(coeff)
         
     def leaf_label_count(self, k):

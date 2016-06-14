@@ -99,7 +99,8 @@ class CoreCreator:
         ce.makeBins(timer,
                     out_bins=profile.binIds,
                     out_reach_order=profile.reachOrder,
-                    out_reach_dists=profile.reachDists)
+                    out_reach_dists=profile.reachDists
+                    )
         
         bm = BinManager(profile)
         bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
@@ -129,7 +130,7 @@ class HierarchicalClusterEngine:
         print "    %s" % timer.getTimeStamp()
         
         print "Finding cores"
-        T = self.fcluster(Z)
+        T = self.fcluster(Z, o, d)
         out_bins[...] = T+1 #bins start from 1
         out_reach_order[...] = o
         out_reach_dists[...] = d
@@ -140,7 +141,7 @@ class HierarchicalClusterEngine:
         """computes pairwise distances of observations"""
         pass #subclass to override
         
-    def fcluster(self, Z):
+    def fcluster(self, Z, o, d):
         """finds flat clusters from linkage matrix"""
         pass #subclass to override
         
@@ -163,9 +164,13 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                                                           minSize=self._minSize)
         return den_dists
     
-    def fcluster(self, Z):
+    def fcluster(self, Z, o, d):
         ce = MarkerCheckEngine(self._profile)
-        return hierarchy.fcluster_coeffs(Z, ce.makeScores(Z), merge="sum")
+        return hierarchy.fcluster_coeffs(Z,
+                                         ce.makeScores(Z),
+                                         merge="sum",
+                                         #reach_ratios=hierarchy.reachability_ratios(Z, o, d)
+                                         )
                                          
             
 ###############################################################################
@@ -341,7 +346,11 @@ class ClusterQualityEngine:
             if current_data != []:
                 node_data[current_node] = current_data
             
-            if left_data != [] or right_data !=[]:
+            if left_data == []:
+                coeffs[current_node] = coeffs[right_child]
+            elif right_data == []:
+                coeffs[current_node] = coeffs[left_child]
+            else:
                 # We only compute a new coefficient for new sets of data points, i.e. if
                 # both left and right child clusters have data points.
                 coeffs[current_node] = self.getScore(current_data)
@@ -357,7 +366,7 @@ class ClusterQualityEngine:
         
         
 class MarkerCheckEngine(ClusterQualityEngine):
-    """Cluster using taxonomy and marker completeness"""
+    """Cluster coefficient using taxonomy and marker completeness"""
     
     def __init__(self, profile):
         self._alpha = 0.5

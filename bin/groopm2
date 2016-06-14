@@ -420,13 +420,13 @@ class plot_command_configure:
         print "*******************************************************************************"
 
 
-        bplot = groopm.BinPlotter(options.dbname,
-                                  folder=None if options.interactive else options.out_folder)
-        bplot.plot(timer,
-                   bids=options.bids,
-                   origin=options.origin,
-                   colorMap=options.colormap,
-                   prefix=options.prefix)
+        pm = groopm.BinPlotManager(options.dbname,
+                                      folder=None if options.interactive else options.out_folder)
+        pm.plot(timer,
+                bids=options.bids,
+                origin=options.origin,
+                colorMap=options.colormap,
+                prefix=options.prefix)
                    
                            
 class reach_command_configure:
@@ -447,11 +447,11 @@ class reach_command_configure:
         print "*******************************************************************************"
 
 
-        rplot = groopm.ReachabilityPlotter(options.dbname,
-                                           folder=None if options.interactive else options.out_folder)
-        rplot.plot(timer,
-                   bids=options.bids,
-                   prefix=options.prefix)
+        pm = groopm.ReachabilityPlotManager(options.dbname,
+                                               folder=None if options.interactive else options.out_folder)
+        pm.plot(timer,
+                bids=options.bids,
+                prefix=options.prefix)
                    
                    
 class tree_command_configure:
@@ -471,10 +471,10 @@ class tree_command_configure:
         print "*******************************************************************************"
 
 
-        tplot = groopm.TreePlotter(options.dbname,
-                                   folder=None if options.interactive else options.out_folder)
-        tplot.plot(timer,
-                   prefix=options.prefix)
+        pm = groopm.TreePlotManager(options.dbname,
+                                    folder=None if options.interactive else options.out_folder)
+        pm.plot(timer,
+                prefix=options.prefix)
                    
 
 #------------------------------------------------------------------------------
