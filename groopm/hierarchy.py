@@ -61,83 +61,21 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ############################################################################### 
-def fcluster_ratios(Z, coeffs, ratios, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
-    """Make flat clusters
+
+def fcluster_recruit(Z, bins, reach_ratios):
+    """Recruit unbinned using reachability ratios"""
     
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    coeffs : ndarray
-        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
-        the `i`th singleton node, and for `i>=n` is the value for the cluster
-        encoded by the `(i-n)`-th row in `Z`.
-    ratios : ndarray
-        `ratios[i]` is the reachability ratio for the cluster encoded by the
-        `i`-th row of `Z`.
-    return_support : bool
-        If True, also returns array of cluster support scores.
-    return_coeffs : bool
-        If True, also return array of cluster coefficients.
-    return_nodes : bool
-        If True, also return array of flat cluster root nodes.
-        
-    Returns
-    -------
-    T : ndarray
-        1-D array. `T[i]` is the flat cluster number to which original
-        observation `i` belongs.
-    maxcoeffs : ndarray
-        1-D array. `maxcoeffs[i]` is the cluster coefficient for the flat
-        cluster of original observation `i`. Only provided if `return_coeffs` is True.
-    nodes : ndarray
-        1-D array. `nodes[i]` is the cluster index corresponding to the flat cluster 
-        of the `i`th original observation. Only provided if `return_nodes` is True.
-    """
     Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    coeffs = np.copy(coeffs)
-    ratios = np.copy(ratios)
-    
+    n = sp_hierarchy.num_obs_linkage(Z)
     flat_ids = flatten_nodes(Z)
-    flattened_nodes = np.flatnonzero(flat_ids!=np.arange(n-1))
-    coeffs[n+flatten_nodes] = 0 # Giving zero scores to descendents of equal height means child scores will be propagated
     
-    if merge=="max":
-        scores = support(Z, coeffs, max)
-    elif merge=="sum":
-        scores = support(Z, coeffs, operator.add)
-    else:
-        raise ValueError("Parameter value for argument 'merge' must be one of 'max', 'sum'. Got '%s'" % merge)
-    
-    ratios[flattened_nodes] = 1
-    minratiobelow = -maxscoresbelow(Z, np.concatenate((-np.ones(n), -ratios)), max)
-    
-    ratio_threshold = minratiobelow[scores > 0].max()
-    #ratio_threshold = minratiobelow[scores < 0].min()
-    
-    to_merge = np.logical_or(is_supported, np.logical_and(scores == 0, ratios <= ratio_threshold))
-    to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
-    
-    if not (return_nodes or return_coeffs or return_support):
-        return fcluster_merge(Z, to_merge)
-        
-    (T, M) = fcluster_merge(Z,
-                            to_merge,
-                            return_nodes=True)
-        
-    out = (T,)
-    if return_support:
-        support = np.concatenate((coeffs[:n], scores))
-        out += (support[M],)
-    if return_coeffs:
-        out += (coeffs[M],)
-    if return_nodes:
-        out += (M,)
-    return out
+    (bids, index) = np.unique(bins)
+    dists = sp_distance.squareform(sp_hierarchy.cophenet(Z))[np.ix(index[bids!=0], index[bids!=0])]
+    links = np.array([np.max(row[bids!=bid]) for (bid, row) in zip(bids, dists)])
     
     
-def fcluster_coeffs_(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
+    
+def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
     """Make flat clusters
     
     Parameters
@@ -181,7 +119,7 @@ def fcluster_coeffs_(Z, coeffs, merge="max", return_support=False, return_coeffs
     else:
         raise ValueError("Parameter value for argument 'merge' must be one of 'max', 'sum'. Got '%s'" % merge)
     
-    to_merge = np.logical_and(scores >= 0, coeffs[n:] > 0)
+    to_merge = scores > 0
     to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
     
     if not (return_nodes or return_coeffs or return_support):

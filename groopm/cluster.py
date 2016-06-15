@@ -101,9 +101,6 @@ class CoreCreator:
                     out_reach_order=profile.reachOrder,
                     out_reach_dists=profile.reachDists
                     )
-        
-        bm = BinManager(profile)
-        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
 
         # Now save all the stuff to disk!
         print "Saving bins"
@@ -131,7 +128,7 @@ class HierarchicalClusterEngine:
         
         print "Finding cores"
         T = self.fcluster(Z, o, d)
-        out_bins[...] = T+1 #bins start from 1
+        out_bins[...] = T
         out_reach_order[...] = o
         out_reach_dists[...] = d
         print "    %s bins made." % len(set(out_bins).difference([0]))
@@ -166,11 +163,20 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
     
     def fcluster(self, Z, o, d):
         ce = MarkerCheckEngine(self._profile)
-        return hierarchy.fcluster_coeffs(Z,
+        bids = hierarchy.fcluster_coeffs(Z,
                                          ce.makeScores(Z),
                                          merge="sum",
-                                         #reach_ratios=hierarchy.reachability_ratios(Z, o, d)
-                                         )
+                                         )+1 # bin ids start at one
+        
+        # quality control
+        bm = BinManager(self._profile)
+        bm.unbinLowQualityAssignments(out_bins=bids, minSize=self._minSize, minPts=self._minPts)
+        
+        bids = hierarchy.fcluster_recruit(Z,
+                                          bids,
+                                          hierarchy.reachability_ratios(Z, o, d))
+        
+        return bids
                                          
             
 ###############################################################################

@@ -397,7 +397,7 @@ class ProfileReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="merge",
+             highlight="bins",
              fileName=""):
         
         h = self._profile.reachDists
@@ -435,37 +435,18 @@ class ProfileReachabilityPlotter:
             k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
-        elif highlight in ["ratios", "merge"]:
+        elif highligh=="ratios":
             Z = hierarchy.linkage_from_reachability(o, h)
             n = Z.shape[0]+1
             flat_ids = hierarchy.flatten_nodes(Z)
             ratios = hierarchy.reachability_ratios(Z, o, h)
+            ratios = ratios[flat_ids]
             splits = hierarchy.reachability_splits(h)
             coeffs = np.ones(n, dtype=float)
-            coeffs[splits[:-1]] = ratios[flat_ids]
-            minbelowratios = -hierarchy.maxscoresbelow(Z, np.concatenate((-coeffs, -np.ones(n-1, dtype=float))), fun=max)   
-            if highlight=="minratios":
-                coeffs[splits[:-1]] = minbelowratios
-            if highlight in ["ratios", "minratios"]:
-                smap = plt_cm.ScalarMappable(cmap=self._colourmap)
-                smap.set_array(coeffs)
-                colours = smap.to_rgba(coeffs)
-            elif highlight=="merge":
-                flat_coeffs = MarkerCheckEngine(self._profile).makeScores(Z)
-                flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-                scores = hierarchy.support(Z, flat_coeffs, operator.add)
-                is_supported = scores > 0
-                is_unsupported = scores < 0
-                below_supported = hierarchy.descendents(Z, np.flatnonzero(is_supported)+n, inclusive=True)
-                below_supported = below_supported[below_supported >= n] - n
-                is_unsupported[below_supported] = False
-                print minbelowratios[below_supported].min(), minbelowratios[below_supported].max()
-                supported_threshold = minbelowratios[below_supported].min()
-                print minbelowratios[is_unsupported].min(), minbelowratios[is_unsupported].max()
-                unsupported_threshold = minbelowratios[is_unsupported].max() # don't unbin higher ratios
-                ix = np.where(coeffs==unsupported_threshold, 1, np.where(coeffs==supported_threshold, 2, 0))
-                colours = np.array(["k", "b", "r"], dtype="|S1")[ix]
-                smap = None
+            coeffs[splits[:-1]] = ratios
+            smap = plt_cm.ScalarMappable(cmap=self._colourmap)
+            smap.set_array(coeffs)
+            colours = smap.to_rgba(coeffs)
             text = []
         elif highlight in ["support", "coeffs", "nzcoeffs"]:
             # color leaves by maximum ancestor coherence score
