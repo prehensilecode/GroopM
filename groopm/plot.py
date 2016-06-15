@@ -397,7 +397,7 @@ class ProfileReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="coeffs",
+             highlight="merge",
              fileName=""):
         
         h = self._profile.reachDists
@@ -435,32 +435,68 @@ class ProfileReachabilityPlotter:
             k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
-        elif highlight in ["support", "coeffs"]:
+        elif highlight in ["ratios", "merge"]:
+            Z = hierarchy.linkage_from_reachability(o, h)
+            n = Z.shape[0]+1
+            flat_ids = hierarchy.flatten_nodes(Z)
+            ratios = hierarchy.reachability_ratios(Z, o, h)
+            splits = hierarchy.reachability_splits(h)
+            coeffs = np.ones(n, dtype=float)
+            coeffs[splits[:-1]] = ratios[flat_ids]
+            minbelowratios = -hierarchy.maxscoresbelow(Z, np.concatenate((-coeffs, -np.ones(n-1, dtype=float))), fun=max)   
+            if highlight=="minratios":
+                coeffs[splits[:-1]] = minbelowratios
+            if highlight in ["ratios", "minratios"]:
+                smap = plt_cm.ScalarMappable(cmap=self._colourmap)
+                smap.set_array(coeffs)
+                colours = smap.to_rgba(coeffs)
+            elif highlight=="merge":
+                flat_coeffs = MarkerCheckEngine(self._profile).makeScores(Z)
+                flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
+                scores = hierarchy.support(Z, flat_coeffs, operator.add)
+                is_supported = scores > 0
+                is_unsupported = scores < 0
+                below_supported = hierarchy.descendents(Z, np.flatnonzero(is_supported)+n, inclusive=True)
+                below_supported = below_supported[below_supported >= n] - n
+                is_unsupported[below_supported] = False
+                print minbelowratios[below_supported].min(), minbelowratios[below_supported].max()
+                supported_threshold = minbelowratios[below_supported].min()
+                print minbelowratios[is_unsupported].min(), minbelowratios[is_unsupported].max()
+                unsupported_threshold = minbelowratios[is_unsupported].max() # don't unbin higher ratios
+                ix = np.where(coeffs==unsupported_threshold, 1, np.where(coeffs==supported_threshold, 2, 0))
+                colours = np.array(["k", "b", "r"], dtype="|S1")[ix]
+                smap = None
+            text = []
+        elif highlight in ["support", "coeffs", "nzcoeffs"]:
             # color leaves by maximum ancestor coherence score
             Z = hierarchy.linkage_from_reachability(o, h)
             n = Z.shape[0]+1
             flat_ids = hierarchy.flatten_nodes(Z)
-            scores = MarkerCheckEngine(self._profile).makeScores(Z)
-            scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
+            flat_coeffs = MarkerCheckEngine(self._profile).makeScores(Z)
+            flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
             if highlight=="support":
-                scores = hierarchy.support(Z, scores, operator.add)
+                scores = hierarchy.support(Z, flat_coeffs, operator.add)
+                scores = np.where(scores < 0, 0, np.where(scores > 0, 2, 1))
+            elif highlight=="nzcoeffs":
+                scores = flat_coeffs[n:] > 0
             elif highlight=="coeffs":
-                scores[n:] = scores[n:] / Z[:, 3]
+                scores = flat_coeffs[n:]
             splits = hierarchy.reachability_splits(h)
             coeffs = np.zeros(n, dtype=float)
-            coeffs[splits[:-1]] = scores[n+flat_ids]
-            Z = hierarchy.linkage_from_reachability(o, h)
+            coeffs[splits[:-1]] = scores[flat_ids]
             if highlight=="support":
-                smap = plt_cm.ScalarMappable(cmap=getColorMap('Spectral'),
-                                             norm=plt_colors.Normalize(vmin=-coeffs.max(), vmax=coeffs.max(), clip=True)
-                                             )
-            else:
+                colours = np.array(['k', 'b', 'r'], dtype='|S1')[coeffs.astype(int)]
+                smap = None
+            elif highlight=="nzcoeffs":
+                colours = np.array(['k', 'r'], dtype="|S1")[coeffs.astype(int)]
+                smap = None
+            elif highlight=="coeffs":
                 smap = plt_cm.ScalarMappable(cmap=self._colourmap)
-            smap.set_array(coeffs)
-            colours = smap.to_rgba(coeffs)
+                smap.set_array(coeffs)
+                colours = smap.to_rgba(coeffs)
             text = []
         else:
-            raise ValueError("Parameter value for 'highlight' argument must be one of 'bins', 'support', 'coeffs'. Got '%s'." % highlight)
+            raise ValueError("Parameter value for 'highlight' argument must be one of 'bins', 'support', 'coeffs', 'nzcoeffs', 'ratios'. Got '%s'." % highlight)
         
         
         hplot = BarPlotter(
@@ -516,7 +552,7 @@ class TreePlotter:
             flat_coeffs = coeffs.copy()
             flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
             support = hierarchy.support(self._Z, flat_coeffs, np.add)
-            support[n:] = support[n+flat_ids]
+            support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
             if True:
                 to_merge = support >= 0
             else:
@@ -621,7 +657,7 @@ def getColorMap(colorMapStr):
     elif colorMapStr == 'Spectral':
         return plt_cm.get_cmap('spectral')
     elif colorMapStr == 'Sequential':
-        return plt_cm.get_cmap('gist_heat')
+        return plt_cm.get_cmap('copper')
     elif colorMapStr == 'Grayscale':
         return plt_cm.get_cmap('gist_yarg')
     elif colorMapStr == 'Discrete':

@@ -61,8 +61,83 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ############################################################################### 
-
-def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
+def fcluster_ratios(Z, coeffs, ratios, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
+    """Make flat clusters
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    coeffs : ndarray
+        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
+        the `i`th singleton node, and for `i>=n` is the value for the cluster
+        encoded by the `(i-n)`-th row in `Z`.
+    ratios : ndarray
+        `ratios[i]` is the reachability ratio for the cluster encoded by the
+        `i`-th row of `Z`.
+    return_support : bool
+        If True, also returns array of cluster support scores.
+    return_coeffs : bool
+        If True, also return array of cluster coefficients.
+    return_nodes : bool
+        If True, also return array of flat cluster root nodes.
+        
+    Returns
+    -------
+    T : ndarray
+        1-D array. `T[i]` is the flat cluster number to which original
+        observation `i` belongs.
+    maxcoeffs : ndarray
+        1-D array. `maxcoeffs[i]` is the cluster coefficient for the flat
+        cluster of original observation `i`. Only provided if `return_coeffs` is True.
+    nodes : ndarray
+        1-D array. `nodes[i]` is the cluster index corresponding to the flat cluster 
+        of the `i`th original observation. Only provided if `return_nodes` is True.
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    coeffs = np.copy(coeffs)
+    ratios = np.copy(ratios)
+    
+    flat_ids = flatten_nodes(Z)
+    flattened_nodes = np.flatnonzero(flat_ids!=np.arange(n-1))
+    coeffs[n+flatten_nodes] = 0 # Giving zero scores to descendents of equal height means child scores will be propagated
+    
+    if merge=="max":
+        scores = support(Z, coeffs, max)
+    elif merge=="sum":
+        scores = support(Z, coeffs, operator.add)
+    else:
+        raise ValueError("Parameter value for argument 'merge' must be one of 'max', 'sum'. Got '%s'" % merge)
+    
+    ratios[flattened_nodes] = 1
+    minratiobelow = -maxscoresbelow(Z, np.concatenate((-np.ones(n), -ratios)), max)
+    
+    ratio_threshold = minratiobelow[scores > 0].max()
+    #ratio_threshold = minratiobelow[scores < 0].min()
+    
+    to_merge = np.logical_or(is_supported, np.logical_and(scores == 0, ratios <= ratio_threshold))
+    to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
+    
+    if not (return_nodes or return_coeffs or return_support):
+        return fcluster_merge(Z, to_merge)
+        
+    (T, M) = fcluster_merge(Z,
+                            to_merge,
+                            return_nodes=True)
+        
+    out = (T,)
+    if return_support:
+        support = np.concatenate((coeffs[:n], scores))
+        out += (support[M],)
+    if return_coeffs:
+        out += (coeffs[M],)
+    if return_nodes:
+        out += (M,)
+    return out
+    
+    
+def fcluster_coeffs_(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
     """Make flat clusters
     
     Parameters
@@ -98,16 +173,15 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=
     
     flat_ids = flatten_nodes(Z)
     coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # Giving zero scores to descendents of equal height means child scores will be propagated
-    #coeffs[n:] = coeffs[flat_ids+n] # Giving equal scores to descendents of equal height means child scores will be propagated
     
     if merge=="max":
-        (score, max_coeffs) = support(Z, coeffs, max, return_coeffs=True)
+        scores = support(Z, coeffs, max)
     elif merge=="sum":
-        (score, max_coeffs) = support(Z, coeffs, operator.add, return_coeffs=True)
+        scores = support(Z, coeffs, operator.add)
     else:
         raise ValueError("Parameter value for argument 'merge' must be one of 'max', 'sum'. Got '%s'" % merge)
     
-    to_merge = np.logical_and(score[n:] >= 0, coeffs[n:] > 0)
+    to_merge = np.logical_and(scores >= 0, coeffs[n:] > 0)
     to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
     
     if not (return_nodes or return_coeffs or return_support):
@@ -119,7 +193,8 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=
         
     out = (T,)
     if return_support:
-        out += (score[M],)
+        support = np.concatenate((coeffs[:n], scores))
+        out += (support[M],)
     if return_coeffs:
         out += (coeffs[M],)
     if return_nodes:
@@ -127,8 +202,20 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=
     return out
     
     
-def support(Z, scores, fun=operator.add, return_coeffs=False):
-    """Compute the maximum coefficient of cluster nodes and their descendents.
+def support(Z, scores, fun=operator.add):
+    """Compute the coefficient change of cluster nodes and their descendents."""
+    n = sp_hierarchy.num_obs_linkage(Z)
+    return scores[n:] - maxscoresbelow(Z, scores, fun=fun)
+    
+    
+def maxscores(Z, scores, fun=operator.add):
+    """Compute the max score of cluster nodes and their descendents."""
+    n = sp_hierarchy.num_obs_linkage(Z)
+    return np.maximum(scores[n:], maxscoresbelow(Z, scores, fun=fun))
+    
+    
+def support_(Z, scores, fun=operator.add, return_coeffs=False):
+    """Compute the coefficient change of cluster nodes and their descendents.
     
     Parameters
     ----------
@@ -181,41 +268,43 @@ def support(Z, scores, fun=operator.add, return_coeffs=False):
     return out
     
     
-def maxcoeffs_(Z, coeffs, fun=np.maximum):
-    """Compute the maximum coefficient of cluster nodes and their descendents.
+def maxscoresbelow(Z, scores, fun=np.maximum):
+    """Compute the maximum cumulative score of clusters below current cluster.
     
     Parameters
     ----------
     Z : ndarray
         Linkage matrix encoding hierarchical clustering.
-    coeffs : ndarray
-        `coeffs[i]` for `i<n` is defines the taxonomic measure value for
-        the `i`th singleton node, and for `i>=n` is the value for the cluster
-        encoded by the `(i-n)`-th row in `Z`.
-    fun : function
-        `fun(a, b)` is used to determine the combined best score of the
-        child nodes to propogate.
+    scores : ndarray
+        `scores[i]` for `i<n` is defines the quality score for the `i`th
+        singleton node, and for `i>=n` is the score for the cluster encoded
+        by the `(i-n)`-th row in `Z`.
+    fun : function, optional
+        `fun(a, b)` is used to compute the accumulative score of the
+        child nodes to propogate. By default, the scores for child nodes are
+        added together.
         
     Returns
     -------
-    maxcoeffs : ndarray
-        `maxcoeffs[i]` is the maximum coefficient of any cluster below and 
-        including cluster `i`.
+    maxscores : ndarray
+        `maxscores[i]` is the maximum coefficient of any disjoint set of
+        clusters below cluster `i`.
     """
     Z = np.asarray(Z)
     n = Z.shape[0]+1
-    max_coeffs = np.copy(coeffs)
+    max_scores = np.copy(scores)
+    max_below_scores = np.zeros(n-1, dtype=scores.dtype)
     
     # Bottom-up traversal
     for i in range(n-1):
         left_child = int(Z[i, 0])
         right_child = int(Z[i, 1])
         current_node = n+i
-        current_coeff = max_coeffs[current_node]
-        current_max_coeff = np.maximum(current_coeff, fun(max_coeffs[left_child], max_coeffs[right_child]))
-        max_coeffs[current_node] = current_max_coeff
+        current_score = max_scores[current_node]
+        max_below_scores[i] = fun(max_scores[left_child], max_scores[right_child])
+        max_scores[current_node] = np.maximum(current_score, max_below_scores[i])
     
-    return max_coeffs
+    return max_below_scores
     
     
 def iterlinkage(Z):
@@ -420,6 +509,29 @@ def linkage_from_reachability(o, d):
 def reachability_splits(d):
     """Returns array of reachability indices which divide clusters at each level"""
     return np.concatenate((np.asarray(d)[1:].argsort()+1, [0])) # pretend first observation is largest
+
+    
+def reachability_ratios(Z, o, d):
+    """Return ratio of intracluster reachability to intercluster reachability"""
+    
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    o = np.asarray(o)
+    d = np.asarray(d)
+    ratios = np.empty(n, dtype=float)
+    leaf_indices = np.zeros(n, dtype=int)
+    leaf_indices[o] = np.arange(n)
+    for (i, leaves) in enumerate(iterlinkage(Z)):
+        ix = leaf_indices[leaves]
+        if not np.all(np.diff(np.sort(ix))==1):
+            print ix
+        il = ix.min()
+        ir = ix.max()+1
+        dl = d[il]
+        dr = Z[i, 2] if ir==n else d[ir]
+        ratios[i] = Z[i, 2] / max(dl, dr)
+        
+    return ratios
     
     
 def descendents(Z, indices, inclusive=False):

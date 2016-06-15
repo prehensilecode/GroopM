@@ -346,13 +346,13 @@ class ClusterQualityEngine:
             if current_data != []:
                 node_data[current_node] = current_data
             
+            # We only compute a new coefficient for new sets of data points, i.e. if
+            # both left and right child clusters have data points.
             if left_data == []:
                 coeffs[current_node] = coeffs[right_child]
             elif right_data == []:
                 coeffs[current_node] = coeffs[left_child]
             else:
-                # We only compute a new coefficient for new sets of data points, i.e. if
-                # both left and right child clusters have data points.
                 coeffs[current_node] = self.getScore(current_data)
                 
         return coeffs
