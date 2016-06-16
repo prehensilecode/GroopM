@@ -77,6 +77,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
 class BinPlotManager:
     """Plot and highlight contigs from a bin"""
     def __init__(self, dbFileName, folder=None):
@@ -439,7 +440,9 @@ class ProfileReachabilityPlotter:
             Z = hierarchy.linkage_from_reachability(o, h)
             n = Z.shape[0]+1
             flat_ids = hierarchy.flatten_nodes(Z)
-            ratios = hierarchy.reachability_ratios(Z, o, h)
+            max_reaches = np.empty(len(d))
+            max_reaches[o] = np.concatenate((np.maximum(d[1:], d[:-1]), d[-1:]))
+            ratios = hierarchy.reachability_ratios(Z, max_reaches)
             ratios = ratios[flat_ids]
             splits = hierarchy.reachability_splits(h)
             coeffs = np.ones(n, dtype=float)
@@ -455,9 +458,9 @@ class ProfileReachabilityPlotter:
             flat_ids = hierarchy.flatten_nodes(Z)
             flat_coeffs = MarkerCheckEngine(self._profile).makeScores(Z)
             flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
+            support = hierarchy.support(Z, flat_coeffs, operator.add)
             if highlight=="support":
-                scores = hierarchy.support(Z, flat_coeffs, operator.add)
-                scores = np.where(scores < 0, 0, np.where(scores > 0, 2, 1))
+                scores = np.where(support < 0, 0, np.where(support > 0, 2, 1))
             elif highlight=="nzcoeffs":
                 scores = flat_coeffs[n:] > 0
             elif highlight=="coeffs":
