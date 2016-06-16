@@ -54,6 +54,7 @@ import operator
 
 # local imports
 import distance
+from utils import split_contiguous
 
 np.seterr(all='raise')
 
@@ -61,21 +62,38 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ############################################################################### 
+
+def reachability_peaks(d, T):
+    """Maximum reachability between bins"""
+    (first_indices, last_indices) = split_contiguous(T)
+    is_binned = T[first_indices]!=0
+    first_binned_indices = first_indices[is_binned]
+    last_binned_indices = last_indices[is_binned]
+    
+    between_pairs = zip(last_binned_indices[:-1], first_binned_indices[1:]+1)
+    if not is_binned[0]:
+        between_pairs = [(0, first_binned_indices[0]+1)]+between_pairs
+    if not is_binned[-1]:
+        between_pairs += [(last_binned_indices[-1], len(d))]
+    
+    peaks = np.array([s+np.argmax(d[s:e])for (s, e) in between_pairs], dtype=int)
+    return peaks
         
-def link_closest(Z, indices):
+def link_closest_(Z, indices):
     """Find closest ancestor nodes for indices"""
                 
     # heights
     Zh = np.copy(Z)
     n = sp_hierarchy.num_obs_linkage(Zh)
     Zh[:, 2] = np.arange(n, 2*n-1)
+    num_bids = len(indices)
     
     nodes = sp_distance.squareform(sp_hierarchy.cophenet(Zh))[np.ix_(indices, indices)].astype(int)
-    links = np.array([np.min(row[np.arange(n)!=i]) for (i, row) in enumerate(nodes)], dtype=int)
+    links = np.array([np.min(row[np.arange(num_bids)!=i]) for (i, row) in enumerate(nodes)], dtype=int)
     return links[links>=n]-n
         
     
-def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
+def fcluster_coeffs_(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
     """Make flat clusters
     
     Parameters
@@ -140,7 +158,27 @@ def fcluster_coeffs(Z, coeffs, merge="max", return_support=False, return_coeffs=
     return out
     
     
-def fcluster_recruit(Z, bins, reach_ratios, return_nodes=False):
+def fcluster_recruit_(Z, bins, reach_ratios, return_nodes=False):
+    """Recruit unbinned using reachability ratios"""
+    
+    Z = np.asarray(Z)
+    n = sp_hierarchy.num_obs_linkage(Z)
+    flat_ids = flatten_nodes(Z)
+    # heights
+    
+    (bids, indices) = np.unique(bins, return_index=True)
+    indices = indices[bids!=0]
+    bids = bids[bids!=0]
+    links = link_closest(Z, indices)
+    
+    min_link_ratio = reach_ratios[links].min()
+    to_merge = reach_ratios < min_link_ratio
+    to_merge = to_merge[flat_ids]
+    
+    return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
+    
+    
+def fcluster_recruit_(Z, bins, reach_ratios, return_nodes=False):
     """Recruit unbinned using reachability ratios"""
     
     Z = np.asarray(Z)
@@ -163,7 +201,7 @@ def fcluster_recruit(Z, bins, reach_ratios, return_nodes=False):
     return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
     
     
-def fcluster_support(Z, support, return_nodes=False):
+def fcluster_support_(Z, support, return_nodes=False):
     """Make flat clusters
     
     Parameters
@@ -195,19 +233,19 @@ def fcluster_support(Z, support, return_nodes=False):
     return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
     
     
-def support(Z, scores, fun=operator.add):
+def support_linkage_(Z, scores, fun=operator.add):
     """Compute the coefficient change of cluster nodes and their descendents."""
     n = sp_hierarchy.num_obs_linkage(Z)
     return scores[n:] - maxscoresbelow(Z, scores, fun=fun)
     
     
-def maxscores(Z, scores, fun=operator.add):
+def maxscores_(Z, scores, fun=operator.add):
     """Compute the max score of cluster nodes and their descendents."""
     n = sp_hierarchy.num_obs_linkage(Z)
     return np.maximum(scores[n:], maxscoresbelow(Z, scores, fun=fun))
     
     
-def support_(Z, scores, fun=operator.add, return_coeffs=False):
+def support_linkage_(Z, scores, fun=operator.add, return_coeffs=False):
     """Compute the coefficient change of cluster nodes and their descendents.
     
     Parameters
@@ -503,13 +541,32 @@ def reachability_splits(d):
     """Returns array of reachability indices which divide clusters at each level"""
     return np.concatenate((np.asarray(d)[1:].argsort()+1, [0])) # pretend first observation is largest
     
+    
+def reachability_ranges(o, d):
+    """Minimum and maximum reachability on either side"""
+    o = np.asarray(o)
+    d = np.asarray(d)
+    n = len(o)
+    max_d = np.empty(n, dtype=d.dtype)
+    max_d[o[:-1]] = np.maximum(d[:-1], d[1:])
+    max_d[o[0]] = d[1]
+    max_d[o[-1]] = d[-1]
+    min_d = np.empty(n, dtype=d.dtype)
+    min_d[o[:-1]] = np.minimum(d[:-1], d[1:])
+    min_d[o[0]] = d[1]
+    min_d[o[-1]] = d[-1]
+    
+    return (min_d, max_d)
+    
         
-def reachability_ratios(Z, max_reach):
+def reachability_ratios(Z, max_reaches):
     """Cluster using ratio of intracluster to intercluster reachability"""
 
     Z = np.asarray(Z)
     n = sp_hierarchy.num_obs_linkage(Z)
-    ratios = Z[:, 2] / maxscoresbelow(Z, np.concatenate((max_reach, np.zeros(n-1))), fun=max)
+    max_reaches_below = maxscoresbelow(Z, np.concatenate((max_reaches, np.zeros(n-1))), fun=max)
+    ratios = Z[:, 2] / max_reaches_below
+    #ratios = Z[:, 2] / maxscoresbelow(Z, np.concatenate((max_reaches, max_reaches_below)), fun=min)
     return ratios
     
     

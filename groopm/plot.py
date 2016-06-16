@@ -63,11 +63,11 @@ from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 
 # GroopM imports
-from utils import makeSurePathExists
+from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine, MarkerCheckEngine
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine, MarkerCheckCQE
 from classification import ClassificationManager
 import hierarchy
 
@@ -398,7 +398,7 @@ class ProfileReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="bins",
+             highlight="min_peak",
              fileName=""):
         
         h = self._profile.reachDists
@@ -417,49 +417,70 @@ class ProfileReachabilityPlotter:
             raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
         if highlight=="bins":
-            # alternate red and black stretches for different bins
             binIds = self._profile.binIds[o]
-            binned_indices = np.flatnonzero(binIds > 0)
-            flag = np.concatenate(([False], binIds[binned_indices[1:]] != binIds[binned_indices[:-1]], [True]))
-            iflag = np.cumsum(flag[:-1])
+            (first_indices, last_indices) = split_contiguous(binIds)
+            is_binned = binIds[first_indices]!=0
+            first_binned_indices = first_indices[is_binned]
+            last_binned_indices = last_indices[is_binned]
+            
+            # alternate red and black stretches for different bins
             colours = np.full(len(o), 'c', dtype="|S1")
-            colours[binned_indices] = np.array(['k', 'r'], dtype='|S1')[iflag % 2]
+            for (i, (s, e)) in enumerate(zip(first_binned_indices, last_binned_indices)):
+                colours[s:e] = 'r' if i%2 else 'k'
             
             # label stretches with bin ids
-            last_indices = np.flatnonzero(flag[1:])
-            first_indices = np.concatenate(([0], last_indices[:-1]+1))
-            last_binned_indices = binned_indices[last_indices]
-            first_binned_indices = binned_indices[first_indices]
-            group_centers = (first_binned_indices+last_binned_indices+1)*0.5
-            group_heights = np.array([h[s:e+1].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
+            group_centers = (first_binned_indices+last_binned_indices)*0.5
+            group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
             group_labels = binIds[first_binned_indices].astype(str)
             k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
-        elif highligh=="ratios":
+        elif highlight=="peaks":
+            binIds = self._profile.binIds[o]
+            peaks = hierarchy.reachability_peaks(h, binIds)
+            colours = np.full(len(o), 'k', dtype="|S1")
+            colours[peaks] = 'r'
+            text = []
+            smap = None
+        elif highlight in ["ratios" ,"min_peak"]:
             Z = hierarchy.linkage_from_reachability(o, h)
-            n = Z.shape[0]+1
+            n = len(o)
             flat_ids = hierarchy.flatten_nodes(Z)
-            max_reaches = np.empty(len(d))
-            max_reaches[o] = np.concatenate((np.maximum(d[1:], d[:-1]), d[-1:]))
+            max_reaches = np.empty(n)
+            max_reaches[o] = np.concatenate((np.maximum(h[1:], h[:-1]), h[-1:]))
+            max_reaches = hierarchy.reachability_ranges(o, h)[1]
             ratios = hierarchy.reachability_ratios(Z, max_reaches)
             ratios = ratios[flat_ids]
             splits = hierarchy.reachability_splits(h)
             coeffs = np.ones(n, dtype=float)
             coeffs[splits[:-1]] = ratios
-            smap = plt_cm.ScalarMappable(cmap=self._colourmap)
-            smap.set_array(coeffs)
-            colours = smap.to_rgba(coeffs)
+            if highlight=="ratios":
+                smap = plt_cm.ScalarMappable(cmap=self._colourmap)
+                smap.set_array(coeffs)
+                colours = smap.to_rgba(coeffs)
+            elif highlight=="min_peak":
+                binIds = self._profile.binIds[o]
+                peaks = hierarchy.reachability_peaks(h, binIds)
+                inds_2_nodes = np.empty(n, dtype=int)
+                inds_2_nodes[splits] = np.arange(n)
+                links = inds_2_nodes[peaks]
+                min_link_ratio = ratios[links].min()
+                print min_link_ratio
+                
+                colours = np.full(len(o), 'k', dtype="|S1")
+                colours[coeffs<=min_link_ratio] = 'r'
+                smap = None
             text = []
         elif highlight in ["support", "coeffs", "nzcoeffs"]:
             # color leaves by maximum ancestor coherence score
             Z = hierarchy.linkage_from_reachability(o, h)
             n = Z.shape[0]+1
             flat_ids = hierarchy.flatten_nodes(Z)
-            flat_coeffs = MarkerCheckEngine(self._profile).makeScores(Z)
+            flat_coeffs = MarkerCheckCQE(self._profile).makeScores(Z)
             flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-            support = hierarchy.support(Z, flat_coeffs, operator.add)
+            #support = hierarchy.support_linkage(Z, flat_coeffs, operator.add)
             if highlight=="support":
+                support = flat_coeffs[n:] - hierarchy.maxscoresbelow(Z, flat_coeffs, operator.add)
                 scores = np.where(support < 0, 0, np.where(support > 0, 2, 1))
             elif highlight=="nzcoeffs":
                 scores = flat_coeffs[n:] > 0
@@ -501,7 +522,7 @@ class TreePlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
         self._cf = ClassificationManager(self._profile.mapping)
-        self._ce = MarkerCheckEngine(self._profile)
+        self._cqe = MarkerCheckCQE(self._profile)
         self._colourmap = getColorMap(colourmap)
         self._Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
         (_r, self._node_dict) = sp_hierarchy.to_tree(self._Z, rd=True)
@@ -512,7 +533,7 @@ class TreePlotter:
              fileName=""):
         
         n = self._Z.shape[0]+1
-        coeffs = self._ce.makeScores(self._Z)
+        coeffs = self._cqe.makeScores(self._Z)
         T = hierarchy.fcluster_coeffs(self._Z, coeffs, merge="sum")
         (nodes, bids) = sp_hierarchy.leaders(self._Z, T.astype('i'))
         rootancestors = hierarchy.ancestors(self._Z, nodes)
@@ -535,7 +556,7 @@ class TreePlotter:
             flat_ids = hierarchy.flatten_nodes(self._Z)
             flat_coeffs = coeffs.copy()
             flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-            support = hierarchy.support(self._Z, flat_coeffs, np.add)
+            support = hierarchy.support_linkage(self._Z, flat_coeffs, np.add)
             support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
             if True:
                 to_merge = support >= 0
@@ -564,7 +585,7 @@ class TreePlotter:
         return np.flatnonzero(np.in1d(self._profile.mapping.rowIndices, leaves))
         
     def leaf_label_coeff(self, k):
-        coeff = self._ce.getScore(self.indices(k))
+        coeff = self._cqe.getScore(self.indices(k))
         return '' if count <= 0 else str(coeff)
         
     def leaf_label_count(self, k):

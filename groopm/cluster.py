@@ -58,6 +58,7 @@ import operator
 import distance
 import recruit
 import hierarchy
+from utils import split_contiguous
 from binManager import BinManager
 from profileManager import ProfileManager
 from classification import ClassificationManager
@@ -161,39 +162,9 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         return den_dists
         
     def fcluster(self, o, d):
-        fce = MarkerCheckFClusterEngine(self._profile, minPts=self._minPts, minSize=self._minSize)
-        return fce.makeClusters(o, d)
-    
-    def fcluster_(self, o, d):
-        Z = hierarchy.linkage_from_reachability(o, d)
-        n = sp_hierarchy.num_obs_linkage(Z)
-        ce = MarkerCheckEngine(self._profile)
-        bm = BinManager(self._profile)
-        
-        flat_ids = hierarchy.flatten_nodes(Z)
-        scores = ce.makeScores(Z)
-        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-        support = hierarchy.support_linkage(Z, scores, operator.add)
-        support = support[flat_ids]
-        greedy_bins = hierarchy.fcluster_merge(Z, support >= 0)+1 # bin ids start at one
-        
-        # quality control
-        bm.unbinLowQualityAssignments(out_bins=greedy_bins, minSize=self._minSize, minPts=self._minPts)
-        (conservative_bins, nodes) = hierarchy.fcluster_merge(Z, support > 0, return_nodes=True)
-        node_support = np.concatenate((scores[:n], support))
-        conservative_bins+=1
-        conservative_bins[greedy_bins==0] = 0
-        conservative_bins[node_support[nodes]==0] = 0
-        
-        max_reaches = np.empty(len(d))
-        max_reaches[o] = np.concatenate((np.maximum(d[1:], d[:-1]), d[-1:]))
-        ratios = hierarchy.reachability_ratios(Z, max_reaches)
-        ratios = ratios[flat_ids]
-        recruited_bins = hierarchy.fcluster_recruit(Z, conservative_bins, ratios)
-        
-        # quality control
-        bm.unbinLowQualityAssignments(out_bins=recruited_bins, minSize=self._minSize, minPts=self._minPts)
-        return recruited_bins                         
+        fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
+        (_greedy_bins, _conservative_bins, recruited_bins) = fce.makeClusters(o, d)
+        return _conservative_bins
             
 ###############################################################################
 ###############################################################################
@@ -238,64 +209,84 @@ class FlatClusterEngine:
     """Flat clustering pipeline"""
     
     def makeClusters(self, reach_order, reach_dists):
+        reach_order = np.asarray(reach_order)
+        reach_dists = np.asarray(reach_dists)
         Z = hierarchy.linkage_from_reachability(reach_order, reach_dists)
         n = sp_hierarchy.num_obs_linkage(Z)
         
         flat_ids = hierarchy.flatten_nodes(Z)
         scores = self.getScores(Z)
         scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-        support = hierarchy.support_linkage(Z, scores, operator.add)
+        support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
         support = support[flat_ids]
         
-        lowQualityClusters = self.getLowQualityClusters(Z)
-        lowQualityClusters = lowQualityClusters[flat_ids]
+        isLowQualityCluster = self.isLowQualityCluster(Z)
+        isLowQualityCluster[n:] = isLowQualityCluster[n+flat_ids]
         (greedy_bins, greedy_leaders) = hierarchy.fcluster_merge(Z, support>=0, return_nodes=True)
-        greedy_bins += 1
+        greedy_bins += 1 # bin ids start at one
+        greedy_bins[isLowQualityCluster[greedy_leaders]] = 0
         
         (conservative_bins, conservative_leaders) = hierarchy.fcluster_merge(Z, support>0, return_nodes=True)
         conservative_bins += 1 # bin ids start at one
-        node_support = np.concatenate((scores[n:], support))
-        conservative_bins[node_support[nodes]] = 0
-        conservative_bins[lowQualityClusters[greedy_leaders]] = 0
+        node_support = np.concatenate((scores[:n], support))
+        conservative_bins[node_support[conservative_leaders]==0] = 0
+        conservative_bins[greedy_bins==0] = 0
         
-        (bids, indices) = np.unique(conservative_clusters, return_index=True)
-        indices = indices[bids!=0]
-        links = hierarchy.link_closest(Z, indices)
-        max_reaches = np.empty(len(reach_dists))
-        max_reaches[reach_order] = np.concatenate((np.maximum(reach_dists[1:], reach_dists[:-1]), reach_dists[-1:]))
+        peaks = hierarchy.reachability_peaks(reach_dists, conservative_bins[reach_order])
+        splits = hierarchy.reachability_splits(reach_dists)
+        indices_2_nodes = np.empty(n, dtype=int)
+        indices_2_nodes[splits] = np.arange(n)
+        links = indices_2_nodes[peaks]
+        
+        (_min_reaches, max_reaches) = hierarchy.reachability_ranges(reach_order, reach_dists)
         reach_ratios = hierarchy.reachability_ratios(Z, max_reaches)
         reach_ratios = reach_ratios[flat_ids]
         min_link_ratio = reach_ratios[links].min()
         to_merge = reach_ratios < min_link_ratio
         to_merge = to_merge[flat_ids]
         
-        (recruited_bins, recruited_leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=return_nodes)
-        recruited_bins[lowQualityClsuters[recruited_leaders]] = 0
-        return recruited_bins
+        (recruited_bins, recruited_leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=True)
+        recruited_bins[isLowQualityCluster[recruited_leaders]] = 0
+        return (greedy_bins, conservative_bins, recruited_bins)
         
     def getScores(self, Z):
         pass #subclass to override
         
-    def getLowQualityClusters(self, Z):
+    def isLowQualityCluster(self, Z):
         pass #subclass to overrride
         
         
-def MarkerCheckFClusterEngine(FlatClusterEngine):
+class MarkerCheckFCE(FlatClusterEngine):
     """Seed clusters using taxonomy and marker completeness"""
     
-    def __init__(self, profile, minSize, minPts):
+    def __init__(self, profile, minPts=None, minSize=None):
         self._profile = profile
         self._minSize = minSize
         self._minPts = minPts
+        if self._minSize is None and self._minPts is None:
+            raise ValueError("'minPts' and 'minSize' cannot both be None.")
     
     def getScores(self, Z):
-        return MarkerCheckEngine(self._profile).makeScores(Z)
+        return MarkerCheckCQE(self._profile).makeScores(Z)
         
-    def getLowQualityClusters(self, Z):
+    def isLowQualityCluster(self, Z):
         Z = np.asarray(Z)
         n = sp_hierarchy.num_obs_linkage(Z)
-        weights = hierarchy.maxscoresbelow(Z, np.concatenate((self._profile.contigLengths, np.zeros(n-1))), fun=operator.add)
-        return np.logical_and(Z[:, 3] < minPts, weights < minSize)
+        doMinSize = self._minSize is not None
+        doMinPts = self._minPts is not None
+        if doMinSize:
+            weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
+            weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
+            is_low_quality = weights < self._minSize
+            
+        if doMinPts:
+            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[:, 2] < self._minPts))
+            if doMinSize:
+                is_low_quality = np.logical_and(is_low_quality, is_below_minPts)
+            else:
+                is_low_quality = is_below_minPts
+                
+        return is_low_quality
         
               
 ###############################################################################
@@ -359,7 +350,7 @@ class ClusterQualityEngine:
         pass # subclass to override
         
         
-class MarkerCheckEngine(ClusterQualityEngine):
+class MarkerCheckCQE(ClusterQualityEngine):
     """Cluster coefficient using taxonomy and marker completeness"""
     
     def __init__(self, profile):
@@ -387,7 +378,7 @@ class MarkerCheckEngine(ClusterQualityEngine):
         return f
         
         
-class DisagreementEngine_(ClusterQualityEngine):
+class DisagreementCQE_(ClusterQualityEngine):
     """Cluster using disagreement of leaf data"""
     
     def __init__(self, profile):

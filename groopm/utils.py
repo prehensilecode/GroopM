@@ -142,6 +142,13 @@ def group_iterator(grouping):
             group_dist[name] = [i]
     
     return group_dist.iteritems()
+    
+    
+def split_contiguous(grouping):
+    """Find initial and final indices"""
+    flag = np.concatenate(([True], grouping[1:] != grouping[:-1], [True]))
+    splits = np.flatnonzero(flag)
+    return (splits[:-1], splits[1:])
 
 ###############################################################################
 ###############################################################################
