@@ -498,7 +498,7 @@ class ProfileReachabilityPlotter:
             (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, merge_while=to_merge_while, return_nodes=True)
             scores[leaders[leaders>=n]-n] = 4
             scores[low_quality[n:]] = 2
-            scores = low_quality[:n]
+            scores = _child_quality
             scores = scores[flat_ids]
             
             splits = hierarchy.reachability_splits(h)

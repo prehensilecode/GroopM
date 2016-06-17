@@ -234,9 +234,13 @@ class FlatClusterEngine:
         isQualityCluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent quality to equal height parents
         hasAllQualityChildClusters = hierarchy.maxscoresbelow(Z, isQualityCluster, fun=min)
         hasAllQualityChildClusters = hasAllQualityChildClusters[flat_ids]
+        
+        #hasAllQualityChildClusters_ = isQualityCluster[Z[:, :2].astype(int)].all(axis=1)
+        #print np.count_nonzero(hasAllQualityChildClusters_ != hasAllQualityChildClusters)
+        
         isQualityNonsupportedCluster_ = np.zeros(2*n-1, dtype=bool)
         isQualityNonsupportedCluster_[n:] = np.logical_and(support==0,
-                                                          hasAllQualityChildClusters)
+                                                           hasAllQualityChildClusters)
         isOrHasBelowQualityNonsupportedCluster_ = np.logical_or(isQualityNonsupportedCluster_[n:],
                                                                hierarchy.maxscoresbelow(Z, isQualityNonsupportedCluster_, fun=max))
         isOrHasBelowQualityNonsupportedCluster_ = isOrHasBelowQualityNonsupportedCluster_[flat_ids]
@@ -254,7 +258,7 @@ class FlatClusterEngine:
         if return_support:
             out += (support,)
         if return_child_quality:
-            out += (isQualityCluster,)
+            out += (hasAllQualityChildClusters,)
         if return_support_quality:
             out += (isOrHasBelowQualityNonsupportedCluster_,)
         return out
