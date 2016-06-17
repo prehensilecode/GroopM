@@ -63,7 +63,7 @@ np.seterr(all='raise')
 ###############################################################################
 ############################################################################### 
 
-def reachability_peaks(d, T):
+def reachability_peaks_(d, T):
     """Maximum reachability between bins"""
     (first_indices, last_indices) = split_contiguous(T)
     is_binned = T[first_indices]!=0
@@ -78,19 +78,6 @@ def reachability_peaks(d, T):
     
     peaks = np.array([s+np.argmax(d[s:e])for (s, e) in between_pairs], dtype=int)
     return peaks
-        
-def link_closest_(Z, indices):
-    """Find closest ancestor nodes for indices"""
-                
-    # heights
-    Zh = np.copy(Z)
-    n = sp_hierarchy.num_obs_linkage(Zh)
-    Zh[:, 2] = np.arange(n, 2*n-1)
-    num_bids = len(indices)
-    
-    nodes = sp_distance.squareform(sp_hierarchy.cophenet(Zh))[np.ix_(indices, indices)].astype(int)
-    links = np.array([np.min(row[np.arange(num_bids)!=i]) for (i, row) in enumerate(nodes)], dtype=int)
-    return links[links>=n]-n
         
     
 def fcluster_coeffs_(Z, coeffs, merge="max", return_support=False, return_coeffs=False, return_nodes=False):
@@ -158,147 +145,6 @@ def fcluster_coeffs_(Z, coeffs, merge="max", return_support=False, return_coeffs
     return out
     
     
-def fcluster_recruit_(Z, bins, reach_ratios, return_nodes=False):
-    """Recruit unbinned using reachability ratios"""
-    
-    Z = np.asarray(Z)
-    n = sp_hierarchy.num_obs_linkage(Z)
-    flat_ids = flatten_nodes(Z)
-    # heights
-    
-    (bids, indices) = np.unique(bins, return_index=True)
-    indices = indices[bids!=0]
-    bids = bids[bids!=0]
-    links = link_closest(Z, indices)
-    
-    min_link_ratio = reach_ratios[links].min()
-    to_merge = reach_ratios < min_link_ratio
-    to_merge = to_merge[flat_ids]
-    
-    return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
-    
-    
-def fcluster_recruit_(Z, bins, reach_ratios, return_nodes=False):
-    """Recruit unbinned using reachability ratios"""
-    
-    Z = np.asarray(Z)
-    n = sp_hierarchy.num_obs_linkage(Z)
-    flat_ids = flatten_nodes(Z)
-    # heights
-    Zh = Z.copy()
-    Zh[:, 2] = np.arange(n, 2*n-1)
-    
-    (bids, indices) = np.unique(bins, return_index=True)
-    indices = indices[bids!=0]
-    bids = bids[bids!=0]
-    nodes = sp_distance.squareform(sp_hierarchy.cophenet(Zh))[np.ix_(indices, indices)].astype(int)
-    links = np.array([np.min(row[bids!=bid]) for (bid, row) in zip(bids, nodes)], dtype=int)
-    
-    min_link_ratio = reach_ratios[links[links>=n]-n].min()
-    to_merge = reach_ratios < min_link_ratio
-    to_merge = to_merge[flat_ids]
-    
-    return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
-    
-    
-def fcluster_support_(Z, support, return_nodes=False):
-    """Make flat clusters
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    support : ndarray
-        A cluster `i` with positive values of `support[i]` will be part of
-        a flat cluster.
-    return_nodes : bool
-        If True, also return array of flat cluster root nodes.
-        
-    Returns
-    -------
-    T : ndarray
-        1-D array. `T[i]` is the flat cluster number to which original
-        observation `i` belongs.
-    nodes : ndarray
-        1-D array. `nodes[i]` is the cluster index corresponding to the flat cluster 
-        of the `i`th original observation. Only provided if `return_nodes` is True.
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    flat_ids = flatten_nodes(Z)
-    
-    to_merge = support > 0
-    to_merge = to_merge[flat_ids] # Map merge value to descendents of equal height
-    
-    return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
-    
-    
-def support_linkage_(Z, scores, fun=operator.add):
-    """Compute the coefficient change of cluster nodes and their descendents."""
-    n = sp_hierarchy.num_obs_linkage(Z)
-    return scores[n:] - maxscoresbelow(Z, scores, fun=fun)
-    
-    
-def maxscores_(Z, scores, fun=operator.add):
-    """Compute the max score of cluster nodes and their descendents."""
-    n = sp_hierarchy.num_obs_linkage(Z)
-    return np.maximum(scores[n:], maxscoresbelow(Z, scores, fun=fun))
-    
-    
-def support_linkage_(Z, scores, fun=operator.add, return_coeffs=False):
-    """Compute the coefficient change of cluster nodes and their descendents.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    scores : ndarray
-        `scores[i]` for `i<n` is defines the quality score for the `i`th
-        singleton node, and for `i>=n` is the score for the cluster encoded
-        by the `(i-n)`-th row in `Z`.
-    fun : function, optional
-        `fun(a, b)` is used to compute the accumulative score of the
-        child nodes to propogate. By default, the scores for child nodes are
-        added together.
-    return_coeffs : bool
-        If True, also return array of cluster coefficients.
-        
-    Returns
-    -------
-    support : ndarray
-        `support[i]` is the support score for forming a cluster at node `i`
-        over a set of clusters at descendent nodes. It is the difference
-        between the score for cluster `i` over to the maximum cumulative score
-        of any disjoint set of clusters below `i`.
-    maxscores : ndarray
-        `maxscores[i]` is the maximum cumulative score of any disjoint sets of
-        clusters below and including cluster `i`. Only returned if 
-        `return_coeffs` is True.
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    support_scores = np.copy(scores)
-    max_scores = np.copy(scores)
-    
-    # Bottom-up traversal
-    for i in range(n-1):
-        left_child = int(Z[i, 0])
-        right_child = int(Z[i, 1])
-        current_node = n+i
-        current_score = max_scores[current_node]
-        child_max_score = fun(max_scores[left_child], max_scores[right_child])
-        support_scores[current_node] = current_score - child_max_score
-        max_scores[current_node] = max(current_score, child_max_score)
-    
-    if not (return_coeffs):
-        return support_scores
-        
-    out = (support_scores,)
-    if return_coeffs:
-        out += (max_scores,)
-    return out
-    
-    
 def maxscoresbelow(Z, scores, fun=np.maximum):
     """Compute the maximum cumulative score of clusters below current cluster.
     
@@ -361,7 +207,7 @@ def iterlinkage(Z):
         yield current_leaves
     
     
-def fcluster_merge(Z, merge, return_nodes=False):
+def fcluster_merge(Z, merge, merge_while=None, return_nodes=False):
     """Partition a hierarchical clustering by flattening clusters.
     
     Parameters
@@ -371,6 +217,9 @@ def fcluster_merge(Z, merge, return_nodes=False):
     merge : ndarray
         Boolean array. `merge[i]` indicates whether the cluster represented by
         `Z[i, :]` should be flattened.
+    merge_while : ndarray, optional
+        Boolean array. `merge_while[i]` indicates to flatten the cluster only if
+        the clusters below `i` are flattened.
     return_nodes : bool
         If True, also return array of flat cluster root nodes.
         
@@ -389,10 +238,19 @@ def fcluster_merge(Z, merge, return_nodes=False):
     
     # Compute leaf clusters
     leaders = np.arange(n)
+    conditionals = np.ones(n, dtype=bool)
     
     for (i, leaves) in enumerate(iterlinkage(Z)):
         if merge[i]:
             leaders[leaves] = n+i
+            conditionals[leaves] = True
+            continue
+        if merge_while is None:
+            continue
+        if merge_while[i] and np.all(conditionals[leaves]):
+            leaders[leaves] = n+i
+        else:
+            conditionals[leaves] = False
     
     (_, bids) = np.unique(leaders, return_inverse=True)
     
@@ -402,64 +260,6 @@ def fcluster_merge(Z, merge, return_nodes=False):
     out = (bids,)
     if return_nodes:
         out += (leaders,)
-    return out
-    
-    
-def fcluster_merge_(Z, merge, return_nodes=False):
-    """Partition a hierarchical clustering by flattening clusters.
-    
-    Parameters
-    ----------
-    Z : ndarray
-        Linkage matrix encoding hierarchical clustering.
-    merge : ndarray
-        Boolean array. `merge[i]` indicates whether the cluster represented by
-        `Z[i, :]` should be flattened.
-    return_nodes : bool
-        If True, also return array of flat cluster root nodes.
-        
-    Returns
-    -------
-    T : ndarray
-        1-D array. `T[i]` is the flat cluster number to which original
-        observation `i` belongs.
-    nodes : ndarray
-        1-D array. `nodes[i]` is the cluster index corresponding to the flat
-        cluster of the `i`th original obseration. Only provided if
-        `return_nodes` is True.
-    """
-    Z = np.asarray(Z)
-    n = Z.shape[0]+1
-    
-    # Compute leaf clusters
-    leaf_max_nodes = np.arange(n)
-    leaves_dict = dict([(i, [i]) for i in range(n)])
-    
-    # Bottom-up traversal
-    for i in range(n-1):
-        left_child = int(Z[i, 0])
-        right_child = int(Z[i, 1])
-        current_node = n+i
-        
-        # update leaf cache
-        current_leaves = leaves_dict[left_child] + leaves_dict[right_child]
-        del leaves_dict[left_child]
-        del leaves_dict[right_child]
-        leaves_dict[current_node] = current_leaves
-        
-        # Merge if cluster is at least as coherent taxonomically any descendent
-        # cluster.
-        if merge[i]:
-            leaf_max_nodes[current_leaves] = n+i
-    
-    (_, bids) = np.unique(leaf_max_nodes, return_inverse=True)
-    
-    if not return_nodes:
-        return bids 
-        
-    out = (bids,)
-    if return_nodes:
-        out += (leaf_max_nodes,)
     return out
     
      
@@ -542,7 +342,7 @@ def reachability_splits(d):
     return np.concatenate((np.asarray(d)[1:].argsort()+1, [0])) # pretend first observation is largest
     
     
-def reachability_ranges(o, d):
+def reachability_ranges_(o, d):
     """Minimum and maximum reachability on either side"""
     o = np.asarray(o)
     d = np.asarray(d)
@@ -558,15 +358,27 @@ def reachability_ranges(o, d):
     
     return (min_d, max_d)
     
+    
+def reachability_slopes_(o, d):
+    """Relative change in reachability"""
+    o = np.asarray(o)
+    d = np.asarray(d)
+    n = len(o)
+    (min_reaches, max_reaches) = reachability_ranges(o, d)
+    slopes = np.empty(n, dtype=float)
+    slopes[o[0]] = 1
+    slopes[o[1:]] = d[1:] / min_reaches[o[1:]]
+    slopes[o[2:]] = np.maximum(slopes[o[2:]], d[2:] / min_reaches[o[1:-1]])
+    return slopes
+    
         
-def reachability_ratios(Z, max_reaches):
-    """Cluster using ratio of intracluster to intercluster reachability"""
-
+def reachability_ratios_(Z, min_reaches, max_reaches):
+    """Ratio of intracluster to intercluster reachability"""
     Z = np.asarray(Z)
     n = sp_hierarchy.num_obs_linkage(Z)
     max_reaches_below = maxscoresbelow(Z, np.concatenate((max_reaches, np.zeros(n-1))), fun=max)
     ratios = Z[:, 2] / max_reaches_below
-    #ratios = Z[:, 2] / maxscoresbelow(Z, np.concatenate((max_reaches, max_reaches_below)), fun=min)
+    #ratios = Z[:, 2] / maxscoresbelow(Z, np.concatenate((min_reaches, max_reaches_below)), fun=min)
     return ratios
     
     

@@ -67,7 +67,7 @@ from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine, MarkerCheckCQE
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
 from classification import ClassificationManager
 import hierarchy
 
@@ -398,7 +398,7 @@ class ProfileReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="min_peak",
+             highlight="engine",
              fileName=""):
         
         h = self._profile.reachDists
@@ -416,8 +416,14 @@ class ProfileReachabilityPlotter:
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
-        if highlight=="bins":
-            binIds = self._profile.binIds[o]
+        if highlight in ["bins", "conservative_bins"]:
+            if highlight=="bins":
+                binIds = self._profile.binIds[o]
+            elif highlight=="conservative_bins":
+                Z = hierarchy.linkage_from_reachability(o, h)
+                fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
+                binIds = fce.makeClusters(Z)
+            
             (first_indices, last_indices) = split_contiguous(binIds)
             is_binned = binIds[first_indices]!=0
             first_binned_indices = first_indices[is_binned]
@@ -435,42 +441,6 @@ class ProfileReachabilityPlotter:
             k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
-        elif highlight=="peaks":
-            binIds = self._profile.binIds[o]
-            peaks = hierarchy.reachability_peaks(h, binIds)
-            colours = np.full(len(o), 'k', dtype="|S1")
-            colours[peaks] = 'r'
-            text = []
-            smap = None
-        elif highlight in ["ratios" ,"min_peak"]:
-            Z = hierarchy.linkage_from_reachability(o, h)
-            n = len(o)
-            flat_ids = hierarchy.flatten_nodes(Z)
-            max_reaches = np.empty(n)
-            max_reaches[o] = np.concatenate((np.maximum(h[1:], h[:-1]), h[-1:]))
-            max_reaches = hierarchy.reachability_ranges(o, h)[1]
-            ratios = hierarchy.reachability_ratios(Z, max_reaches)
-            ratios = ratios[flat_ids]
-            splits = hierarchy.reachability_splits(h)
-            coeffs = np.ones(n, dtype=float)
-            coeffs[splits[:-1]] = ratios
-            if highlight=="ratios":
-                smap = plt_cm.ScalarMappable(cmap=self._colourmap)
-                smap.set_array(coeffs)
-                colours = smap.to_rgba(coeffs)
-            elif highlight=="min_peak":
-                binIds = self._profile.binIds[o]
-                peaks = hierarchy.reachability_peaks(h, binIds)
-                inds_2_nodes = np.empty(n, dtype=int)
-                inds_2_nodes[splits] = np.arange(n)
-                links = inds_2_nodes[peaks]
-                min_link_ratio = ratios[links].min()
-                print min_link_ratio
-                
-                colours = np.full(len(o), 'k', dtype="|S1")
-                colours[coeffs<=min_link_ratio] = 'r'
-                smap = None
-            text = []
         elif highlight in ["support", "coeffs", "nzcoeffs"]:
             # color leaves by maximum ancestor coherence score
             Z = hierarchy.linkage_from_reachability(o, h)
@@ -486,11 +456,13 @@ class ProfileReachabilityPlotter:
                 scores = flat_coeffs[n:] > 0
             elif highlight=="coeffs":
                 scores = flat_coeffs[n:]
+            scores = scores[flat_ids]
+                
             splits = hierarchy.reachability_splits(h)
             coeffs = np.zeros(n, dtype=float)
-            coeffs[splits[:-1]] = scores[flat_ids]
+            coeffs[splits[:-1]] = scores
             if highlight=="support":
-                colours = np.array(['k', 'b', 'r'], dtype='|S1')[coeffs.astype(int)]
+                colours = np.array(['k', 'c', 'r'], dtype='|S1')[coeffs.astype(int)]
                 smap = None
             elif highlight=="nzcoeffs":
                 colours = np.array(['k', 'r'], dtype="|S1")[coeffs.astype(int)]
@@ -500,6 +472,41 @@ class ProfileReachabilityPlotter:
                 smap.set_array(coeffs)
                 colours = smap.to_rgba(coeffs)
             text = []
+        elif highlight=="engine":
+            Z = hierarchy.linkage_from_reachability(o, h)
+            
+            fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
+            orig_bins = fce.makeClusters(Z)
+            fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000,
+                                 filter_leaves=np.flatnonzero(orig_bins==0))
+                         
+            (to_merge,
+             to_merge_while,
+             low_quality,
+             _support,
+             _child_quality) = fce.getMergeNodes(Z,
+                                                  return_low_quality=True,
+                                                  return_support=True,
+                                                  return_child_quality=True
+                                                  )
+            
+            flat_ids = hierarchy.flatten_nodes(Z)
+            n = len(o)
+            scores = np.zeros(n, dtype=int)
+            scores[to_merge_while] = 3
+            scores[to_merge] = 1
+            (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, merge_while=to_merge_while, return_nodes=True)
+            scores[leaders[leaders>=n]-n] = 4
+            scores[low_quality[n:]] = 2
+            scores = low_quality[:n]
+            scores = scores[flat_ids]
+            
+            splits = hierarchy.reachability_splits(h)
+            coeffs = np.zeros(n, dtype=scores.dtype)
+            coeffs[splits[:-1]] = scores
+            colours = np.array(['k', 'r', 'c', 'b', 'y'], dtype="|S1")[coeffs.astype(int)]
+            text = []
+            smap = None
         else:
             raise ValueError("Parameter value for 'highlight' argument must be one of 'bins', 'support', 'coeffs', 'nzcoeffs', 'ratios'. Got '%s'." % highlight)
         
@@ -556,15 +563,9 @@ class TreePlotter:
             flat_ids = hierarchy.flatten_nodes(self._Z)
             flat_coeffs = coeffs.copy()
             flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-            support = hierarchy.support_linkage(self._Z, flat_coeffs, np.add)
-            support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
-            if True:
-                to_merge = support >= 0
-            else:
-                to_merge = support > 0
-            
-            #lowest_ratio = np.max(reach_ratios[np.flatnonzero(is_between[n:])])
             if colour=="support":
+                support = flat_coeffs - hierarchy.maxscoresbelow(self._Z, flat_coeffs, np.add)
+                support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
                 colour_set = dict([(k, 'r' if support[k] > 0 else 'b') for k in np.flatnonzero(support>=0)])
             elif colour=="nzcoeffs":
                 colour_set = dict([(k, 'r') for k in np.flatnonzero(flat_coeffs!=0)])
