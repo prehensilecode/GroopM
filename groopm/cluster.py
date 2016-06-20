@@ -58,6 +58,7 @@ import operator
 import distance
 import recruit
 import hierarchy
+from utils import split_contiguous
 from binManager import BinManager
 from profileManager import ProfileManager
 from classification import ClassificationManager
@@ -99,10 +100,8 @@ class CoreCreator:
         ce.makeBins(timer,
                     out_bins=profile.binIds,
                     out_reach_order=profile.reachOrder,
-                    out_reach_dists=profile.reachDists)
-        
-        bm = BinManager(profile)
-        bm.unbinLowQualityAssignments(out_bins=profile.binIds, minSize=minSize, minPts=minPts)
+                    out_reach_dists=profile.reachDists
+                    )
 
         # Now save all the stuff to disk!
         print "Saving bins"
@@ -125,12 +124,11 @@ class HierarchicalClusterEngine:
         print "Computing cluster hierarchy"
         print "Clustering 2^%.2f pairs" % np.log2(len(dists))
         (o, d) = distance.reachability_order(dists)
-        Z = hierarchy.linkage_from_reachability(o, d)
         print "    %s" % timer.getTimeStamp()
         
         print "Finding cores"
-        T = self.fcluster(Z)
-        out_bins[...] = T+1 #bins start from 1
+        T = self.fcluster(o, d)
+        out_bins[...] = T
         out_reach_order[...] = o
         out_reach_dists[...] = d
         print "    %s bins made." % len(set(out_bins).difference([0]))
@@ -140,7 +138,7 @@ class HierarchicalClusterEngine:
         """computes pairwise distances of observations"""
         pass #subclass to override
         
-    def fcluster(self, Z):
+    def fcluster(self, o, d):
         """finds flat clusters from linkage matrix"""
         pass #subclass to override
         
@@ -162,17 +160,378 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                                                           minPts=self._minPts,
                                                                           minSize=self._minSize)
         return den_dists
-    
-    def fcluster(self, Z):
-        ce = MarkerCheckEngine(self._profile)
-        return hierarchy.fcluster_coeffs(Z, ce.makeScores(Z), merge="sum")
-                                         
+        
+    def fcluster(self, o, d):
+        Z = hierarchy.linkage_from_reachability(o, d)
+        fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
+        bins = fce.makeClusters(Z)
+        return bins
             
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################          
-   
+
+class ProfileDistanceEngine:
+    """Simple class for computing profile feature distances"""
+    
+    def makeDistances(self, covProfiles, kmerSigs, contigLengths, return_density_distances=False, minSize=None, minPts=None, silent=False):
+
+        if(not silent):
+            print "Computing pairwise contig distances"
+        features = (covProfiles, kmerSigs)
+        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
+        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+        scale_factor = 1. / weights.sum()
+        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
+        
+        if not return_density_distances:
+            return (scaled_ranks[0], scaled_ranks[1], weights)
+            
+        if not silent:
+            print "Reticulating splines"
+        rank_norms = np_linalg.norm(scaled_ranks, axis=0)
+        if minSize is None:
+            minWt = None
+        else:
+            v = np.full(len(contigLengths), contigLengths.min())
+            #v = contigLengths
+            minWt = np.maximum(minSize - v, 0) * v
+        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
+        
+        return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
+        
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+class FlatClusterEngine:
+    """Flat clustering pipeline"""
+    
+    def unbinClusters(self, unbin, out_bins):
+        out_bins[unbin] = 0
+        (_, new_bids) = np.unique(out_bins[out_bins != 0], return_inverse=True)
+        out_bins[out_bins != 0] = new_bids+1
+    
+    def makeClusters(self,
+                     Z,
+                     return_leaders=False,
+                     return_low_quality=False,
+                     return_coeffs=False,
+                     return_support=False,
+                     return_seeds=False,
+                     return_conservative_bins=False,
+                     return_conservative_leaders=False):
+        Z = np.asarray(Z)
+        n = Z.shape[0]+1
+        
+        flat_ids = hierarchy.flatten_nodes(Z)
+        scores = self.getScores(Z)
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
+        support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
+        support = support[flat_ids] # map values from parents to descendents of equal height
+        node_support = np.concatenate((scores, support))
+        is_low_quality_cluster = self.isLowQualityCluster(Z)
+        is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
+        
+        # get leaders of supported bins
+        (conservative_bins, conservative_leaders) = hierarchy.fcluster_merge(Z, support>0, return_nodes=True)
+        conservative_bins += 1 # bin ids start at 1
+        self.unbinClusters(is_low_quality_cluster[conservative_leaders], out_bins=conservative_bins)
+        
+        # We want to recruit nonsupported clusters to bins if splitting would result in a low quality bin
+        is_seed_cluster = np.logical_not(is_low_quality_cluster)
+        is_seed_cluster[hierarchy.descendents(Z, conservative_leaders)] = False
+        is_seed_cluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent scores to equal height parents
+        to_merge = hierarchy.maxscoresbelow(Z, is_seed_cluster.astype(int), fun=operator.add)<=1
+        to_merge = to_merge[flat_ids]
+        (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=True)
+        bins += 1 # bin ids start at 1
+        self.unbinClusters(is_low_quality_cluster[leaders], out_bins=bins)
+        bins[is_low_quality_cluster[leaders]] = 0
+        (_, new_bids) = np.unique(bins[bins != 0], return_inverse=True)
+        bins[bins != 0] = new_bids+1
+                     
+        if not (return_leaders or return_low_quality or return_support or return_coeffs or
+                return_seeds or return_conservative_bins or return_conservative_leaders):
+            return bins
+            
+        out = (bins,)
+        if return_leaders:
+            out += (leaders,)
+        if return_low_quality:
+            out += (is_low_quality_cluster,)
+        if return_support:
+            out += (support,)
+        if return_coeffs:
+            out += (scores,)
+        if return_seeds:
+            out += (is_seed_cluster,)
+        if return_conservative_bins:
+            out += (conservative_bins,)
+        if return_conservative_leaders:
+            out += (conservative_leaders,)
+        return out
+    
+    
+    def getMergeNodes_(self,
+                      Z,
+                      return_low_quality=False,
+                      return_support=False,
+                      return_child_quality=False,
+                      return_support_quality=False):
+        Z = np.asarray(Z)
+        n = sp_hierarchy.num_obs_linkage(Z)
+        
+        flat_ids = hierarchy.flatten_nodes(Z)
+        scores = self.getScores(Z)
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
+        support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
+        support = support[flat_ids] # map values from parents to descendents of equal height
+        
+        # want to merge nonsupported clusters if splitting would result in a low quality bin
+        isLowQualityCluster = self.isLowQualityCluster(Z)
+        isLowQualityCluster[n:] = isLowQualityCluster[n+flat_ids]
+        isQualityCluster = np.logical_not(isLowQualityCluster)
+        isQualityCluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent quality to equal height parents
+        hasAllQualityChildClusters = hierarchy.maxscoresbelow(Z, isQualityCluster, fun=min)
+        hasAllQualityChildClusters = hasAllQualityChildClusters[flat_ids]
+        
+        #hasAllQualityChildClusters_ = isQualityCluster[Z[:, :2].astype(int)].all(axis=1)
+        #print np.count_nonzero(hasAllQualityChildClusters_ != hasAllQualityChildClusters)
+        
+        isQualityNonsupportedCluster_ = np.zeros(2*n-1, dtype=bool)
+        isQualityNonsupportedCluster_[n:] = np.logical_and(support==0,
+                                                           hasAllQualityChildClusters)
+        isOrHasBelowQualityNonsupportedCluster_ = np.logical_or(isQualityNonsupportedCluster_[n:],
+                                                               hierarchy.maxscoresbelow(Z, isQualityNonsupportedCluster_, fun=max))
+        isOrHasBelowQualityNonsupportedCluster_ = isOrHasBelowQualityNonsupportedCluster_[flat_ids]
+        
+        to_merge = support>0
+        to_merge_while = np.logical_and(support==0, 
+                                        np.logical_not(hasAllQualityChildClusters))
+        
+        if not (return_low_quality or return_support or return_child_quality or return_support_quality):
+            return (to_merge, to_merge_while)
+            
+        out = (to_merge, to_merge_while)
+        if return_low_quality:
+            out += (isLowQualityCluster,)
+        if return_support:
+            out += (support,)
+        if return_child_quality:
+            out += (hasAllQualityChildClusters,)
+        if return_support_quality:
+            out += (isOrHasBelowQualityNonsupportedCluster_,)
+        return out
+        
+    def makeClusters_(self, Z):
+        Z = np.asarray(Z)
+        (to_merge, to_merge_while, low_quality) = self.getMergeNodes(Z, return_low_quality=True)
+        (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, merge_while=to_merge_while, return_nodes=True)
+        bins += 1 # bin ids start at 1
+        bins[low_quality[leaders]] = 0
+        (_, new_bids) = np.unique(bins[bins != 0], return_inverse=True)
+        bins[bins != 0] = new_bids+1
+        return bins
+    
+    def makeClusters_(self, reach_order, reach_dists):
+        reach_order = np.asarray(reach_order)
+        reach_dists = np.asarray(reach_dists)
+        Z = hierarchy.linkage_from_reachability(reach_order, reach_dists)
+        n = sp_hierarchy.num_obs_linkage(Z)
+        
+        flat_ids = hierarchy.flatten_nodes(Z)
+        scores = self.getScores(Z)
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
+        support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
+        support = support[flat_ids]
+        
+        isLowQualityCluster = self.isLowQualityCluster(Z)
+        isLowQualityCluster[n:] = isLowQualityCluster[n+flat_ids]
+        (greedy_bins, greedy_leaders) = hierarchy.fcluster_merge(Z, support>=0, return_nodes=True)
+        greedy_bins += 1 # bin ids start at one
+        greedy_bins[isLowQualityCluster[greedy_leaders]] = 0
+        
+        (conservative_bins, conservative_leaders) = hierarchy.fcluster_merge(Z, support>0, return_nodes=True)
+        conservative_bins += 1 # bin ids start at one
+        node_support = np.concatenate((scores[:n], support))
+        conservative_bins[node_support[conservative_leaders]==0] = 0
+        conservative_bins[greedy_bins==0] = 0
+        
+        # absorb low quality bins greedily
+        has_low_quality_child = hierarchy.maxscoresbelow(Z, np.logical_not(isLowQualityCluster), fun=lambda a, b: not a or not b)
+        
+        
+        
+        (min_reaches, max_reaches) = hierarchy.reachability_ranges(reach_order, reach_dists)
+        reach_slopes = max_reaches / min_reaches
+        
+        peaks = hierarchy.reachability_peaks(reach_slopes, conservative_bins[reach_order])
+        splits = hierarchy.reachability_splits(reach_dists)
+        indices_2_nodes = np.empty(n, dtype=int)
+        indices_2_nodes[splits] = np.arange(n)
+        links = indices_2_nodes[peaks]
+        min_peak_slope = reach_slopes[peaks].min()
+        
+        reach_ratios = hierarchy.reachability_ratios(Z, min_reaches, max_reaches)
+        reach_ratios = reach_ratios[flat_ids]
+        min_link_ratio = reach_ratios[links].min()
+        to_merge = reach_ratios < 1. / min_peak_slope
+        to_merge = to_merge[flat_ids]
+        
+        (recruited_bins, recruited_leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=True)
+        recruited_bins[isLowQualityCluster[recruited_leaders]] = 0
+        return (greedy_bins, conservative_bins, recruited_bins)
+        
+    def getScores(self, Z):
+        pass #subclass to override
+        
+    def isLowQualityCluster(self, Z):
+        pass #subclass to overrride
+        
+        
+class MarkerCheckFCE(FlatClusterEngine):
+    """Seed clusters using taxonomy and marker completeness"""
+    
+    def __init__(self, profile, minPts=None, minSize=None, filter_leaves=[]):
+        self._profile = profile
+        self._minSize = minSize
+        self._minPts = minPts
+        self._filterLeaves = filter_leaves
+        if self._minSize is None and self._minPts is None:
+            raise ValueError("'minPts' and 'minSize' cannot both be None.")
+    
+    def getScores(self, Z):
+        return MarkerCheckCQE(self._profile, filter_leaves=self._filterLeaves).makeScores(Z)
+        
+    def isLowQualityCluster(self, Z):
+        Z = np.asarray(Z)
+        n = sp_hierarchy.num_obs_linkage(Z)
+        doMinSize = self._minSize is not None
+        doMinPts = self._minPts is not None
+        if doMinSize:
+            weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
+            weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
+            is_low_quality = weights < self._minSize
+            
+        if doMinPts:
+            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[:, 2] < self._minPts))
+            if doMinSize:
+                is_low_quality = np.logical_and(is_low_quality, is_below_minPts)
+            else:
+                is_low_quality = is_below_minPts
+                
+        return is_low_quality
+        
+              
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+class ClusterQualityEngine:
+    """Cluster using disagreement of leaf data"""
+  
+    def makeScores(self, Z):
+        """Compute coefficients for hierarchical clustering"""
+        Z = np.asarray(Z)
+        n = Z.shape[0]+1
+        
+        node_data = dict(self.getLeafData())
+        coeffs = np.zeros(2*n-1, dtype=float)
+        
+        # Compute leaf clusters
+        for (i, indices) in node_data.iteritems():
+            coeffs[i] = self.getScore(indices)
+            
+        # Bottom-up traversal
+        for i in range(n-1):
+            left_child = int(Z[i, 0])
+            right_child = int(Z[i, 1])
+            current_node = n+i
+            
+            # update leaf cache
+            try:
+                left_data = node_data[left_child]
+                del node_data[left_child]
+            except:
+                left_data = []
+            try:
+                right_data = node_data[right_child]
+                del node_data[right_child]
+            except:
+                right_data = []
+                
+            current_data = left_data + right_data
+            if current_data != []:
+                node_data[current_node] = current_data
+            
+            # We only compute a new coefficient for new sets of data points, i.e. if
+            # both left and right child clusters have data points.
+            if left_data == []:
+                coeffs[current_node] = coeffs[right_child]
+            elif right_data == []:
+                coeffs[current_node] = coeffs[left_child]
+            else:
+                coeffs[current_node] = self.getScore(current_data)
+            
+        return coeffs
+        
+    def getLeafData(self):
+        pass #subclass to override
+        
+    def getScore(self, node_data):
+        """Compute coefficients using concatenated leaf data"""
+        pass # subclass to override
+        
+        
+class MarkerCheckCQE(ClusterQualityEngine):
+    """Cluster coefficient using taxonomy and marker completeness"""
+    
+    def __init__(self, profile, filter_leaves=[]):
+        self._alpha = 0.5
+        self._d = 1
+        self._mapping = profile.mapping
+        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
+        self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
+        self._mscalefactors = 1./self._mcounts
+        self._filterLeaves = filter_leaves
+        
+    def getLeafData(self):
+        filter_leaf_set = set(self._filterLeaves)
+        return dict([(i, data) for (i, data) in self._mapping.iterindices() if i not in filter_leaf_set])
+        
+    def getScore(self, indices):
+        """Compute modified completeness and precision scores"""
+        # number of unique markers that are taxonomically coherence with each item in cluster
+        indices = np.asarray(indices)
+        correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
+        # item precision is fraction of cluster that is correct
+        prec = correct * 1. / len(indices)
+        # item completeness is fraction of taxonomically coherent markers in data set in cluster
+        compl = (correct * self._mscalefactors[indices])
+        f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
+        return f
+        
+        
+class DisagreementCQE_(ClusterQualityEngine):
+    """Cluster using disagreement of leaf data"""
+    
+    def __init__(self, profile):
+        self._profile = profile
+        self.getScore = ClassificationManager(self._profile.mapping).disagreement
+        
+    def getLeafData(self):
+        return dict(self._profile.mapping.iterindices())
+     
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
 # Mediod clustering
 class MediodsClusterEngine:
     """Iterative mediod clustering algorithm"""
@@ -265,172 +624,6 @@ class CorrelationClusterEngine(MediodsClusterEngine):
         (covRanks, kmerRanks) = tuple(dm[0] for dm in self.feature_ranks([origin]))
         return recruit.getMergers((covRanks, kmerRanks), threshold=self._threshold, unmerged=putative_members)
               
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-
-class ProfileDistanceEngine:
-    """Simple class for computing profile feature distances"""
-    
-    def makeDistances(self, covProfiles, kmerSigs, contigLengths, return_density_distances=False, minSize=None, minPts=None, silent=False):
-
-        if(not silent):
-            print "Computing pairwise contig distances"
-        features = (covProfiles, kmerSigs)
-        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
-        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-        scale_factor = 1. / weights.sum()
-        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
-        
-        if not return_density_distances:
-            return (scaled_ranks[0], scaled_ranks[1], weights)
-            
-        if not silent:
-            print "Reticulating splines"
-        rank_norms = np_linalg.norm(scaled_ranks, axis=0)
-        if minSize is None:
-            minWt = None
-        else:
-            v = np.full(len(contigLengths), contigLengths.min())
-            #v = contigLengths
-            minWt = np.maximum(minSize - v, 0) * v
-        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
-        
-        return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
-        
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-
-class ClusterQualityEngine:
-    """Cluster using disagreement of leaf data"""
-  
-    def makeScores(self, Z):
-        """Compute coefficients for hierarchical clustering"""
-        Z = np.asarray(Z)
-        n = Z.shape[0]+1
-        
-        node_data = dict(self.getLeafData())
-        coeffs = np.zeros(2*n-1, dtype=float)
-        
-        # Compute leaf clusters
-        for (i, indices) in node_data.iteritems():
-            coeffs[i] = self.getScore(indices)
-            
-        # Bottom-up traversal
-        for i in range(n-1):
-            left_child = int(Z[i, 0])
-            right_child = int(Z[i, 1])
-            current_node = n+i
-            
-            # update leaf cache
-            try:
-                left_data = node_data[left_child]
-                del node_data[left_child]
-            except:
-                left_data = []
-            try:
-                right_data = node_data[right_child]
-                del node_data[right_child]
-            except:
-                right_data = []
-                
-            current_data = left_data + right_data
-            if current_data != []:
-                node_data[current_node] = current_data
-            
-            # We only need to compute a new coefficient for new sets of data points, i.e. if
-            # both left and right child clusters have data points.
-            if left_data == []:
-                coeffs[current_node] = coeffs[right_child]
-            elif right_data == []:
-                coeffs[current_node] = coeffs[left_child]
-            else:
-                coeffs[current_node] = self.getScore(current_data)
-                
-        return coeffs
-        
-    def getLeafData(self):
-        pass #subclass to override
-        
-    def getScore(self, node_data):
-        """Compute coefficients using concatenated leaf data"""
-        pass # subclass to override
-        
-        
-class MarkerCheckEngine(ClusterQualityEngine):
-    """Cluster using taxonomy and marker completeness"""
-    
-    def __init__(self, profile):
-        self._alpha = 0.5
-        self._d = 1
-        self._mapping = profile.mapping
-        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
-        (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
-        self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
-        self._mscalefactors = 1./self._mcounts
-        
-    def getLeafData(self):
-        return dict(self._mapping.iterindices())
-        
-    def getScore(self, indices):
-        """Compute modified completeness and precision scores"""
-        # number of unique markers that are taxonomically coherence with each item in cluster
-        indices = np.asarray(indices)
-        correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
-        # item precision is fraction of cluster that is correct
-        prec = correct * 1. / len(indices)
-        # item completeness is fraction of taxonomically coherent markers in data set in cluster
-        compl = (correct * self._mscalefactors[indices])
-        f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
-        return f
-        
-        
-class DisagreementEngine(ClusterQualityEngine):
-    """Cluster using disagreement of leaf data"""
-    
-    def __init__(self, profile):
-        self._profile = profile
-        self.getScore = ClassificationManager(self._profile.mapping).disagreement
-        
-    def getLeafData(self):
-        return dict(self._profile.mapping.iterindices())
-        
-        
-class PurityEngine(ClusterQualityEngine):
-    """Cluster using disagreement of leaf data"""
-    
-    def __init__(self, profile, alpha=0.5):
-        self._profile = profile
-        self._alpha = alpha
-        self._cm = ClassificationManager(self._profile.mapping)
-        
-    def getScore(self, indices):
-        (prec, recall) = self._cm.purity(indices)
-        F = prec * recall * 1. / (self._alpha * prec + (1 - self._alpha) * recall)
-        return len(indices) * F
-        
-    def getLeafData(self):
-        return dict(self._profile.mapping.iterindices())
-
-        
-class BCubedEngine(ClusterQualityEngine):
-    """Cluster using BCubed precision"""
-    
-    def __init__(self, profile, alpha=0.5):
-        self._profile = profile
-        self._alpha = alpha
-        self._cm = ClassificationManager(self._profile.mapping)
-        
-    def getScore(self, indices):
-        (prec, recall) = self._cm.BCubed(indices)
-        return self._alpha * prec.sum() + (1 - self._alpha) * recall.sum()
-        
-    def getLeafData(self):
-        return dict(self._profile.mapping.iterindices())
-     
 ###############################################################################
 ###############################################################################
 ###############################################################################

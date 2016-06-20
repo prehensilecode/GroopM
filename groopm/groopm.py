@@ -52,7 +52,7 @@ from data3 import DataManager
 from cluster import CoreCreator
 from extract import BinExtractor, MarkerExtractor, BinStatsDumper
 from import_ import BinImporter
-from plot import BinPlotter, ReachabilityPlotter, TreePlotter
+from plot import BinPlotManager, ReachabilityPlotManager, TreePlotManager
 from groopmTimekeeper import TimeKeeper
 
     
