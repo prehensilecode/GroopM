@@ -398,7 +398,7 @@ class ProfileReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="engine",
+             highlight="recruited_bins",
              fileName=""):
         
         h = self._profile.reachDists
@@ -416,13 +416,19 @@ class ProfileReachabilityPlotter:
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
-        if highlight in ["bins", "conservative_bins"]:
+        if highlight in ["bins", "conservative_bins", "recruited_bins"]:
             if highlight=="bins":
                 binIds = self._profile.binIds[o]
-            elif highlight=="conservative_bins":
+            elif highlight in ["conservative_bins", "recruited_bins"]:
                 Z = hierarchy.linkage_from_reachability(o, h)
                 fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
-                binIds = fce.makeClusters(Z)
+                (recruited_bins, conservative_bins) = fce.makeClusters(Z,
+                                                                                    return_conservative_bins=True)
+                if highlight=="conservative_bins":
+                    binIds = conservative_bins[o]
+                elif highlight=="recruited_bins":
+                    binIds = recruited_bins[o]
+                bids = np.unique(binIds)
             
             (first_indices, last_indices) = split_contiguous(binIds)
             is_binned = binIds[first_indices]!=0
@@ -441,72 +447,56 @@ class ProfileReachabilityPlotter:
             k = np.in1d(binIds[first_binned_indices], bids)
             text = zip(group_centers[k], group_heights[k], group_labels[k])
             smap = None
-        elif highlight in ["support", "coeffs", "nzcoeffs"]:
+        elif highlight in ["support", "coeffs", "nzcoeffs", "engine", "leaders", "conservative_leaders"]:
             # color leaves by maximum ancestor coherence score
             Z = hierarchy.linkage_from_reachability(o, h)
             n = Z.shape[0]+1
-            flat_ids = hierarchy.flatten_nodes(Z)
-            flat_coeffs = MarkerCheckCQE(self._profile).makeScores(Z)
-            flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-            #support = hierarchy.support_linkage(Z, flat_coeffs, operator.add)
-            if highlight=="support":
-                support = flat_coeffs[n:] - hierarchy.maxscoresbelow(Z, flat_coeffs, operator.add)
-                scores = np.where(support < 0, 0, np.where(support > 0, 2, 1))
-            elif highlight=="nzcoeffs":
-                scores = flat_coeffs[n:] > 0
-            elif highlight=="coeffs":
-                scores = flat_coeffs[n:]
-            scores = scores[flat_ids]
-                
+            fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
+            (bins,
+             leaders,
+             is_low_quality,
+             support,
+             flat_coeffs,
+             is_seed_cluster,
+             conservative_bins,
+             conservative_leaders
+             ) = fce.makeClusters(Z,
+                                  return_leaders=True,
+                                  return_low_quality=True,
+                                  return_support=True,
+                                  return_coeffs=True,
+                                  return_seeds=True,
+                                  return_conservative_bins=True,
+                                  return_conservative_leaders=True
+                                  )
+            
             splits = hierarchy.reachability_splits(h)
-            coeffs = np.zeros(n, dtype=float)
-            coeffs[splits[:-1]] = scores
             if highlight=="support":
-                colours = np.array(['k', 'c', 'r'], dtype='|S1')[coeffs.astype(int)]
+                ix = np.zeros(n, dtype=int)
+                ix[splits[:-1]] = np.where(support < 0, 0, np.where(support > 0, 2, 1))
+                colours = np.array(['k', 'c', 'r'], dtype='|S1')[ix]
                 smap = None
             elif highlight=="nzcoeffs":
-                colours = np.array(['k', 'r'], dtype="|S1")[coeffs.astype(int)]
+                ix = np.zeros(n, dtype=int)
+                ix[splits[:-1]] = flat_coeffs[n:] > 0
+                colours = np.array(['k', 'r'], dtype="|S1")[ix]
                 smap = None
             elif highlight=="coeffs":
+                coeffs = np.zeros(n, dtype=float)
+                coeffs[splits[:-1]] = flat_coeffs[n:]
                 smap = plt_cm.ScalarMappable(cmap=self._colourmap)
                 smap.set_array(coeffs)
                 colours = smap.to_rgba(coeffs)
+            elif highlight=="engine":
+                nodes = np.zeros(2*n-1, dtype=int)
+                nodes[is_seed_cluster] = 1
+                nodes[is_low_quality] = 2
+                nodes[conservative_leaders] = 3
+                ix = np.zeros(n, dtype=int)
+                ix[splits[:-1]] = nodes[n:]
+                colours = np.array(['k', 'b', 'c', 'r'], dtype="|S1")[ix]
+                smap = None
             text = []
-        elif highlight=="engine":
-            Z = hierarchy.linkage_from_reachability(o, h)
-            
-            fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
-            orig_bins = fce.makeClusters(Z)
-            fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000,
-                                 filter_leaves=np.flatnonzero(orig_bins==0))
-                         
-            (to_merge,
-             to_merge_while,
-             low_quality,
-             _support,
-             _child_quality) = fce.getMergeNodes(Z,
-                                                  return_low_quality=True,
-                                                  return_support=True,
-                                                  return_child_quality=True
-                                                  )
-            
-            flat_ids = hierarchy.flatten_nodes(Z)
-            n = len(o)
-            scores = np.zeros(n, dtype=int)
-            scores[to_merge_while] = 3
-            scores[to_merge] = 1
-            (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, merge_while=to_merge_while, return_nodes=True)
-            scores[leaders[leaders>=n]-n] = 4
-            scores[low_quality[n:]] = 2
-            scores = _child_quality
-            scores = scores[flat_ids]
-            
-            splits = hierarchy.reachability_splits(h)
-            coeffs = np.zeros(n, dtype=scores.dtype)
-            coeffs[splits[:-1]] = scores
-            colours = np.array(['k', 'r', 'c', 'b', 'y'], dtype="|S1")[coeffs.astype(int)]
-            text = []
-            smap = None
         else:
             raise ValueError("Parameter value for 'highlight' argument must be one of 'bins', 'support', 'coeffs', 'nzcoeffs', 'ratios'. Got '%s'." % highlight)
         
@@ -536,14 +526,30 @@ class TreePlotter:
         
     def plot(self,
              label="count",
-             colour="support",
+             colour="engine",
              fileName=""):
         
         n = self._Z.shape[0]+1
-        coeffs = self._cqe.makeScores(self._Z)
-        T = hierarchy.fcluster_coeffs(self._Z, coeffs, merge="sum")
-        (nodes, bids) = sp_hierarchy.leaders(self._Z, T.astype('i'))
-        rootancestors = hierarchy.ancestors(self._Z, nodes)
+        fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
+        (bins,
+         leaders,
+         is_low_quality,
+         support,
+         flat_coeffs,
+         is_seed_cluster,
+         conservative_bins,
+         conservative_leaders
+         ) = fce.makeClusters(self._Z,
+                              return_leaders=True,
+                              return_low_quality=True,
+                              return_support=True,
+                              return_coeffs=True,
+                              return_seeds=True,
+                              return_conservative_bins=True,
+                              return_conservative_leaders=True
+                              )
+        
+        rootancestors = hierarchy.ancestors(self._Z, leaders)
         rootancestors_set = set(rootancestors)
         if label=="tag":
             leaf_label_func=lambda k: '' if k in rootancestors_set else self.leaf_label_tag(k)
@@ -559,16 +565,17 @@ class TreePlotter:
             
         if colour=="clusters":
             colour_set = dict([(k, 'r') for k in range(2*n-1) if k not in rootancestors_set])
-        elif colour in ["nzcoeffs", "support"]:
-            flat_ids = hierarchy.flatten_nodes(self._Z)
-            flat_coeffs = coeffs.copy()
-            flat_coeffs[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0
-            if colour=="support":
-                support = flat_coeffs - hierarchy.maxscoresbelow(self._Z, flat_coeffs, np.add)
-                support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
-                colour_set = dict([(k, 'r' if support[k] > 0 else 'b') for k in np.flatnonzero(support>=0)])
-            elif colour=="nzcoeffs":
-                colour_set = dict([(k, 'r') for k in np.flatnonzero(flat_coeffs!=0)])
+        elif colour=="support":
+            node_support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
+            colour_set = dict([(k, 'r') for k in np.flatnonzero(node_support>0)]+
+                              [(k, 'b') for k in np.flatnonzero(node_support==0)])
+        elif colour=="nzcoeffs":
+            colour_set = dict([(k, 'r') for k in np.flatnonzero(flat_coeffs!=0)])
+        elif colour=="engine":
+            colour_set = dict([(k, 'b') for k in np.flatnonzero(is_seed_cluster)]+
+                              [(k, 'c') for k in np.flatnonzero(is_low_quality)]+
+                              [(k, 'r') for k in conservative_leaders]
+                              )
         else:
             raise ValueError("Parameter value for argument 'colour' must be one of 'clusters', 'nzcoeffs', 'support'. Got '%s'" % colour)
            

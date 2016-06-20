@@ -165,9 +165,6 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
         bins = fce.makeClusters(Z)
-        fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize,
-                             filter_leaves=np.flatnonzero(bins==0))
-        bins = fce.makeClusters(Z)
         return bins
             
 ###############################################################################
@@ -212,7 +209,73 @@ class ProfileDistanceEngine:
 class FlatClusterEngine:
     """Flat clustering pipeline"""
     
-    def getMergeNodes(self,
+    def unbinClusters(self, unbin, out_bins):
+        out_bins[unbin] = 0
+        (_, new_bids) = np.unique(out_bins[out_bins != 0], return_inverse=True)
+        out_bins[out_bins != 0] = new_bids+1
+    
+    def makeClusters(self,
+                     Z,
+                     return_leaders=False,
+                     return_low_quality=False,
+                     return_coeffs=False,
+                     return_support=False,
+                     return_seeds=False,
+                     return_conservative_bins=False,
+                     return_conservative_leaders=False):
+        Z = np.asarray(Z)
+        n = Z.shape[0]+1
+        
+        flat_ids = hierarchy.flatten_nodes(Z)
+        scores = self.getScores(Z)
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
+        support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
+        support = support[flat_ids] # map values from parents to descendents of equal height
+        node_support = np.concatenate((scores, support))
+        is_low_quality_cluster = self.isLowQualityCluster(Z)
+        is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
+        
+        # get leaders of supported bins
+        (conservative_bins, conservative_leaders) = hierarchy.fcluster_merge(Z, support>0, return_nodes=True)
+        conservative_bins += 1 # bin ids start at 1
+        self.unbinClusters(is_low_quality_cluster[conservative_leaders], out_bins=conservative_bins)
+        
+        # We want to recruit nonsupported clusters to bins if splitting would result in a low quality bin
+        is_seed_cluster = np.logical_not(is_low_quality_cluster)
+        is_seed_cluster[hierarchy.descendents(Z, conservative_leaders)] = False
+        is_seed_cluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent scores to equal height parents
+        to_merge = hierarchy.maxscoresbelow(Z, is_seed_cluster.astype(int), fun=operator.add)<=1
+        to_merge = to_merge[flat_ids]
+        (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=True)
+        bins += 1 # bin ids start at 1
+        self.unbinClusters(is_low_quality_cluster[leaders], out_bins=bins)
+        bins[is_low_quality_cluster[leaders]] = 0
+        (_, new_bids) = np.unique(bins[bins != 0], return_inverse=True)
+        bins[bins != 0] = new_bids+1
+                     
+        if not (return_leaders or return_low_quality or return_support or return_coeffs or
+                return_seeds or return_conservative_bins or return_conservative_leaders):
+            return bins
+            
+        out = (bins,)
+        if return_leaders:
+            out += (leaders,)
+        if return_low_quality:
+            out += (is_low_quality_cluster,)
+        if return_support:
+            out += (support,)
+        if return_coeffs:
+            out += (scores,)
+        if return_seeds:
+            out += (is_seed_cluster,)
+        if return_conservative_bins:
+            out += (conservative_bins,)
+        if return_conservative_leaders:
+            out += (conservative_leaders,)
+        return out
+    
+    
+    def getMergeNodes_(self,
                       Z,
                       return_low_quality=False,
                       return_support=False,
@@ -263,7 +326,7 @@ class FlatClusterEngine:
             out += (isOrHasBelowQualityNonsupportedCluster_,)
         return out
         
-    def makeClusters(self, Z):
+    def makeClusters_(self, Z):
         Z = np.asarray(Z)
         (to_merge, to_merge_while, low_quality) = self.getMergeNodes(Z, return_low_quality=True)
         (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, merge_while=to_merge_while, return_nodes=True)

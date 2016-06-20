@@ -205,9 +205,61 @@ def iterlinkage(Z):
         leaves_dict[current_node] = current_leaves
         
         yield current_leaves
+        
+        
+def fcluster_recruit(Z, seeds, return_nodes=False):
+    """Merge clusters with at most one seed cluster below them"""
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    to_merge = maxscoresbelow(Z, seeds.astype(int), fun=operator.add) <= 1
+    return fcluster_merge(Z, to_merge, return_nodes=return_nodes)
     
     
-def fcluster_merge(Z, merge, merge_while=None, return_nodes=False):
+def fcluster_merge(Z, merge, return_nodes=False):
+    """Partition a hierarchical clustering by flattening clusters.
+    
+    Parameters
+    ----------
+    Z : ndarray
+        Linkage matrix encoding hierarchical clustering.
+    merge : ndarray
+        Boolean array. `merge[i]` indicates whether the cluster represented by
+        `Z[i, :]` should be flattened.
+    return_nodes : bool
+        If True, also return array of flat cluster root nodes.
+        
+    Returns
+    -------
+    T : ndarray
+        1-D array. `T[i]` is the flat cluster number to which original
+        observation `i` belongs.
+    nodes : ndarray
+        1-D array. `nodes[i]` is the cluster index corresponding to the flat
+        cluster of the `i`th original obseration. Only provided if
+        `return_nodes` is True.
+    """
+    Z = np.asarray(Z)
+    n = Z.shape[0]+1
+    
+    # Compute leaf clusters
+    leaders = np.arange(n)
+    
+    for (i, leaves) in enumerate(iterlinkage(Z)):
+        if merge[i]:
+            leaders[leaves] = n+i
+    
+    (_, bids) = np.unique(leaders, return_inverse=True)
+    
+    if not return_nodes:
+        return bids 
+        
+    out = (bids,)
+    if return_nodes:
+        out += (leaders,)
+    return out
+    
+    
+def fcluster_merge_(Z, merge, merge_while=None, return_nodes=False):
     """Partition a hierarchical clustering by flattening clusters.
     
     Parameters
