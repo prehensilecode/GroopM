@@ -983,7 +983,7 @@ class DataManager:
         #   new table meta/markers
         #   new table meta/taxons
         #   new meta/meta table columns: 'numMarkers'
-        print "    Saving coverage and kmer profile distances"
+        print "    Storing marker hits"
         print "    Re-run core to get better bins"
 
         cfe = ClassificationEngine()
@@ -1582,7 +1582,12 @@ class ContigParser:
         reader = FastaReader()
         for cid,seq in reader.readFasta(contigFile):
             if len(seq) >= cutoff:
-                contigInfo[cid] = (kse.getKSig(seq.upper()), len(seq), self.calculateGC(seq))
+                try:
+                    gc = self.calculateGC(seq)
+                except ZeroDivisionError:
+                    print "***WARNING*** Using 0.5 as GC percentage of sequence '%s' " % seq
+                    gc = 0.5
+                contigInfo[cid] = (kse.getKSig(seq.upper()), len(seq), gc)
 
         # sort the contig names here once!
         con_names = np.array(sorted(contigInfo.keys()))

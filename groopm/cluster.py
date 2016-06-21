@@ -153,14 +153,13 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
     
     def distances(self):
         de = ProfileDistanceEngine()
-        (_cov_dists, _kmer_dists, _weights, den_dists) = de.makeDistances(self._profile.covProfiles,
-                                                                          self._profile.kmerSigs,
-                                                                          self._profile.contigLengths,
-                                                                          return_density_distances=True,
-                                                                          minPts=self._minPts,
-                                                                          minSize=self._minSize)
+        den_dists = de.makeDensityDistances(self._profile.covProfiles,
+                                            self._profile.kmerSigs,
+                                            self._profile.contigLengths,
+                                            minPts=self._minPts,
+                                            minSize=self._minSize)
         return den_dists
-        
+    
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
@@ -174,23 +173,28 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
 
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
-    
-    def makeDistances(self, covProfiles, kmerSigs, contigLengths, return_density_distances=False, minSize=None, minPts=None, silent=False):
-
+       
+    def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         if(not silent):
             print "Computing pairwise contig distances"
-        features = (covProfiles, kmerSigs)
-        raw_distances = np.array([sp_distance.pdist(X, metric="euclidean") for X in features])
-        weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+        #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+        (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
+        weights = lens_i * lens_j
+        del lens_i, lens_j
         scale_factor = 1. / weights.sum()
-        scaled_ranks = distance.argrank(raw_distances, weights=weights, axis=1) * scale_factor
-        
-        if not return_density_distances:
-            return (scaled_ranks[0], scaled_ranks[1], weights)
-            
+        scaled_ranks = tuple(distance.argrank(Y, weights=weights, axis=None) * scale_factor for Y in (sp_distance.pdist(feature, metric="euclidean") for feature in (covProfiles, kmerSigs)))
+        return (scaled_ranks[0], scaled_ranks[1], weights)
+    
+    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         if not silent:
             print "Reticulating splines"
-        rank_norms = np_linalg.norm(scaled_ranks, axis=0)
+        (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        #rank_norms = np_linalg.norm((cov_ranks, kmer_ranks), axis=0)
+        rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
+        return (rank_norms, weights)
+    
+    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
+        (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if minSize is None:
             minWt = None
         else:
@@ -198,8 +202,7 @@ class ProfileDistanceEngine:
             #v = contigLengths
             minWt = np.maximum(minSize - v, 0) * v
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
-        
-        return (scaled_ranks[0], scaled_ranks[1], weights, den_dist)
+        return den_dist
         
 ###############################################################################
 ###############################################################################

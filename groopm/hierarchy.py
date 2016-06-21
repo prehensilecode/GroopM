@@ -207,7 +207,7 @@ def iterlinkage(Z):
         yield current_leaves
         
         
-def fcluster_recruit(Z, seeds, return_nodes=False):
+def fcluster_recruit_(Z, seeds, return_nodes=False):
     """Merge clusters with at most one seed cluster below them"""
     Z = np.asarray(Z)
     n = Z.shape[0]+1
@@ -331,7 +331,7 @@ def flatten_nodes(Z):
             
     return node_ids
 
-
+    
 def linkage_from_reachability(o, d):
     """Hierarchical clustering from reachability ordering and distances
     

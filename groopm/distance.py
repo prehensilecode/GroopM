@@ -124,12 +124,13 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
             core_dists = np.minimum(core_dists, pts_dists)
         else:
             core_dists = pts_dists
+        del pts_dists # mem opt
     
-    (i, j) = pairs(n)
-    dd = np.maximum(np.minimum(core_dists[i], core_dists[j]), Y)
+    (dists_i, dists_j) = tuple(core_dists[i] for i in pairs(n))
+    dd = np.maximum(np.minimum(dists_i, dists_j), Y)
     return dd
         
-@profile
+        
 def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -152,15 +153,16 @@ def core_distance_weighted(Y, weights, minWt):
     n = sp_distance.num_obs_y(Y)
     dm = sp_distance.squareform(Y)
     wm = sp_distance.squareform(weights)
-    sorting_indices = dm.argsort(axis=1)
+    #sorting_indices = dm.argsort(axis=1)
     core_dist = np.empty(n, dtype=Y.dtype)
     m = np.empty(n, dtype=int)
     for i in range(n):
-        minPts = int(np.sum(wm[i, sorting_indices[i]].cumsum() < minWt[i]))
-        core_dist[i] = dm[i, sorting_indices[i, np.minimum(n-1, minPts)]]
+        sorting_indices = dm[i].argsort()
+        minPts = int(np.sum(wm[i, sorting_indices].cumsum() < minWt[i]))
+        core_dist[i] = dm[i, sorting_indices[np.minimum(n-1, minPts)]]
     return core_dist
-            
-@profile        
+        
+        
 def core_distance(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
@@ -184,7 +186,7 @@ def core_distance(Y, minPts):
     dm.sort(axis=1)
     return dm[:, np.minimum(n-1, minPts)]
 
-@profile    
+    
 def reachability_order(Y):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -237,37 +239,38 @@ def pairs(n):
     return np.triu_indices(n, k=1)
     
     
-# helper
+# helpers
 @profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
-    shape = a.shape
     size = a.size
+    if a.shape != (size,):
+        raise ValueError("a should be a 1-D array.")
     
     if weights is not None:
         weights = np.asanyarray(weights)
-        if weights.shape != shape:
+        if weights.shape != (size,):
             raise ValueError('weights should have the same shape as a.')
-        weights = weights.ravel()
-    a = a.ravel()
     
     sorting_index = a.argsort()
     sa = a[sorting_index]
     flag = np.concatenate(([True], sa[1:] != sa[:-1], [True]))
+    del sa # optimise memory usage
     if weights is None:
         # counts up to 
-        cw = np.flatnonzero(flag)
+        cw = np.flatnonzero(flag).astype(float)
     else:
-        cw = np.concatenate(([0], weights[sorting_index].cumsum()))
+        cw = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
         cw = cw[flag]
-    cw = cw.astype(np.double)
-    sr = (cw[1:] + cw[:-1] - 1) / 2
-    
     iflag = np.cumsum(flag[:-1]) - 1
+    del flag # mem optimisation
+    sr = (cw[1:] + cw[:-1] - 1) * 0.5
+    sr = sr[iflag]
+    del iflag, cw # mem optimisation
+    
     r = np.empty(size, dtype=np.double)
-    r[sorting_index] = sr[iflag]
-    r = r.reshape(shape)
+    r[sorting_index] = sr
     return r
 
     

@@ -610,10 +610,10 @@ class BinDistancePlotter:
     def __init__(self, profile, colourmap='HSV'):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
-        (self._x, self._y, self._w) = ProfileDistanceEngine().makeDistances(self._profile.covProfiles,
-                                                                            self._profile.kmerSigs,
-                                                                            self._profile.contigLengths
-                                                                            )
+        (self._x, self._y, self._w) = ProfileDistanceEngine().makeScaledRanks(self._profile.covProfiles,
+                                                                              self._profile.kmerSigs,
+                                                                              self._profile.contigLengths
+                                                                              )
 
     def plot(self,
              bid,
