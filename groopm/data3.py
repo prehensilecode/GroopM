@@ -2025,7 +2025,6 @@ class DistanceManager:
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:
             return self.readrows(h5file.root.distances, indices, "weight")
     
-    @profile
     def getDensityDistances(self, dsFileName, indices=[]):
         """Load pairwise density distances"""
         with tables.open_file(dsFileName, 'r', root_uep="/profile") as h5file:

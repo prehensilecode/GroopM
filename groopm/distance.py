@@ -86,7 +86,7 @@ def argrank(array, weights=None, axis=0):
         return _rank_with_ties(array, weights=weights)
     return np.apply_along_axis(_rank_with_ties, axis, array, weights=weights)
 
-@profile
+
 def density_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
@@ -240,7 +240,6 @@ def pairs(n):
     
     
 # helpers
-@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
