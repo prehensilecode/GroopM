@@ -153,10 +153,10 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
     
     def distances(self):
         de = ProfileDistanceEngine()
-        den_dists = de.makeDensityDistances(self._profile.covProfiles,
-                                            self._profile.kmerSigs,
-                                            self._profile.contigLengths,
-                                            minPts=self._minPts,
+        de.makeScaledRanks(self._profile.covProfiles,
+                           self._profile.kmerSigs,
+                           self._profile.contigLengths)
+        den_dists = de.loadDensityDistances(minPts=self._minPts,
                                             minSize=self._minSize)
         return den_dists
     
@@ -173,6 +173,12 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
 
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
+    from tempfile import TemporaryFile
+    
+    def __init__(self):
+        self._covDistsFile = TemporaryFile()
+        self._kmerDistsFile = TemporaryFile()
+        self._weightsFile = TemporaryFile()
        
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         if(not silent):
@@ -182,19 +188,28 @@ class ProfileDistanceEngine:
         weights = lens_i * lens_j
         del lens_i, lens_j
         scale_factor = 1. / weights.sum()
-        scaled_ranks = tuple(distance.argrank(Y, weights=weights, axis=None) * scale_factor for Y in (sp_distance.pdist(feature, metric="euclidean") for feature in (covProfiles, kmerSigs)))
-        return (scaled_ranks[0], scaled_ranks[1], weights)
+        for (feature, filename) in zip([covProfiles, kmerSigs], [self._covDistsFile, self._kmerDistsFile]):
+            R = distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor
+            np.save(filename, R)
+        np.save(self._weightsFile, weights)
     
-    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        if not silent:
-            print "Reticulating splines"
-        (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+    def loadScaledRanks(self):
+        return (np.load(self._covDistsFile), np.load(self._kmerDistsFile))
+        
+    def loadWeights(self):
+        return np.load(self._weightsFile)
+    
+    def loadNormRanks(self):
+        (cov_ranks, kmer_ranks) = self.loadScaledRanks()
         #rank_norms = np_linalg.norm((cov_ranks, kmer_ranks), axis=0)
         rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
-        return (rank_norms, weights)
+        return rank_norms
     
-    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
-        (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+    def loadDensityDistances(self, minSize=None, minPts=None, silent=False):
+        if not silent:
+            print "Reticulating splines"
+        rank_norms = self.loadNormRanks(silent=silent)
+        weights = self.loadWeights()
         if minSize is None:
             minWt = None
         else:
