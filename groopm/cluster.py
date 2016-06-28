@@ -179,7 +179,8 @@ class ProfileDistanceEngine:
         self._covDistsFile = TemporaryFile()
         self._kmerDistsFile = TemporaryFile()
         self._weightsFile = TemporaryFile()
-       
+    
+    @profile
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         if(not silent):
             print "Computing pairwise contig distances"
@@ -205,6 +206,7 @@ class ProfileDistanceEngine:
         rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
         return rank_norms
     
+    @profile
     def loadDensityDistances(self, minSize=None, minPts=None, silent=False):
         if not silent:
             print "Reticulating splines"
