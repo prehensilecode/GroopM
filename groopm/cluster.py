@@ -127,9 +127,12 @@ class CoreCreator:
         # Remove created files
         if not keepDists:
             try:
-                os.remove(savedCovDists, savedKmerDists, savedWeights)
+                os.remove(savedCovDists)
+                os.remove(savedKmerDists)
+                os.remove(savedWeights)
             except:
-                pass
+                raise
+            
         
         
 # Hierarchical clustering
