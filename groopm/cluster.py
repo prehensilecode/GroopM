@@ -246,7 +246,7 @@ class CachingProfileDistanceEngine:
         if not self._savedWeights.endswith(".npy"):
             self._savedWeights += ".npy"
     
-    @profile
+    
     def _getWeights(self, contigLengths):
         try:
             weights = np.load(self._savedWeights)
@@ -258,7 +258,7 @@ class CachingProfileDistanceEngine:
             np.save(self._savedWeights, weights)
         return weights
     
-    @profile
+    
     def _getScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         n = len(contigLengths)
         if(not silent):
@@ -299,7 +299,7 @@ class CachingProfileDistanceEngine:
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
     
-    @profile
+    
     def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
         (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if not silent:

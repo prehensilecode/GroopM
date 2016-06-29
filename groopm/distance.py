@@ -79,7 +79,7 @@ def mediod(Y):
 
     return index
     
-@profile    
+    
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
