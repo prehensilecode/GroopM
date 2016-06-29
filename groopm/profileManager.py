@@ -52,7 +52,7 @@ import sys
 import os
 
 # GroopM imports
-from data3 import DataManager, ClassificationEngine, DistanceManager
+from data3 import DataManager, ClassificationEngine
 from utils import group_iterator
 import distance
 

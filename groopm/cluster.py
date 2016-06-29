@@ -147,7 +147,6 @@ class HierarchicalClusterEngine:
         print "    %s" % timer.getTimeStamp()
         
         print "Computing cluster hierarchy"
-        print "Clustering 2^%.2f pairs" % np.log2(len(dists))
         (o, d) = distance.reachability_order(dists)
         print "    %s" % timer.getTimeStamp()
         
@@ -205,9 +204,10 @@ class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
 
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+        n = len(contigLengths)
         if(not silent):
-            print "Computing pairwise contig distances"
-        (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
+            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
+        (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(n))
         weights = lens_i * lens_j
         scale_factor = 1. / weights.sum()
         (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
@@ -254,18 +254,20 @@ class CachingProfileDistanceEngine:
         except IOError:        
             (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             weights = 1. * lens_i * lens_j
+            #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
             np.save(self._savedWeights, weights)
         return weights
     
     @profile
     def _getScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+        n = len(contigLengths)
         if(not silent):
-            print "Computing pairwise contig distances"
+            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         cached_weights = None
         scale_factor = None
         try:
             cov_ranks = np.load(self._savedCovDists)
-            assert_num_obs(len(contigLengths), cov_ranks)
+            assert_num_obs(n, cov_ranks)
         except IOError:
             cached_weights = self._getWeights(contigLengths)
             scale_factor = 1. / cached_weights.sum()
@@ -273,7 +275,7 @@ class CachingProfileDistanceEngine:
             np.save(self._savedCovDists, cov_ranks)
         try:
             kmer_ranks = np.load(self._savedKmerDists)
-            assert_num_obs(len(contigLengths), kmer_ranks)
+            assert_num_obs(n, kmer_ranks)
         except IOError:
             del cov_ranks # save a bit of memory
             if cached_weights is None:
