@@ -494,9 +494,10 @@ class DataManager:
 
         print "****************************************************************"
         print "Data loaded successfully!"
-        print " ->",num_cons,"contigs"
-        print " ->",len(stoitColNames),"BAM files"
-        print "Written to: '"+dbFileName+"'"
+        print " -> %d contigs" % num_cons
+        print " -> %d BAM files" % len(stoitColNames)
+        print " -> %d hits to %d markers" % (num_mappings, num_markers)
+        print "Written to: '%s'" % dbFileName
         print "****************************************************************"
         print "    %s" % timer.getTimeStamp()
 
