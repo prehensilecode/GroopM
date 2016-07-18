@@ -53,7 +53,7 @@ __status__ = "Released"
 # CLUSTER ENGINE
 class GMClusterException(BaseException): pass
 class StopClusterException(GMClusterException): pass
-class SavedDistanceInvalidNumberException(GMClusterException): pass
+class SavedDistancesInvalidNumberException(GMClusterException): pass
 
 #------------------------------------------------------------------------------
 # BIN MANAGER

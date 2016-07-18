@@ -63,7 +63,7 @@ from utils import split_contiguous
 from binManager import BinManager
 from profileManager import ProfileManager
 from classification import ClassificationManager
-from groopmExceptions import SavedDistanceInvalidNumberException
+from groopmExceptions import SavedDistancesInvalidNumberException
 
 ###############################################################################
 ###############################################################################
