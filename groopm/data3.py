@@ -46,7 +46,6 @@ __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
 
 __current_GMDB_version__ = 6
-__current_GMDS_version__ = 1
 
 ###############################################################################
 

@@ -49,7 +49,9 @@ __email__ = "t.lamberton@uq.edu.au"
 
 import numpy as np
 import os
+import sys
 import subprocess
+from utils import CSVReader
 
 ###############################################################################
 ###############################################################################
@@ -68,15 +70,15 @@ class SingleMMapper:
         if self.silent:
             self.errorOutput = '2> /dev/null'
         
-    def getMappings(self, contigFile):
+    def getMappings(self, contig_file):
         otu_file = os.path.join(self.workingDir, 'singlem_otu_table.csv')
         cmd = ' '.join(['singlem pipe --sequences',
-                        contigFile,
+                        contig_file,
                         '--otu_table',
-                        otuFile,
+                        otu_file,
                         '--output_extras',
                         self.errorOutput])
-        subprocess.checked_call(cmd, shell=True)
+        subprocess.check_call(cmd, shell=True)
         
         con_names = []
         map_markers = []
@@ -87,9 +89,9 @@ class SingleMMapper:
                     con_names.append(l[0])
                     map_markers.append(l[1])
                     try:
-                        max_taxstrings.append(l[2])
+                        map_taxstrings.append(l[2])
                     except IndexError:
-                        max_taxstrings.append("")
+                        map_taxstrings.append("")
         except:
             print "Error when reading SingleM otu table", sys.exc_info()[0]
             raise
@@ -102,7 +104,7 @@ class SingleMMapper:
         cols = None
         for l in reader.readCSV(otu_file, "\t"):
             if cols is None:
-                cols_lookup = dict(zip(header_line, range(len(l))))
+                cols_lookup = dict(zip(l, range(len(l))))
                 cols = [cols_lookup['read_names'], cols_lookup['gene']]
                 try:
                     cols += [cols_lookup['taxonomy']]
@@ -126,14 +128,12 @@ class GraftMMapper:
             self.errorOutput = '2> /dev/null'
             
     def getMappings(self, contigFile):
-        
         con_names = []
         map_markers = []
         map_taxstrings = []
         
-        for (name, package) in self.packageList.itervalues():
+        for (name, package) in self.packageList.iteritems():
             read_tax_file = self.mapPackage(contigFile, name, package)
-            
             try:
                 with open(read_tax_file, 'r') as fh:
                     for (cname, taxstring) in self.readTaxTable(fh):
@@ -147,32 +147,40 @@ class GraftMMapper:
         return (con_names, map_markers, map_taxstrings)
         
     def mapPackage(self, contigFile, package_name, package):
-        prefix = os.path.basename(contigFile)
+        basename = os.path.basename(contigFile)
+        prefix = None
+        for ext in [ '.fa', '.fna', '.fasta', '.fa.gz', '.fna.gz', '.fasta.gz']:
+            if basename.endswith(ext):
+                prefix = basename[:len(basename)-len(ext)]
+                break
+        if prefix is None:
+            raise ValueError("Not a compatible extension {.fa[.gz]|.fna[.gz]|.fasta[.gz]} using contigs file: %s" % contigsFile)
         output_dir = os.path.join(self.workingDir, "%s_%s" % (prefix, package_name))
         cmd = ' '.join(['graftM graft --forward',
                         contigFile,
                         '--graftm_package',
-                        graftmPackage,
+                        package,
                         '--output_directory',
                         output_dir,
                         '--verbosity 2',
                         self.errorOutput])
-        process.checked_call(cmd, shell=True)
+        subprocess.check_call(cmd, shell=True)
         return os.path.join(output_dir, prefix, "%s_read_tax.tsv" % prefix)
         
         
-    def readTaxTable(self, fh):
-        """"""
+    def readTaxTable(self, otu_file):
+        """Parse graftm taxonomy table"""
         
         reader = CSVReader()
         for (cname, taxstring) in reader.readCSV(otu_file, "\t"):
             # strip _(num)_(num)_(num) suffix
+            parsed = cname
             for _ in range(3):
-                cname.rstrip('1234567890')
-                if not cname.endswith('_') or len(cname) < 2:
-                    raise ValueError('Error encountered when parsing contig name.')
-                cname = cname[:-1]
-            yield tuple(cname, taxstring)
+                parsed = parsed.rstrip('1234567890')
+                if not parsed.endswith('_') or len(parsed) < 2:
+                    raise ValueError('Error encountered when parsing contig name: %s' % cname)
+                parsed = parsed[:-1]
+            yield (parsed, taxstring)
         
         
         
