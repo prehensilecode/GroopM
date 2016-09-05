@@ -53,6 +53,7 @@ import sys
 import operator
 from os.path import splitext as op_splitext, basename as op_basename
 from string import maketrans as s_maketrans
+import tempfile
 
 import tables
 import numpy as np
@@ -62,6 +63,7 @@ import scipy.spatial.distance as sp_distance
 # GroopM imports
 from utils import CSVReader, FastaReader
 import distance
+from map import SingleMMapper, GraftMMapper
 
 # BamM imports
 try:
@@ -229,7 +231,7 @@ class DataManager:
 #------------------------------------------------------------------------------
 # DB CREATION / INITIALISATION
 
-    def createDB(self, timer, bamFiles, contigsFile, markerFile, dbFileName, cutoff, kmerSize=4, force=False, threads=1):
+    def createDB(self, timer, bamFiles, contigsFile, dbFileName, cutoff, kmerSize=4, force=False, threads=1):
         """Main wrapper for parsing all input files"""
         
         # make sure we're only overwriting existing DBs with the users consent
@@ -328,7 +330,7 @@ class DataManager:
                 #------------------------
                 # parse mapping files
                 #------------------------
-                with open(markerFile, "r") as f:
+                with open(contigsFile, "r") as f:
                     try:
                         (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid_2_indices, cfe)
                         num_mappings = len(contig_indices)
@@ -1762,6 +1764,34 @@ class BamParser:
 ###############################################################################
 
 class MappingParser:
+    def getMappings(self, contig_file, cid2Indices, cfe=None):
+        print "Parsing mappings"
+        
+        mapper = SingleMMapper(tempfile.mkdtemp(), silent=True)
+        (con_names, map_markers, map_taxstrings) = mapper.getMappings(contig_file)
+        con_indices = []
+        keep_indices = []
+        for (i, name) in enumerate(con_names):
+            try:
+                contig_index = cid2Indices[name]
+            except:
+                continue
+            
+            con_indices.append(contig_index);
+            keep_indices.append(i);
+            
+        con_indices = np.array(con_indices);
+        keep_indices = np.array(keep_indices);
+        map_markers = np.array(map_markers);
+        map_taxstrings = np.array(map_taxstrings);
+        map_markers = map_markers[keep_indices];
+        map_taxstrings = map_taxstrings[keep_indices];
+        (marker_names, marker_indices, marker_counts) = np.unique(map_markers, return_inverse=True, return_counts=True)
+        (tax_table, taxon_names) = cfe.parse(map_taxstrings)
+        return (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, map_taxstrings)
+        
+
+class MappingParser_:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
     def parse(self, fp, cid2Indices, cfe=None):
         """Do the heavy lifting of parsing"""

@@ -128,14 +128,16 @@ class GraftMMapper:
             self.errorOutput = '2> /dev/null'
             
     def getMappings(self, contigFile):
+        read_tax_files = {}
+        for (name, package) in self.packageList.iteritems():
+            read_tax_files[name] = self.mapPackage(contigFile, name, package)
+        
         con_names = []
         map_markers = []
         map_taxstrings = []
-        
-        for (name, package) in self.packageList.iteritems():
-            read_tax_file = self.mapPackage(contigFile, name, package)
+        for (name, filename) in read_tax_files.iteritems():
             try:
-                with open(read_tax_file, 'r') as fh:
+                with open(filename, 'r') as fh:
                     for (cname, taxstring) in self.readTaxTable(fh):
                         con_names.append(cname)
                         map_markers.append(name)

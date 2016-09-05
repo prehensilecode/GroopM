@@ -26,18 +26,27 @@ __email__ = "tim.lamberton@gmail.com"
 
 from groopm.map import SingleMMapper, GraftMMapper
 import os
+import subprocess
 
 class TestMapper:
     
     @classmethod
     def setup_class(self):
-        self.workingDir = './test_map'
+        self.workingDir = './groopm/tests/test_map'
         self.contigsFile = '/srv/projects/paperpalooza/assemblies/5_all_in_after3nextseq19/5_all_in_after3nextseq19.fa'
         self.graftmPackageDir = '/srv/home/uqtlambe/code/groopm/graftm_packages'
         self.graftmPackageNames = ['DNGNGWU00001', 'DNGNGWU00002', 'DNGNGWU00003', 'DNGNGWU00007', 'DNGNGWU00009']
         self.graftmPackages = dict([(name, os.path.join(self.graftmPackageDir, name+'.gpkg')) for name in self.graftmPackageNames])
         self.singlemMapper = SingleMMapper(self.workingDir)
         self.graftmMapper = GraftMMapper(self.workingDir, self.graftmPackages)
+        
+    @classmethod
+    def teardown_class(self):
+        if (self.workingDir == ""): return
+        cmd = "rm -rf %s/*" % self.workingDir
+        subprocess.check_call(cmd)
+        
+        
 
     def testSingleMMapper(self):
         (contigs, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile)
