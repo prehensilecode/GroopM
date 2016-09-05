@@ -53,7 +53,7 @@ import sys
 import operator
 from os.path import splitext as op_splitext, basename as op_basename
 from string import maketrans as s_maketrans
-import tempfile
+import tempdir
 
 import tables
 import numpy as np
@@ -231,7 +231,7 @@ class DataManager:
 #------------------------------------------------------------------------------
 # DB CREATION / INITIALISATION
 
-    def createDB(self, timer, bamFiles, contigsFile, dbFileName, cutoff, kmerSize=4, force=False, threads=1):
+    def createDB(self, timer, bamFiles, contigsFile, dbFileName, cutoff, markerFile=None, workingDirectory=None, kmerSize=4, force=False, threads=1):
         """Main wrapper for parsing all input files"""
         
         # make sure we're only overwriting existing DBs with the users consent
@@ -252,7 +252,10 @@ class DataManager:
         cfe = ClassificationEngine()
         conParser = ContigParser()
         bamParser = BamParser()
-        mapper = MappingParser()
+        if markerFile is None:
+            mapper = ExternalMapper(working_directory=workingDirectory)
+        else:
+            mapper = MappingParser()
         
         # create the db
         try:
@@ -330,14 +333,18 @@ class DataManager:
                 #------------------------
                 # parse mapping files
                 #------------------------
-                with open(contigsFile, "r") as f:
-                    try:
-                        (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid_2_indices, cfe)
-                        num_mappings = len(contig_indices)
-                        num_markers = len(marker_names)
-                    except:
-                        print "Error parsing mapping data"
-                        raise
+                if markerFile is None:
+                    (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.getMappings(contigsFile, cid_2_indices, cfe)
+                else:
+                    with open(marker_file, "r") as f:
+                        try:
+                            (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid_2_indices, cfe)
+                        except:
+                            print "Error parsing mappings"
+                            raise
+                            
+                num_mappings = len(contig_indices)
+                num_markers = len(marker_names)
                 
                 #------------------------
                 # write kmer sigs
@@ -1763,12 +1770,31 @@ class BamParser:
 ###############################################################################
 ###############################################################################
 
-class MappingParser:
-    def getMappings(self, contig_file, cid2Indices, cfe=None):
-        print "Parsing mappings"
+class ExternalMapper:
+    """Calculate mappings using external mapper."""
+    def __init__(self, mode="SingleM", working_directory=None, silent=True):
+        self._working_directory = working_directory
+        self._mode = mode
+        self._silent = silent
         
-        mapper = SingleMMapper(tempfile.mkdtemp(), silent=True)
-        (con_names, map_markers, map_taxstrings) = mapper.getMappings(contig_file)
+    def _runExternalMapper(self, contig_file, working_directory):
+        mapper = SingleMMapper(working_directory, silent=self._silent)
+        return mapper.getMappings(contig_file)
+        
+    def getMappings(self, contig_file, cid2Indices, cfe):
+        print "Mapping contigs"
+        if self._mode=="SingleM":
+            working_directory = self._working_directory
+            if working_directory is None:
+                tmp = tempdir.TempDir()
+                working_directory = tmp.name;
+                (con_names, map_markers, map_taxstrings) = self._runExternalMapper(contig_file, working_directory)
+                tmp.dissolve()
+            else:
+                (con_names, map_markers, map_taxstrings) = self._runExternalMapper(contig_file, working_directory)
+        else:
+            raise ValueError("Invalid argument for 'mode' parameter: %s" % self._mode)
+            
         con_indices = []
         keep_indices = []
         for (i, name) in enumerate(con_names):
@@ -1788,10 +1814,10 @@ class MappingParser:
         map_taxstrings = map_taxstrings[keep_indices];
         (marker_names, marker_indices, marker_counts) = np.unique(map_markers, return_inverse=True, return_counts=True)
         (tax_table, taxon_names) = cfe.parse(map_taxstrings)
-        return (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, map_taxstrings)
+        return (con_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, map_taxstrings)
         
-
-class MappingParser_:
+        
+class MappingParser:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
     def parse(self, fp, cid2Indices, cfe=None):
         """Do the heavy lifting of parsing"""

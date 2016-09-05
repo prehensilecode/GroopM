@@ -27,6 +27,7 @@ __email__ = "tim.lamberton@gmail.com"
 from groopm.map import SingleMMapper, GraftMMapper
 import os
 import subprocess
+import shutil
 
 class TestMapper:
     
@@ -42,11 +43,8 @@ class TestMapper:
         
     @classmethod
     def teardown_class(self):
-        if (self.workingDir == ""): return
-        cmd = "rm -rf %s/*" % self.workingDir
-        subprocess.check_call(cmd)
-        
-        
+        shutil.rmtree(self.workingDir)
+        os.mkdir(self.workingDir)
 
     def testSingleMMapper(self):
         (contigs, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile)
