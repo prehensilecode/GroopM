@@ -53,7 +53,6 @@ import sys
 import operator
 from os.path import splitext as op_splitext, basename as op_basename
 from string import maketrans as s_maketrans
-import tempdir
 
 import tables
 import numpy as np
@@ -231,7 +230,8 @@ class DataManager:
 #------------------------------------------------------------------------------
 # DB CREATION / INITIALISATION
 
-    def createDB(self, timer, bamFiles, contigsFile, dbFileName, cutoff, markerFile=None, workingDirectory=None, kmerSize=4, force=False, threads=1):
+    def createDB(self, timer, bamFiles, contigsFile, dbFileName, cutoff, kmerSize=4, markerFile=None, 
+            workingDirectory=None, graftmPackageList=None, force=False, threads=1):
         """Main wrapper for parsing all input files"""
         
         # make sure we're only overwriting existing DBs with the users consent
@@ -253,7 +253,14 @@ class DataManager:
         conParser = ContigParser()
         bamParser = BamParser()
         if markerFile is None:
-            mapper = ExternalMapper(working_directory=workingDirectory)
+            if workingDirectory is None:
+                raise ValueError('Working directory cannot be none if markerFile is not specified.')
+            if graftmPackageList is not None:
+                graftmPackages = dict([(os.path.basename(name)[:-len('.gpkg')], name) for name in graftmPackageList])
+                external_mapper = GraftMMapper(workingDirectory, graftmPackages, silent=True)
+            else:
+                external_mapper = SingleMMapper(workingDirectory, silent=True)
+            mapper = ExternalMapRunner(external_mapper)
         else:
             mapper = MappingParser()
         
@@ -1770,31 +1777,16 @@ class BamParser:
 ###############################################################################
 ###############################################################################
 
-class ExternalMapper:
+class ExternalMapRunner:
     """Calculate mappings using external mapper."""
-    def __init__(self, mode="SingleM", working_directory=None, silent=True):
-        self._working_directory = working_directory
-        self._mode = mode
-        self._silent = silent
-        
-    def _runExternalMapper(self, contig_file, working_directory):
-        mapper = SingleMMapper(working_directory, silent=self._silent)
-        return mapper.getMappings(contig_file)
+    
+    def __init__(self, mapper):
+        self._mapper = mapper
         
     def getMappings(self, contig_file, cid2Indices, cfe):
         print "Mapping contigs"
-        if self._mode=="SingleM":
-            working_directory = self._working_directory
-            if working_directory is None:
-                tmp = tempdir.TempDir()
-                working_directory = tmp.name;
-                (con_names, map_markers, map_taxstrings) = self._runExternalMapper(contig_file, working_directory)
-                tmp.dissolve()
-            else:
-                (con_names, map_markers, map_taxstrings) = self._runExternalMapper(contig_file, working_directory)
-        else:
-            raise ValueError("Invalid argument for 'mode' parameter: %s" % self._mode)
-            
+        (con_names, map_markers, map_taxstrings) = self._mapper.getMappings(contig_file)
+        
         con_indices = []
         keep_indices = []
         for (i, name) in enumerate(con_names):
