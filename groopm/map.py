@@ -47,7 +47,6 @@ __email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
 
-import numpy as np
 import os
 import sys
 import subprocess
@@ -70,7 +69,7 @@ class SingleMMapper:
         if self.silent:
             self.errorOutput = '2> /dev/null'
         
-    def getMappings(self, contig_file):
+    def getMappings(self, contig_file, cid2Indices):
         otu_file = os.path.join(self.workingDir, 'singlem_otu_table.csv')
         cmd = ' '.join(['singlem pipe --sequences',
                         contig_file,
@@ -80,13 +79,18 @@ class SingleMMapper:
                         self.errorOutput])
         subprocess.check_call(cmd, shell=True)
         
-        con_names = []
+        con_indices = []
         map_markers = []
         map_taxstrings = []
         try:
             with open(otu_file, 'r') as fh:
                 for l in self.readOtuTable(fh):
-                    con_names.append(l[0])
+                    try:
+                        contig_index = cid2Indices[l[0]]
+                    except:
+                        continue
+                        
+                    con_indices.append(contig_index)
                     map_markers.append(l[1])
                     try:
                         map_taxstrings.append(l[2])
@@ -96,7 +100,7 @@ class SingleMMapper:
             print "Error when reading SingleM otu table", sys.exc_info()[0]
             raise
             
-        return (con_names, map_markers, map_taxstrings)
+        return (con_indices, map_markers, map_taxstrings)
         
     def readOtuTable(self, otu_file):
         """Parse singleM otu table"""
@@ -127,26 +131,31 @@ class GraftMMapper:
         if self.silent:
             self.errorOutput = '2> /dev/null'
             
-    def getMappings(self, contigFile):
+    def getMappings(self, contigFile, cid2Indices):
         read_tax_files = {}
         for (name, package) in self.packageList.iteritems():
             read_tax_files[name] = self.mapPackage(contigFile, name, package)
         
-        con_names = []
+        con_indices = []
         map_markers = []
         map_taxstrings = []
         for (name, filename) in read_tax_files.iteritems():
             try:
                 with open(filename, 'r') as fh:
                     for (cname, taxstring) in self.readTaxTable(fh):
-                        con_names.append(cname)
+                        try:
+                            contig_index = cid2Indices[cname]
+                        except:
+                            continue
+                            
+                        con_indices.append(contig_index)
                         map_markers.append(name)
                         map_taxstrings.append(taxstring)
             except:
                 print "Error when reading GraftM taxonomy assigned using package: ", name, sys.exc_info()[0]
                 raise
                 
-        return (con_names, map_markers, map_taxstrings)
+        return (con_indices, map_markers, map_taxstrings)
         
     def mapPackage(self, contigFile, package_name, package):
         basename = os.path.basename(contigFile)

@@ -50,7 +50,6 @@ __status__ = "Development"
 
 import argparse
 import sys
-import tempdir
 import os
 
 import groopm
@@ -181,8 +180,6 @@ class parse_command_configure:
             else:
                 packageList = [os.path.join(GRAFTM_PACKAGE_DIR, name) for name in os.listdir(GRAFTM_PACKAGE_DIR) if name.endswith('.gpkg')];
         
-        tmp = tempdir.TempDir()
-        working_directory = tmp.name;
         success = dm.createDB(
             timer,
             options.bamfiles,
@@ -190,13 +187,12 @@ class parse_command_configure:
             options.dbname,
             options.cutoff,
             #markerFile=options.markerfile,
-            workingDirectory=working_directory,
+            #workingDirectory=working_directory,
             graftmPackageList=packageList,
             force=options.force,
             threads=options.threads)
         if not success:
             print dbFileName,"not updated"
-        tmp.dissolve();
             
 class core_command_configure:
     description = "Load saved data and make bin cores"

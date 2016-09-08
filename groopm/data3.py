@@ -58,6 +58,7 @@ import tables
 import numpy as np
 import numpy.linalg as np_linalg
 import scipy.spatial.distance as sp_distance
+import tempdir
 
 # GroopM imports
 from utils import CSVReader, FastaReader
@@ -252,17 +253,9 @@ class DataManager:
         cfe = ClassificationEngine()
         conParser = ContigParser()
         bamParser = BamParser()
-        if markerFile is None:
-            if workingDirectory is None:
-                raise ValueError('Working directory cannot be none if markerFile is not specified.')
-            if graftmPackageList is not None:
-                graftmPackages = dict([(os.path.basename(name)[:-len('.gpkg')], name) for name in graftmPackageList])
-                external_mapper = GraftMMapper(workingDirectory, graftmPackages, silent=True)
-            else:
-                external_mapper = SingleMMapper(workingDirectory, silent=True)
-            mapper = ExternalMapRunner(external_mapper)
-        else:
-            mapper = MappingParser()
+        mapper = Mapper(working_directory=workingDirectory,
+                        graftm_package_list=graftmPackageList,
+                        marker_file=markerFile)
         
         # create the db
         try:
@@ -340,16 +333,9 @@ class DataManager:
                 #------------------------
                 # parse mapping files
                 #------------------------
-                if markerFile is None:
-                    (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.getMappings(contigsFile, cid_2_indices, cfe)
-                else:
-                    with open(marker_file, "r") as f:
-                        try:
-                            (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid_2_indices, cfe)
-                        except:
-                            print "Error parsing mappings"
-                            raise
-                            
+                (contig_indices, marker_indices, marker_names, marker_counts, 
+                        taxstrings) = mapper.getMappings(contigsFile, cid_2_indices) 
+                (tax_table, taxon_names) = cfe.parse(taxstrings)
                 num_mappings = len(contig_indices)
                 num_markers = len(marker_names)
                 
@@ -1777,41 +1763,61 @@ class BamParser:
 ###############################################################################
 ###############################################################################
 
-class ExternalMapRunner:
+
+
+class Mapper:
     """Calculate mappings using external mapper."""
     
-    def __init__(self, mapper):
-        self._mapper = mapper
+    def __init__(self, working_directory=None, graftm_package_list=None, marker_file=None):
+        self._working_directory = working_directory
+        self._marker_file = marker_file
+        if self._marker_file is not None:
+            self._mode = "file"
+        elif graftm_package_list is not None:
+            self._graftm_package_list = dict([(os.path.basename(name)[:-len('.gpkg')], name) for name in graftm_package_list])
+            self._mode = "graftm"
+        else:
+            self._mode = "singlem"
         
-    def getMappings(self, contig_file, cid2Indices, cfe):
+    def _runMapper(self, contig_file, cid_2_indices, mode, working_directory):
+        if mode=="graftm":
+            mapper = GraftMMapper(working_directory, self._graftm_package_list, silent=True)
+        elif mode=="singlem":
+            mapper = SingleMMapper(working_directory, silent=True)
+        else:
+            raise ValueError("Invalid argument paramter 'mode': '%s'"  % mode)
+        return mapper.getMappings(contig_file, cid_2_indices)
+        
+    def getMappings(self, contig_file, cid_2_indices):
         print "Mapping contigs"
-        (con_names, map_markers, map_taxstrings) = self._mapper.getMappings(contig_file)
+        if self._mode=="file":
+            mapper = MappingParser()
+            with open(self._marker_file, "r") as f:
+                try:
+                    (con_indices, map_markers, map_taxstrings) = mapper.parse(f, cid_2_indices)
+                except:
+                    print "Error parsing mappings"
+                    raise
         
-        con_indices = []
-        keep_indices = []
-        for (i, name) in enumerate(con_names):
-            try:
-                contig_index = cid2Indices[name]
-            except:
-                continue
-            
-            con_indices.append(contig_index);
-            keep_indices.append(i);
+        working_directory = self._working_directory
+        if working_directory is None:
+            tmp = tempdir.TempDir()
+            working_directory = tmp.name
+            (con_indices, map_markers, map_taxstrings) = self._runMapper(contig_file, cid_2_indices, self._mode, working_directory)
+            tmp.dissolve()
+        else:
+            (con_indices, map_markers, map_taxstrings) = self._runMapper(contig_file, cid_2_indices, self._mode, working_directory)
             
         con_indices = np.array(con_indices);
-        keep_indices = np.array(keep_indices);
         map_markers = np.array(map_markers);
         map_taxstrings = np.array(map_taxstrings);
-        map_markers = map_markers[keep_indices];
-        map_taxstrings = map_taxstrings[keep_indices];
         (marker_names, marker_indices, marker_counts) = np.unique(map_markers, return_inverse=True, return_counts=True)
-        (tax_table, taxon_names) = cfe.parse(map_taxstrings)
-        return (con_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, map_taxstrings)
+        return (con_indices, marker_indices, marker_names, marker_counts, map_taxstrings)
         
         
 class MappingParser:
     """Read a file of tab delimited contig names, marker names and optionally classifications."""
-    def parse(self, fp, cid2Indices, cfe=None):
+    def parse(self, fp, cid2Indices):
         """Do the heavy lifting of parsing"""
         print "Parsing mappings"
         contig_indices = []
@@ -1831,13 +1837,9 @@ class MappingParser:
                 map_taxstrings.append(l[2])
             except IndexError:
                 map_taxstrings.append("")
-        contig_indices = np.array(contig_indices)
-        map_markers = np.array(map_markers)
-        map_taxstrings = np.array(map_taxstrings)
-        (marker_names, marker_indices, marker_counts) = np.unique(map_markers, return_inverse=True, return_counts=True)
-        (tax_table, taxon_names) = cfe.parse(map_taxstrings)
-        return (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, map_taxstrings)
-  
+                
+        return (contig_indices, map_markers, map_taxstrings)
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
