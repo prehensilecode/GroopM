@@ -152,14 +152,14 @@ class DataManager:
     #------------------------
     # **Mappings***
     #table = 'mappings'
-    mappings_desc = [('marker', int),               # marker name id
+    mappings_desc = [('marker', int),               # reference to index in meta/markers
                      ('contig', int),               # reference to index in meta/contigs
                      ('taxstring', '|S512')         # original taxstring
                      ]
     #
     # **Mapping classifications***
     #table = 'classification'
-    classification_desc = [('domain', int),         # taxon name id
+    classification_desc = [('domain', int),         # reference to index in meta/taxons
                            ('phylum', int),
                            ('class', int),
                            ('order', int),
@@ -201,7 +201,7 @@ class DataManager:
     #
     # ** Reachability **
     #table = 'reachability'                                                     # [NEW in version 6]
-    reachability_desc = [('contig', int),
+    reachability_desc = [('contig', int),       # reference to index in meta/contigs
                          ('distance', float)
                          ]
     #
@@ -333,8 +333,7 @@ class DataManager:
                 #------------------------
                 # parse mapping files
                 #------------------------
-                (contig_indices, marker_indices, marker_names, marker_counts, 
-                        taxstrings) = mapper.getMappings(contigsFile, cid_2_indices) 
+                (contig_indices, marker_indices, marker_names, marker_counts, taxstrings) = mapper.getMappings(contigsFile, cid_2_indices) 
                 (tax_table, taxon_names) = cfe.parse(taxstrings)
                 num_mappings = len(contig_indices)
                 num_markers = len(marker_names)
@@ -989,7 +988,7 @@ class DataManager:
         print "    Re-run core to get better bins"
 
         cfe = ClassificationEngine()
-        mapper = MappingParser()
+        mapper = Mapper(graftm_package_list=[])
         
         # contig distances
         cov_profiles = self.getCoverages(dbFileName)
@@ -998,18 +997,13 @@ class DataManager:
         num_cons = len(con_lengths)
         
         # mappings
+        contig_file = raw_input('\nPlease specify fasta file containing the bam reference sequences: ')
         con_names = self.getContigNames(dbFileName)
         cid2Indices = dict(zip(con_names, range(len(con_names))))
-        
-        markerFile = raw_input('\nPlease specify file containing contigs, mapped markers and taxonomies: ')
-        with open(markerFile, 'r') as f:
-            try:
-                (contig_indices, marker_indices, marker_names, marker_counts, tax_table, taxon_names, taxstrings) = mapper.parse(f, cid2Indices, cfe)
-                num_mappings = len(contig_indices)
-                num_markers = len(marker_names)
-            except:
-                print "Error parsing mapping data"
-                raise
+        (contig_indices, marker_indices, marker_names, marker_counts, taxstrings) = mapper.getMappings(contig_file, cid2Indices)
+        (tax_table, taxon_names) = cfe.parse(taxstrings)
+        num_mappings = len(contig_indices)
+        num_markers = len(marker_names)
                                          
         DB6_mappings_desc = self.mappings_desc
         mappings_data = np.array(zip(marker_indices, contig_indices, taxstrings), dtype=DB6_mappings_desc)
@@ -1263,10 +1257,10 @@ class DataManager:
 #------------------------------------------------------------------------------
 # GET TABLES - MARKERS
 
-    def getMarkerNames(self, dbFileName):
+    def getMarkerNames(self, dbFileName, indices=[]):
         """Load marker names"""
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            return np.array([x for x in h5file.root.markers.cols.markerid])
+            return np.array([x["markerid"] for x in self.itterows(h5file.root.markers, indices)])
             
     def getMarkerStats(self, dbFileName):
         """Load data from markers table
@@ -1280,10 +1274,10 @@ class DataManager:
 #------------------------------------------------------------------------------
 # GET TABLES - TAXONS
 
-    def getTaxonNames(self, dbFileName):
+    def getTaxonNames(self, dbFileName, indices=[]):
         """Load taxon names"""
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            return np.array([x["taxonid"] for x in h5file.root.taxons])
+            return np.array([x["taxonid"] for x in self.itterows(h5file.root.taxons, indices)])
             
 #------------------------------------------------------------------------------
 # GET METADATA
@@ -1468,10 +1462,6 @@ class DataManager:
         """Dump data to file"""
         header_strings = []
         data_arrays = []
-
-        if fields == ['all']:
-            fields = ['names', 'sizes', 'gc', 'bins', 'coverage', 'ncoverage', 'mers']
-
         num_fields = len(fields)
         data_converters = []
 
@@ -1515,6 +1505,51 @@ class DataManager:
                         header_strings.append(mer)
                     data_arrays.append(self.getKmerSigs(dbFileName))
                     data_converters.append(lambda x : separator.join(["%0.4f" % i for i in x]))
+        except:
+            print "Error when reading DB:", dbFileName, sys.exc_info()[0]
+            raise
+
+        try:
+            with open(outFile, 'w') as fh:
+                if useHeaders:
+                    header = separator.join(header_strings) + "\n"
+                    fh.write(header)
+
+                num_rows = len(data_arrays[0])
+                for i in range(num_rows):
+                    fh.write(data_converters[0](data_arrays[0][i]))
+                    for j in range(1, num_fields):
+                        fh.write(separator+data_converters[j](data_arrays[j][i]))
+                    fh.write('\n')
+        except:
+            print "Error opening output file %s for writing" % outFile
+            raise
+            
+            
+    def dumpMarkers(self, dbFileName, fields, outFile, separator, useHeaders):
+        """Dump data to file"""
+        header_strings = []
+        data_arrays = []
+        num_fields = len(fields)
+        data_converters = []
+
+        try:
+            for field in fields:
+                if field == 'contigs':
+                    header_strings.append('cid')
+                    data_arrays.append(self.getContigNames(dbFileName, self.getMappingContigs(dbFileName)))
+                    data_converters.append(lambda x : x)
+
+                elif field == 'markers':
+                    header_strings.append('marker')
+                    data_arrays.append(self.getMarkerNames(dbFileName, self.getMappingMarkers(dbFileName)))
+                    data_converters.append(lambda x : x)
+
+                elif field == 'taxstrings':
+                    header_strings.append('taxonomy')
+                    data_arrays.append(self.getMappingTaxstrings(dbFileName))
+                    data_converters.append(lambda x : x)
+
         except:
             print "Error when reading DB:", dbFileName, sys.exc_info()[0]
             raise
@@ -1763,8 +1798,6 @@ class BamParser:
 ###############################################################################
 ###############################################################################
 
-
-
 class Mapper:
     """Calculate mappings using external mapper."""
     
@@ -1774,7 +1807,7 @@ class Mapper:
         if self._marker_file is not None:
             self._mode = "file"
         elif graftm_package_list is not None:
-            self._graftm_package_list = dict([(os.path.basename(name)[:-len('.gpkg')], name) for name in graftm_package_list])
+            self._graftm_package_list = graftm_package_list
             self._mode = "graftm"
         else:
             self._mode = "singlem"

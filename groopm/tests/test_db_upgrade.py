@@ -55,8 +55,6 @@ class TestDBUpgrade:
         # generated copies
         self.dbCopies = dict(zip(self.dbVersions, [os.path.join(self.dataDir, "v%dto%d.gm" % (ver, __current_GMDB_version__)) for ver in self.dbVersions]))
         
-
-        
     @classmethod
     def teardown_class(self):
         for ver in self.dbVersions:
@@ -78,7 +76,7 @@ class TestDBUpgrade:
         db_copy = self.generate_db_copy(0)
         cmd = "PYTHONPATH=%s:$PYTHONPATH %s %s" % (os.getcwd(), self.dbUpgradeScript, db_copy)
         proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        (stdoutdata, _stderrdata) = proc.communicate("\n".join([self.fasta, self.markerFile]))
+        (stdoutdata, _stderrdata) = proc.communicate("\n".join([self.fasta, fasta]))
         if proc.returncode != 0:
             print stdoutdata
             raise AssertionError("Upgrade script returned error code: %d" % proc.returncode)
@@ -87,7 +85,7 @@ class TestDBUpgrade:
         db_copy = self.generate_db_copy(5)
         cmd = "PYTHONPATH=%s:$PYTHONPATH %s %s" % (os.getcwd(), self.dbUpgradeScript, db_copy)
         proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        (stdoutdata, _stderrdata) = proc.communicate(self.markerFile)
+        (stdoutdata, _stderrdata) = proc.communicate(self.fasta)
         if proc.returncode != 0:
             print stdoutdata
             raise AssertionError("Upgrade script returned error code: %d" % proc.returncode)

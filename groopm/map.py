@@ -96,6 +96,8 @@ class SingleMMapper:
                         map_taxstrings.append(l[2])
                     except IndexError:
                         map_taxstrings.append("")
+        except IOError:
+            pass
         except:
             print "Error when reading SingleM otu table", sys.exc_info()[0]
             raise
@@ -121,9 +123,17 @@ class SingleMMapper:
 class GraftMMapper:
     """Class to find marker gene hits for a set of GraftM packages"""
     
-    def __init__(self, workingDir, packageList, silent=False, force=False):
+    GRAFTM_PACKAGE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'graftm_packages'))
+
+    def getDefaultPackages(self):
+        return [os.path.join(self.GRAFTM_PACKAGE_DIR, name) for name in os.listdir(self.GRAFTM_PACKAGE_DIR) if name.endswith('.gpkg')];
+    
+    def __init__(self, workingDir, packageList=[], silent=False, force=False):
         self.workingDir = workingDir
-        self.packageList = packageList
+        if len(packageList) > 0:
+            self.packageList = packageList
+        else:
+            self.packageList = self.getDefaultPackages()
         self.silent = silent
         self.force = force
         
@@ -132,9 +142,7 @@ class GraftMMapper:
             self.errorOutput = '2> /dev/null'
             
     def getMappings(self, contigFile, cid2Indices):
-        read_tax_files = {}
-        for (name, package) in self.packageList.iteritems():
-            read_tax_files[name] = self.mapPackage(contigFile, name, package)
+        read_tax_files = dict([self.mapPackage(contigFile, package) for package in self.packageList])
         
         con_indices = []
         map_markers = []
@@ -151,21 +159,28 @@ class GraftMMapper:
                         con_indices.append(contig_index)
                         map_markers.append(name)
                         map_taxstrings.append(taxstring)
+            except IOError:
+                pass
             except:
                 print "Error when reading GraftM taxonomy assigned using package: ", name, sys.exc_info()[0]
                 raise
                 
         return (con_indices, map_markers, map_taxstrings)
         
-    def mapPackage(self, contigFile, package_name, package):
+    def mapPackage(self, contigFile, package):
         basename = os.path.basename(contigFile)
         prefix = None
         for ext in [ '.fa', '.fna', '.fasta', '.fa.gz', '.fna.gz', '.fasta.gz']:
             if basename.endswith(ext):
-                prefix = basename[:len(basename)-len(ext)]
+                prefix = basename[:-len(ext)]
                 break
         if prefix is None:
             raise ValueError("Not a compatible extension {.fa[.gz]|.fna[.gz]|.fasta[.gz]} using contigs file: %s" % contigsFile)
+        package_basename = os.path.basename(package)
+        if package_basename.endswith(".gpkg"):
+            package_name = package_basename[:-len(".gpkg")]
+        else:
+            raise ValueError("Expected GraftM package folder with .gpkg extension. Found '%s'." % package)
         output_dir = os.path.join(self.workingDir, "%s_%s" % (prefix, package_name))
         cmd = ' '.join(['graftM graft --forward',
                         contigFile,
@@ -176,8 +191,7 @@ class GraftMMapper:
                         '--verbosity 2',
                         self.errorOutput])
         subprocess.check_call(cmd, shell=True)
-        return os.path.join(output_dir, prefix, "%s_read_tax.tsv" % prefix)
-        
+        return (package_name, os.path.join(output_dir, prefix, "%s_read_tax.tsv" % prefix))
         
     def readTaxTable(self, otu_file):
         """Parse graftm taxonomy table"""
