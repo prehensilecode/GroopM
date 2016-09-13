@@ -194,7 +194,7 @@ class ProfileDistanceEngine:
     
     @profile
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
+        (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
         return (rank_norms, weights)
     
