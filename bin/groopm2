@@ -334,7 +334,7 @@ class dump_command_configure:
         parser.add_argument('--markers', action="store_true", help="dump marker hits")
         parser.set_defaults(run=self)
 
-    def __call__(_self, options):
+    def __call__(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in data dumping mode..." % __version__
@@ -342,7 +342,7 @@ class dump_command_configure:
 
         # prep fields. Do this first cause users are mot likely to
         # mess this part up!
-        allowable_fields = DUMP_MARKER_FIELDS if options.markers else DUMP_FIELDS
+        allowable_fields = self.DUMP_MARKER_FIELDS if options.markers else self.DUMP_FIELDS
         fields = options.fields.split(',')
         if fields == ['all']:
             fields = allowable_fields

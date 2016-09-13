@@ -1260,7 +1260,7 @@ class DataManager:
     def getMarkerNames(self, dbFileName, indices=[]):
         """Load marker names"""
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            return np.array([x["markerid"] for x in self.itterows(h5file.root.markers, indices)])
+            return np.array([x["markerid"] for x in self.iterrows(h5file.root.markers, indices)])
             
     def getMarkerStats(self, dbFileName):
         """Load data from markers table
@@ -1277,7 +1277,7 @@ class DataManager:
     def getTaxonNames(self, dbFileName, indices=[]):
         """Load taxon names"""
         with tables.open_file(dbFileName, 'r', root_uep="/meta") as h5file:
-            return np.array([x["taxonid"] for x in self.itterows(h5file.root.taxons, indices)])
+            return np.array([x["taxonid"] for x in self.iterrows(h5file.root.taxons, indices)])
             
 #------------------------------------------------------------------------------
 # GET METADATA
