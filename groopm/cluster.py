@@ -88,8 +88,8 @@ class CoreCreator:
             minLength,
             minSize,
             minPts,
-            savedDistsPrefix="",
-            keepDists=False,
+            #savedDistsPrefix="",
+            #keepDists=False,
             force=False):
         # check that the user is OK with nuking stuff...
         if not force and not self._pm.promptOnOverwrite():
@@ -99,18 +99,10 @@ class CoreCreator:
                                    minLength=minLength
                                    )
         
-        if savedDistsPrefix=="":
-            savedDistsPrefix = self._dbFileName
-        savedCovDists = savedDistsPrefix+".cov.npy"
-        savedKmerDists = savedDistsPrefix+".kmer.npy"
-        savedWeights = savedDistsPrefix+".weights.npy"
         
         ce = ClassificationClusterEngine(profile,
                                          minPts=minPts,
-                                         minSize=minSize,
-                                         savedCovDists=savedCovDists,
-                                         savedKmerDists=savedKmerDists,
-                                         savedWeights=savedWeights,
+                                         minSize=minSize
                                          )
         ce.makeBins(timer,
                     out_bins=profile.binIds,
@@ -123,15 +115,6 @@ class CoreCreator:
         self._pm.setReachabilityOrder(profile)
         self._pm.setBinAssignments(profile, nuke=True)
         print "    %s" % timer.getTimeStamp()
-        
-        # Remove created files
-        if not keepDists:
-            try:
-                os.remove(savedCovDists)
-                os.remove(savedKmerDists)
-                os.remove(savedWeights)
-            except:
-                raise
             
         
         
@@ -170,18 +153,13 @@ class HierarchicalClusterEngine:
 class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     
-    def __init__(self, profile, minPts, minSize, savedCovDists="", savedKmerDists="", savedWeights=""):
+    def __init__(self, profile, minPts, minSize):
         self._profile = profile
         self._minPts = minPts
         self._minSize = minSize
-        self._savedCovDists = savedCovDists
-        self._savedKmerDists = savedKmerDists
-        self._savedWeights = savedWeights
     
     def distances(self):
-        de = CachingProfileDistanceEngine(savedCovDists=self._savedCovDists, 
-                                          savedKmerDists=self._savedKmerDists,
-                                          savedWeights=self._savedWeights)
+        de = ProfileDistanceEngine()
         den_dists = de.makeDensityDistances(self._profile.covProfiles,
                                             self._profile.kmerSigs,
                                             self._profile.contigLengths, 
