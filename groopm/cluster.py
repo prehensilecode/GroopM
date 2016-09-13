@@ -285,13 +285,15 @@ class CachingProfileDistanceEngine:
             np.save(self._savedKmerDists, kmer_ranks)
             cov_ranks = np.load(self._savedCovDists)
         return (cov_ranks, kmer_ranks, cached_weights)
-        
+    
+    @profile
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks, cached_weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if cached_weights is None:
             cached_weights = self._getWeights(contigLengths)
         return (cov_ranks, kmer_ranks, cached_weights)
     
+    @profile
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks, w) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         del w # save some memory
@@ -299,7 +301,7 @@ class CachingProfileDistanceEngine:
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
     
-    
+    @profile
     def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
         (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if not silent:
