@@ -181,6 +181,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
 
+    @profile
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         n = len(contigLengths)
         if(not silent):
@@ -191,11 +192,13 @@ class ProfileDistanceEngine:
         (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
         return (cov_ranks, kmer_ranks, weights)
     
+    @profile
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
         rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
         return (rank_norms, weights)
     
+    @profile
     def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
         (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if not silent:
