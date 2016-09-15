@@ -64,7 +64,7 @@ np.seterr(all='raise')
 ############################################################################### 
     
 def maxscoresbelow(Z, scores, fun=np.maximum):
-    """Compute the maximum cumulative score of clusters below current cluster.
+    """Compute maximum cumulative score of disjoint clusters below nodes.
     
     Parameters
     ----------

@@ -376,19 +376,6 @@ class FlatClusterEngine:
     
     Subclass should provide `getScores` and `isLowQuality` methods with the
     described interfaces.
-    
-    
-            - A quality scoring oracle, which we give the cluster hierarchy
-              and get back qualtiy scores for each cluster;
-            - A minimum quality oracle, which we give the cluster hierarchy
-              and get back which clusters are below standard.
-        
-        The algorithm returns a set of flat clusters that satisfy the following
-        constraints:
-            1. The sum quality of the clusters returned is maximised;
-            2. As allowed by 1, the largest number of clusters that exceed a
-               minimum standard are returned;
-            3. As allowed by 1 and 2, the largest clusters are returned.
     """
     
     def unbinClusters(self, unbin, out_bins):
@@ -407,12 +394,18 @@ class FlatClusterEngine:
                      return_conservative_leaders=False):
         """Implements algorithm for cluster formation.
         
-        The set of flat clusters returned satisfy the following constraints:
-            1. The sum quality of the clusters (as reported by `getScore` method)
-               is maximised;
-            2. As allowed by 1, the number of clusters that exceed a
-               minimum standard (as reported by `isLowQuality` method) is maximised;
-            3. As allowed by 1 and 2, the total size of clusters is maximised.
+        The set of flat clusters returned (should) satisfy the following
+        constraints:
+            1. Clusters exceed a minimum standard (as reported by
+               `isLowQuality` method);
+            2. As allowed by 1, the number of clusters is the maximimum such
+               that no smaller number of clusters has a higher sum quality (as
+               reported by `getScore` method);
+            3. As allowed by 1 and 2, the total size of clusters is maximum.
+        
+        The strategy used is:
+            - Find a minimal set of clusters that maximises the sum quality
+            - Grow clusters by greedily merging only below standard clusters
         
         Parameters
         ----------
@@ -439,17 +432,10 @@ class FlatClusterEngine:
         scores = self.getScores(Z)
         scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
         # NOTE: support is a measure of the degree to which a cluster quality
-        # improves on the combined quality of the best clusters below. Positive
-        # values indicate that the parent cluster should be favoured, zero
-        # values indicate no preference, and negative values indicate that
-        # the best clusters below should be prefered.
-        # NOTE: maxscorebelow is what we want here to satisfy constraint 1 above.
-        # If a cluster quality is better than the sum of the best clusters below
-        # it, that cluster should be considered and it's score propagated, otherwise
-        # propagate the sum score of the best clusters below the node. At each node 
-        # in the hierarchy the sum of descendent cluster scores will be maximised, 
-        # and it follows that this also holds at the root of the hierarchy, satisfying
-        # constraint 1.
+        # improves on the combined quality of the best clusters below (computed
+        # by maxscorebelow). Positive values indicate that the parent cluster 
+        # should be favoured, zero values indicate no preference, and negative
+        # values indicate that the best clusters below should be prefered.
         support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
         support = support[flat_ids] # map values from parents to descendents of equal height
         node_support = np.concatenate((scores, support))
@@ -457,19 +443,27 @@ class FlatClusterEngine:
         is_low_quality_cluster = self.isLowQualityCluster(Z)
         is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
         
-        # get leaders of supported bins
+        # NOTE: conservative bins are a minimal set of clusters that have
+        # maximum combined quality. The returned conservative bins have below
+        # standard bins dissolved.
         (conservative_bins, conservative_leaders) = hierarchy.fcluster_merge(Z, support>0, return_nodes=True)
         conservative_bins += 1 # bin ids start at 1
         self.unbinClusters(is_low_quality_cluster[conservative_leaders], out_bins=conservative_bins)
         
-        # We want to recruit nonsupported clusters to bins if splitting would result in a low quality bin
+        # NOTE: A seed cluster is any putative cluster that meets the minimum
+        # standard, and is not already part of a conservative bin. 
         is_seed_cluster = np.logical_not(is_low_quality_cluster)
         is_seed_cluster[hierarchy.descendents(Z, conservative_leaders)] = False
         is_seed_cluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent scores to equal height parents
+        # NOTE: to_merge is true for nodes that have at most 1 seed cluster
+        # below them. We greedily merge these nodes into clusters to obtain the
+        # largest possible clusters, without merging any two seed clusters. 
         to_merge = hierarchy.maxscoresbelow(Z, is_seed_cluster.astype(int), fun=operator.add)<=1
         to_merge = to_merge[flat_ids]
         (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=True)
         bins += 1 # bin ids start at 1
+        # NOTE: any new clusters that are below minimum standard are dissolved
+        # here. 
         self.unbinClusters(is_low_quality_cluster[leaders], out_bins=bins)
         bins[is_low_quality_cluster[leaders]] = 0
         (_, new_bids) = np.unique(bins[bins != 0], return_inverse=True)
