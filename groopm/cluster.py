@@ -223,7 +223,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
 ###############################################################################
 ###############################################################################
 
-class ProfileDistanceEngine_:
+class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
 
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -547,13 +547,15 @@ class MarkerCheckFCE(FlatClusterEngine):
     def isLowQualityCluster(self, Z):
         Z = np.asarray(Z)
         n = sp_hierarchy.num_obs_linkage(Z)
+        
+        # Quality clusters have total contig length at least minSize (if
+        # defined) or a number of contigs at least minPts (if defined)
         doMinSize = self._minSize is not None
         doMinPts = self._minPts is not None
         if doMinSize:
             weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
             weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
-            is_low_quality = weights < self._minSize
-            
+            is_low_quality = weights < self._minSize   
         if doMinPts:
             is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[:, 2] < self._minPts))
             if doMinSize:
@@ -576,7 +578,20 @@ class ClusterQualityEngine:
     """
   
     def makeScores(self, Z):
-        """Compute coefficients for hierarchical clustering"""
+        """Compute coefficients for hierarchical clustering
+        
+        Parameters
+        ----------
+        Z : ndarray
+            Linkage matrix encoding a hierarchical clustering.
+        
+        Returns
+        -------
+        scores : ndarray
+            1-D array. `scores[i]` returns the score for cluster `i`
+            computed from the concatenated data of leaves below the cluster
+            using `getScore`.
+        """
         Z = np.asarray(Z)
         n = Z.shape[0]+1
         
@@ -647,7 +662,29 @@ class ClusterQualityEngine:
         
         
 class MarkerCheckCQE(ClusterQualityEngine):
-    """Cluster quality scores using taxonomy and marker completeness"""
+    """Cluster quality scores using taxonomy and marker completeness.
+    
+    We use extended BCubed metrics where precision and recall metrics are
+    defined for each observation in a cluster.
+    
+    Traditional BCubed metrics assume that extrinsic categories are known 
+    for the clustered items. In our case we have two sources of information - 
+    mapping taxonomies and mapping markers. Mapping taxonomies can be used to
+    group items that are 'similar enough'. Single copy markers can be used to
+    distinguish when items should be in different bins.
+    
+    With these factors in mind, we have used the following adjusted BCubed 
+    metrics:
+        - Precision represents for an item how many of the item's cluster 
+          are taxonomically similar items with different markers. Analogous to
+          an inverted genome 'contamination' measure.
+        - Recall represents for an item how many of taxonomically similar items with
+          different markers are found in the item's cluster. Analogous to genome
+          'completeness' measure.
+          
+    These metrics are combined in a naive linear manner using a mixing fraction
+    alpha which can be combined additively when assessing multiple clusters.
+    """
     
     def __init__(self, profile, filter_leaves=[]):
         self._alpha = 0.5
@@ -665,7 +702,7 @@ class MarkerCheckCQE(ClusterQualityEngine):
         # at most once in each cluster.
         # This is the number of marker groups represented among 'similar'
         # mappings for each mapping. We use this number as the ideal number of
-        # categories when computing the BCubed completeness score for a mapping.
+        # categories when computing the completeness / recall score for a cluster item.
         self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
         self._mscalefactors = 1./self._mcounts
         
@@ -673,11 +710,12 @@ class MarkerCheckCQE(ClusterQualityEngine):
         self._filterLeaves = filter_leaves
         
     def getLeafData(self):
+        """Leaf data is a list of indices of mappings."""
         filter_leaf_set = set(self._filterLeaves)
         return dict([(i, data) for (i, data) in self._mapping.iterindices() if i not in filter_leaf_set])
         
     def getScore(self, indices):
-        """Compute modified BCubed completeness and precision scores"""
+        """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
         
         # Compute number of marker groups represented among 'similar' items with each item in cluster
