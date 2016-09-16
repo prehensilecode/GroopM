@@ -1293,7 +1293,7 @@ class DataManager:
         # becuase earlier versions of GM didn't include a format parameter
         try:
             this_DB_version = self._getMeta(dbFileName)['formatVersion']
-        except IndexError:
+        except ValueError:
             # this happens when an oldskool formatless DB is loaded
             this_DB_version = 0
         return this_DB_version

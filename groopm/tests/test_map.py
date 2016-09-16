@@ -25,6 +25,7 @@ __email__ = "tim.lamberton@gmail.com"
 ###############################################################################
 
 from groopm.map import SingleMMapper, GraftMMapper
+from groopm.utils import FastaReader
 import os
 import subprocess
 import shutil
@@ -40,15 +41,30 @@ class TestMapper:
         self.graftmPackages = dict([(name, os.path.join(self.graftmPackageDir, name+'.gpkg')) for name in self.graftmPackageNames])
         self.singlemMapper = SingleMMapper(self.workingDir)
         self.graftmMapper = GraftMMapper(self.workingDir, self.graftmPackages)
+        self._cid2Indices = None #cache contig index mapping
         
     @classmethod
     def teardown_class(self):
         shutil.rmtree(self.workingDir)
         os.mkdir(self.workingDir)
 
+    def getContigNames(self):
+        if self._cid2Indices is None:
+            reader = FastaReader()
+            con_names = []
+            with open(self.contigsFile, 'r') as f:
+                for (cid,_seq) in reader.readFasta(f):
+                    con_names.append(cid)
+            self._cid2Indices = dict(zip(range(len(con_names)), sorted(con_names)))
+            
+        return self._cid2Indices
+        
     def testSingleMMapper(self):
-        (contigs, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile)
+        cid2Indices = self.getContigNames()
+        (con_indices, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile, cid2Indices)
 
+if False:
     def testGraftMMapper(self):
-        (contigs, markers, taxstrings) = self.graftmMapper.getMappings(self.contigsFile)
+        cid2Indices = self.getContigNames()
+        (con_indices, markers, taxstrings) = self.graftmMapper.getMappings(self.contigsFile, cid2Indices)
 
