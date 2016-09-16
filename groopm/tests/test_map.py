@@ -63,7 +63,6 @@ class TestMapper:
         cid2Indices = self.getContigNames()
         (con_indices, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile, cid2Indices)
 
-if False:
     def testGraftMMapper(self):
         cid2Indices = self.getContigNames()
         (con_indices, markers, taxstrings) = self.graftmMapper.getMappings(self.contigsFile, cid2Indices)
