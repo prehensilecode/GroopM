@@ -429,7 +429,7 @@ class FlatClusterEngine:
         # same node as the highest ancestor, with children corresponding to the union of
         # the combined nodes' children.
         flat_ids = hierarchy.flatten_nodes(Z)
-        scores = self.getScores(Z)
+        scores = np.asarray(self.getScores(Z))
         scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
         # NOTE: support is a measure of the degree to which a cluster quality
         # improves on the combined quality of the best clusters below (computed
@@ -440,7 +440,7 @@ class FlatClusterEngine:
         support = support[flat_ids] # map values from parents to descendents of equal height
         node_support = np.concatenate((scores, support))
         
-        is_low_quality_cluster = self.isLowQualityCluster(Z)
+        is_low_quality_cluster = np.asarray(self.isLowQualityCluster(Z))
         is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
         
         # NOTE: conservative bins are a minimal set of clusters that have

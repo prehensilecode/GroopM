@@ -28,7 +28,7 @@ from nose.tools import assert_true
 import numpy as np
 
 # local imports
-from tools import equal_arrays
+from tools import equal_arrays, is_isomorphic
 from groopm.cluster import ClusterQualityEngine, FlatClusterEngine
 
 ###############################################################################
@@ -97,8 +97,8 @@ def test_ClusterQualityEngine():
              
 class ClusterEngineTester(FlatClusterEngine):
     def __init__(self, scores, qualities):
-        self.getScores = lambda: scores
-        self.isLowQuality = lambda: qualities
+        self.getScores = lambda _: scores
+        self.isLowQualityCluster = lambda _: qualities
     
 def test_ClusterEngineTester(): 
     #
@@ -128,9 +128,11 @@ def test_ClusterEngineTester():
     [2:0]-=---+   =                [2:0]-+
           =========
     """
-    Z1_eq = np.array([[0., 1., 1., 2.],
-                      [2., 3., 1., 3.]])
-    assert_true(is_isomorphic(ce1.makeClusters(Z1_eq),
+    Z2 = np.array([[0., 1., 1., 2.],
+                   [2., 3., 1., 3.]])
+    q2 = [True, False, False, False, False]
+    ce2 = ClusterEngineTester([0]*len(q2), q2)
+    assert_true(is_isomorphic(ce2.makeClusters(Z2),
                               [1, 2, 3]),
                 "ClusterEngine with uniform zero scores won't partially merge "
                 "nested clusters when parent cluster won't merge")
@@ -144,28 +146,38 @@ def test_ClusterEngineTester():
     [0:0]    |-[4:1]
     [2:1]----+
     """
-    Z2 = np.array([[0., 1., 1., 2.],
+    Z3 = np.array([[0., 1., 1., 2.],
                    [2., 3., 2., 2.]])
-    v2 = [0, 1, 1, 2, 1]
-    ce2 = ClusterEngineTester(v2, [False]*len(v2))
-    assert_true(is_isomorphic(ce2.makeClusters(Z2),
+    v3 = [0, 1, 1, 2, 1]
+    ce3 = ClusterEngineTester(v3, [False]*len(v3))
+    assert_true(is_isomorphic(ce3.makeClusters(Z3),
                               [1, 1, 2]),
                 "ClusterEngine with uniform quality clusters merges "
                 "child clusters if merged cluster improves combined "
                 "score")
     
     """Clustering with nested equal height branches.
-          ==Equal===
-    [1:1]-=+       =              [1:1]-+
-          =|-[3:0] =                    |
-    [0:0]-=+  |    = >=Treat as=> [0:0]-+-[4:0]
-          =  [4:0] =                    |
-    [2:0]-=---+    =              [2:0]-+
-          ==========
+          ==Equal==
+    [1:1]-=--+    =              [1:1]-+
+          = [3:2] =                    |
+    [0:0]-=--+    = >=Treat as=> [0:0]-+-[4:1]
+          = [4:1] =                    |
+    [2:1]-=--+    =              [2:1]-+
+          =========
     """
-    Z2_eq = np.array([[0., 1., 1., 2.],
-                      [2., 3., 1., 3.]])
-    assert_true(is_isomorphic(ce2.makeClusters(Z2),
+    Z4a = np.array([[0., 1., 1., 2.],
+                    [2., 3., 1., 3.]])
+    Z4b = np.array([[0., 2., 1., 2.],
+                    [1., 3., 1., 3.]]) # equivalent
+    Z4c = np.array([[1., 2., 1., 2.],
+                    [0., 3., 1., 3.]]) # equivalent
+    v4 = [0, 1, 1, 2, 1]
+    ce4 = ClusterEngineTester(v4, [False]*len(v4))
+    assert_true(is_isomorphic(ce4.makeClusters(Z4a),
+                              [1, 2, 3]) and
+                is_isomorphic(ce4.makeClusters(Z4b),
+                              [1, 2, 3]) and
+                is_isomorphic(ce4.makeClusters(Z4c),
                               [1, 2, 3]),
                 "ClusterEngine with uniform quality clusters won't partially "
                 "merge nested clusters when parent cluster won't merge")
@@ -179,11 +191,11 @@ def test_ClusterEngineTester():
     [0:0]    |-[4:2]
     [2:1]----+
     """
-    Z3 = np.array([[0., 1., 1., 2.],
+    Z5 = np.array([[0., 1., 1., 2.],
                    [2., 3., 2., 2.]])
-    v3 = [0, 1, 1, 0, 2]
-    ce3 = ClusterEngineTester(v3, [False]*len(v3))
-    assert_true(is_isomorphic(ce3.makeClusters(Z3),
+    v5 = [0, 1, 1, 0, 2]
+    ce5 = ClusterEngineTester(v5, [False]*len(v5))
+    assert_true(is_isomorphic(ce5.makeClusters(Z5),
                               [1, 2, 3]),
                 "ClusterEngine with uniform quality clusters doesn't merge "
                 "descendent clusters if merged cluster combined  score is "
@@ -195,25 +207,30 @@ def test_ClusterEngineTester():
     clusters if it improves the combined cluster score of non-nested
     clusters below it. The tree for this test is represented below:
         
-    [2:0]-----------+                    [2:0]---------+
-          ==Equal===|                                  |
-    [1:1]-=+       =|-[8:1]              [1:1]-+       |-[8:1]
-          =|-[6:4] =|                          |       |
-    [0:0]-=+  |    =|       >=Treat as=> [0:0]-+       |
-          =  [7:3]-=+                          |-[7:3]-+
-    [3:0]-=+  |    =                     [3:0]-+
-          =|-[5:1] =                           |
-    [4:1]-=+       =                     [4:1]-+
-          ==========
+    [2:0]----------+                    [2:0]---------+
+          ==Equal==|                                  |
+    [1:1]-=--+    =|-[8:1]              [1:1]-+       |-[8:1]
+          = [5:1] =|                          |       |
+    [0:0]-=--+    =|       >=Treat as=> [0:0]-+       |
+          = [7:3]-=+                          |-[7:3]-+
+    [3:0]-=--+    =                     [3:0]-+
+          = [6:4] =                           |
+    [4:1]-=--+    =                     [4:1]-+
+          =========
     """
-    Z4 = np.array([[ 3.,  4., 1., 2.],
-                   [ 0.,  1., 1., 2.],
-                   [ 5.,  6., 1., 4.],
-                   [ 2.,  7., 3., 5.]])
-    v4 = [0, 1, 0, 0, 1, 1, 4, 3, 1]
-
-    ce4 = ClusterEngineTester(v4, [False]*len(v4))
-    assert_true(is_isomorphic(ce4.makeClusters(Z4),
+    Z6a = np.array([[ 0.,  1., 1., 2.],
+                    [ 3.,  4., 1., 2.],
+                    [ 5.,  6., 1., 4.],
+                    [ 2.,  7., 3., 5.]])
+    Z6b = np.array([[ 0.,  1., 1., 2.],
+                    [ 3.,  5., 1., 2.],
+                    [ 4.,  6., 1., 4.],
+                    [ 2.,  7., 3., 5.]]) # equivalent
+    v6 = [0, 1, 0, 0, 1, 1, 4, 3, 1]
+    ce6 = ClusterEngineTester(v6, [False]*len(v6))
+    assert_true(is_isomorphic(ce6.makeClusters(Z6a),
+                              [1, 1, 2, 1, 1]) and
+                is_isomorphic(ce6.makeClusters(Z6b),
                               [1, 1, 2, 1, 1]),
                 "merges nested clusters of equal height when parent cluster "
                 "would be merged with non-nested descendents")
