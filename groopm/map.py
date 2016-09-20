@@ -177,7 +177,6 @@ class GraftMMapper:
                 break
         if prefix is None:
             raise ValueError("Not a compatible extension {.fa[.gz]|.fna[.gz]|.fasta[.gz]} using contigs file: %s" % contigsFile)
-        print package
         package_basename = os.path.basename(package)
         if package_basename.endswith(".gpkg"):
             package_name = package_basename[:-len(".gpkg")]

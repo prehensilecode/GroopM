@@ -37,11 +37,9 @@ class TestMapper:
         
         self.dataDir = os.path.join(os.path.split(__file__)[0], "map_data")
         self.workingDir = os.path.join(os.path.split(__file__)[0], "test_map")
-        self.contigsFile = 'contigs.fa'
+        self.contigsFile = os.path.join(self.dataDir, 'contigs.fa')
         self.graftmPackageNames = ['DNGNGWU00001', 'DNGNGWU00002', 'DNGNGWU00003', 'DNGNGWU00007', 'DNGNGWU00009']
-        self.graftmPackages = dict([(name, os.path.join(GRAFTM_PACKAGE_DIR, name+'.gpkg')) for name in self.graftmPackageNames])
-        self.singlemMapper = SingleMMapper(self.workingDir)
-        self.graftmMapper = GraftMMapper(self.workingDir, self.graftmPackages)
+        self.graftmPackages = [os.path.join(GRAFTM_PACKAGE_DIR, name+'.gpkg') for name in self.graftmPackageNames]
         self._cid2Indices = None #cache contig index mapping
         
     @classmethod
@@ -62,9 +60,11 @@ class TestMapper:
         
     def testSingleMMapper(self):
         cid2Indices = self.getContigNames()
-        (con_indices, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile, cid2Indices)
+        mapper = SingleMMapper(self.workingDir, silent=True)
+        (con_indices, markers, taxstrings) = mapper.getMappings(self.contigsFile, cid2Indices)
 
     def testGraftMMapper(self):
         cid2Indices = self.getContigNames()
-        (con_indices, markers, taxstrings) = self.graftmMapper.getMappings(self.contigsFile, cid2Indices)
+        mapper = GraftMMapper(self.workingDir, self.graftmPackages, silent=True)
+        (con_indices, markers, taxstrings) = mapper.getMappings(self.contigsFile, cid2Indices)
 
