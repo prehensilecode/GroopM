@@ -57,6 +57,9 @@ from utils import CSVReader
 ###############################################################################
 ###############################################################################
 
+GRAFTM_PACKAGE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'graftm_packages'))
+
+
 class SingleMMapper:
     '''Class to find marker gene hits with SingleM
     '''
@@ -123,10 +126,8 @@ class SingleMMapper:
 class GraftMMapper:
     """Class to find marker gene hits for a set of GraftM packages"""
     
-    GRAFTM_PACKAGE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'graftm_packages'))
-
     def getDefaultPackages(self):
-        return [os.path.join(self.GRAFTM_PACKAGE_DIR, name) for name in os.listdir(self.GRAFTM_PACKAGE_DIR) if name.endswith('.gpkg')];
+        return [os.path.join(GRAFTM_PACKAGE_DIR, name) for name in os.listdir(GRAFTM_PACKAGE_DIR) if name.endswith('.gpkg')];
     
     def __init__(self, workingDir, packageList=[], silent=False, force=False):
         self.workingDir = workingDir
