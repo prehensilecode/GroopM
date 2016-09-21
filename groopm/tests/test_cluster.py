@@ -28,23 +28,22 @@ from nose.tools import assert_true
 import numpy as np
 
 # local imports
-from tools import equal_arrays
-from groopm.cluster import ClusterCoeffEngine
+from tools import equal_arrays, is_isomorphic
+from groopm.cluster import ClusterQualityEngine, FlatClusterEngine
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-class CoeffEngineTester(ClusterCoeffEngine):
-    def __init__(self, leaf_data, coeff_fn):
+class QualityEngineTester(ClusterQualityEngine):
+    def __init__(self, leaf_data, score_fn):
         self.getLeafData = lambda: leaf_data
-        self.getCoeff = lambda data: coeff_fn(data)
+        self.getScore = lambda data: score_fn(data)
     
-def test_ClusterCoeffEngine():
+def test_ClusterQualityEngine():
     #
-    """
-    Z describes tree:
+    """ The tree used for the following tests is represented below:
         0---+
         2-+ |-6
         1 |-5
@@ -54,41 +53,188 @@ def test_ClusterCoeffEngine():
     Z = np.array([[1., 3., 1., 2.],
                   [2., 4., 1., 3.],
                   [0., 5., 2., 4.]])
-                  
-    
                    
-    """Assign Z leaf data:
+    """Test that a Quality Engine using max with a single leaf data point
+    will propagate score to ancestors. The following data is assigned to leaves:
         0:[1]--+
         2:[]-+ |-6
         1:[] |-5
         |-4--+
         3:[]    
     """
-    assert_true(equal_arrays(CoeffEngineTester({0:[1]}, max).makeCoeffs(Z),
+    qe1 = QualityEngineTester({0:[1]}, max)
+    assert_true(equal_arrays(qe1.makeScores(Z),
                              [1, 0, 0, 0, 0, 0, 1]),
-                "computes max coefficients in the case of a single non-zero coeff")
+                "computes max of a single leaf data point for all ancestors")
                                 
-    """Assign leaf data:
-        0:[]----+
-        2:[1]-+ |-6
-        1:[1] |-5
-        |-4---+
+    """Test that a Quality Engine using len and a pair of leaves with data will
+    combined leaf data and propagate to ancestors. The following data is assinged to
+    leaves:
+        0:[]------+
+        2:["a"]-+ |-6
+        1:["x"] |-5
+        |-4-----+
         3:[]    
     """
-    assert_true(equal_arrays(CoeffEngineTester({1:[1], 2:[1]}, sum).makeCoeffs(Z),
+    qe2 = QualityEngineTester({1:["a"], 2:["x"]}, len)
+    assert_true(equal_arrays(qe2.makeScores(Z),
                              [0, 1, 1, 0, 1, 2, 2]),
-                "computes max sum coefficients in case of pair of coeffs")
+                "computes length of leaf data in case of pair of leaf data points")
                                               
-    """Assign leaf data:
+    """Test that a Quality Engine using a range measure will compute the range
+    of data from the full set of leaves. Leaf data assigned as follows:
         0:[]------+
         2:[1]---+ |-6
         1:[2,2] |-5
         |-4-----+
         3:[1,0]    
     """
-    assert_true(equal_arrays(CoeffEngineTester({1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x)).makeCoeffs(Z),
+    qe3 = QualityEngineTester({1: [2, 2], 2: [1], 3:[1, 0]}, lambda x: max(x) - min(x))
+    assert_true(equal_arrays(qe3.makeScores(Z),
                              [0, 0, 0, 1, 2, 2, 2]),
-                "returns max range coefficients when a higher leaf is lower valued")
+                "computes non-trivial function of combined leaf data points")
+             
+             
+class ClusterEngineTester(FlatClusterEngine):
+    def __init__(self, scores, qualities):
+        self.getScores = lambda _: scores
+        self.isLowQualityCluster = lambda _: qualities
+    
+def test_ClusterEngineTester(): 
+    #
+    """Test that the cluster engine with uniform zero scores will merge low
+    quality clusters. The tree for this test is represented below.
+    
+    [1:1]
+     |-[3:0]-+
+    [0:1]    |-[4:0]
+    [2:0]----+
+    """
+    Z1 = np.array([[0., 1., 1., 2.],
+                   [2., 3., 2., 3.]])
+    q1 = [True, True, False, False, False]
+    ce1 = ClusterEngineTester([0]*len(q1), q1)
+    assert_true(is_isomorphic(ce1.makeClusters(Z1),
+                              [1, 1, 2]),
+                "ClusterEngine with uniform zero scores merges clusters "
+                "designated low quality")
+    
+    """Clustering with nested equal height branches.
+          ==Equal==
+    [1:1]-=+      =                [1:1]-+
+          =|-[3:0]=                      |
+    [0:0]-=+  |   = => Treat as => [0:0]-+-[4:0]
+          =  [4:0]=                      |
+    [2:0]-=---+   =                [2:0]-+
+          =========
+    """
+    Z2 = np.array([[0., 1., 1., 2.],
+                   [2., 3., 1., 3.]])
+    q2 = [True, False, False, False, False]
+    ce2 = ClusterEngineTester([0]*len(q2), q2)
+    assert_true(is_isomorphic(ce2.makeClusters(Z2),
+                              [1, 2, 3]),
+                "ClusterEngine with uniform zero scores won't partially merge "
+                "nested clusters when parent cluster won't merge")
+    
+    """Test that the cluster engine with uniform quality clusters will
+    merge child clusters to improve cluster score total. The tree for
+    this test is represented below.
+    
+    [1:1]
+     |-[3:2]-+
+    [0:0]    |-[4:1]
+    [2:1]----+
+    """
+    Z3 = np.array([[0., 1., 1., 2.],
+                   [2., 3., 2., 2.]])
+    v3 = [0, 1, 1, 2, 1]
+    ce3 = ClusterEngineTester(v3, [False]*len(v3))
+    assert_true(is_isomorphic(ce3.makeClusters(Z3),
+                              [1, 1, 2]),
+                "ClusterEngine with uniform quality clusters merges "
+                "child clusters if merged cluster improves combined "
+                "score")
+    
+    """Clustering with nested equal height branches.
+          ==Equal==
+    [1:1]-=--+    =              [1:1]-+
+          = [3:2] =                    |
+    [0:0]-=--+    = >=Treat as=> [0:0]-+-[4:1]
+          = [4:1] =                    |
+    [2:1]-=--+    =              [2:1]-+
+          =========
+    """
+    Z4a = np.array([[0., 1., 1., 2.],
+                    [2., 3., 1., 3.]])
+    Z4b = np.array([[0., 2., 1., 2.],
+                    [1., 3., 1., 3.]]) # equivalent
+    Z4c = np.array([[1., 2., 1., 2.],
+                    [0., 3., 1., 3.]]) # equivalent
+    v4 = [0, 1, 1, 2, 1]
+    ce4 = ClusterEngineTester(v4, [False]*len(v4))
+    assert_true(is_isomorphic(ce4.makeClusters(Z4a),
+                              [1, 2, 3]) and
+                is_isomorphic(ce4.makeClusters(Z4b),
+                              [1, 2, 3]) and
+                is_isomorphic(ce4.makeClusters(Z4c),
+                              [1, 2, 3]),
+                "ClusterEngine with uniform quality clusters won't partially "
+                "merge nested clusters when parent cluster won't merge")
+    
+    """Test that the cluster engine with uniform quality clusters will
+    not merge clusters if combined best descendent cluster score is not
+    improved. The tree for this test is represented below.
+    
+    [1:1]
+     |-[3:0]-+
+    [0:0]    |-[4:2]
+    [2:1]----+
+    """
+    Z5 = np.array([[0., 1., 1., 2.],
+                   [2., 3., 2., 2.]])
+    v5 = [0, 1, 1, 0, 2]
+    ce5 = ClusterEngineTester(v5, [False]*len(v5))
+    assert_true(is_isomorphic(ce5.makeClusters(Z5),
+                              [1, 2, 3]),
+                "ClusterEngine with uniform quality clusters doesn't merge "
+                "descendent clusters if merged cluster combined  score is "
+                "not improved")
+    
+    
+    """Test that the cluster engine correctly propagates scores for equal
+    height nested branches, so that a parent cluster will merge all nested
+    clusters if it improves the combined cluster score of non-nested
+    clusters below it. The tree for this test is represented below:
+        
+    [2:0]----------+                    [2:0]---------+
+          ==Equal==|                                  |
+    [1:1]-=--+    =|-[8:1]              [1:1]-+       |-[8:1]
+          = [5:1] =|                          |       |
+    [0:0]-=--+    =|       >=Treat as=> [0:0]-+       |
+          = [7:3]-=+                          |-[7:3]-+
+    [3:0]-=--+    =                     [3:0]-+
+          = [6:4] =                           |
+    [4:1]-=--+    =                     [4:1]-+
+          =========
+    """
+    Z6a = np.array([[ 0.,  1., 1., 2.],
+                    [ 3.,  4., 1., 2.],
+                    [ 5.,  6., 1., 4.],
+                    [ 2.,  7., 3., 5.]])
+    Z6b = np.array([[ 0.,  1., 1., 2.],
+                    [ 3.,  5., 1., 2.],
+                    [ 4.,  6., 1., 4.],
+                    [ 2.,  7., 3., 5.]]) # equivalent
+    v6 = [0, 1, 0, 0, 1, 1, 4, 3, 1]
+    ce6 = ClusterEngineTester(v6, [False]*len(v6))
+    assert_true(is_isomorphic(ce6.makeClusters(Z6a),
+                              [1, 1, 2, 1, 1]) and
+                is_isomorphic(ce6.makeClusters(Z6b),
+                              [1, 1, 2, 1, 1]),
+                "merges nested clusters of equal height when parent cluster "
+                "would be merged with non-nested descendents")
+        
     
                         
 ###############################################################################

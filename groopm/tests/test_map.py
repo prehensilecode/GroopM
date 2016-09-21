@@ -24,7 +24,8 @@ __email__ = "tim.lamberton@gmail.com"
 
 ###############################################################################
 
-from groopm.map import SingleMMapper, GraftMMapper
+from groopm.map import SingleMMapper, GraftMMapper, GRAFTM_PACKAGE_DIR
+from groopm.utils import FastaReader
 import os
 import subprocess
 import shutil
@@ -33,22 +34,37 @@ class TestMapper:
     
     @classmethod
     def setup_class(self):
-        self.workingDir = './groopm/tests/test_map'
-        self.contigsFile = '/srv/projects/paperpalooza/assemblies/5_all_in_after3nextseq19/5_all_in_after3nextseq19.fa'
-        self.graftmPackageDir = '/srv/home/uqtlambe/code/groopm/graftm_packages'
+        
+        self.dataDir = os.path.join(os.path.split(__file__)[0], "map_data")
+        self.workingDir = os.path.join(self.dataDir, "test_map")
+        os.mkdir(self.workingDir)
+        self.contigsFile = os.path.join(self.dataDir, 'contigs.fa')
         self.graftmPackageNames = ['DNGNGWU00001', 'DNGNGWU00002', 'DNGNGWU00003', 'DNGNGWU00007', 'DNGNGWU00009']
-        self.graftmPackages = dict([(name, os.path.join(self.graftmPackageDir, name+'.gpkg')) for name in self.graftmPackageNames])
-        self.singlemMapper = SingleMMapper(self.workingDir)
-        self.graftmMapper = GraftMMapper(self.workingDir, self.graftmPackages)
+        self.graftmPackages = [os.path.join(GRAFTM_PACKAGE_DIR, name+'.gpkg') for name in self.graftmPackageNames]
+        self._cid2Indices = None #cache contig index mapping
         
     @classmethod
     def teardown_class(self):
         shutil.rmtree(self.workingDir)
-        os.mkdir(self.workingDir)
 
+    def getContigNames(self):
+        if self._cid2Indices is None:
+            reader = FastaReader()
+            con_names = []
+            with open(self.contigsFile, 'r') as f:
+                for (cid,_seq) in reader.readFasta(f):
+                    con_names.append(cid)
+            self._cid2Indices = dict(zip(range(len(con_names)), sorted(con_names)))
+            
+        return self._cid2Indices
+        
     def testSingleMMapper(self):
-        (contigs, markers, taxstrings) = self.singlemMapper.getMappings(self.contigsFile)
+        cid2Indices = self.getContigNames()
+        mapper = SingleMMapper(self.workingDir, silent=True)
+        (con_indices, markers, taxstrings) = mapper.getMappings(self.contigsFile, cid2Indices)
 
     def testGraftMMapper(self):
-        (contigs, markers, taxstrings) = self.graftmMapper.getMappings(self.contigsFile)
+        cid2Indices = self.getContigNames()
+        mapper = GraftMMapper(self.workingDir, self.graftmPackages, silent=True)
+        (con_indices, markers, taxstrings) = mapper.getMappings(self.contigsFile, cid2Indices)
 
