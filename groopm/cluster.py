@@ -374,7 +374,7 @@ class FlatClusterEngine:
         
         The set of flat clusters returned (should) satisfy the following
         constraints:
-            1. Clusters exceed a minimum standard (as reported by
+            1. All clusters exceed a minimum standard (as reported by
                `isLowQuality` method);
             2. As allowed by 1, the number of clusters is the maximimum such
                that no smaller number of clusters has a higher sum quality (as
