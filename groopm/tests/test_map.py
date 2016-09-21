@@ -36,7 +36,8 @@ class TestMapper:
     def setup_class(self):
         
         self.dataDir = os.path.join(os.path.split(__file__)[0], "map_data")
-        self.workingDir = os.path.join(os.path.split(__file__)[0], "test_map")
+        self.workingDir = os.path.join(self.dataDir, "test_map")
+        os.mkdir(self.workingDir)
         self.contigsFile = os.path.join(self.dataDir, 'contigs.fa')
         self.graftmPackageNames = ['DNGNGWU00001', 'DNGNGWU00002', 'DNGNGWU00003', 'DNGNGWU00007', 'DNGNGWU00009']
         self.graftmPackages = [os.path.join(GRAFTM_PACKAGE_DIR, name+'.gpkg') for name in self.graftmPackageNames]
@@ -45,7 +46,6 @@ class TestMapper:
     @classmethod
     def teardown_class(self):
         shutil.rmtree(self.workingDir)
-        os.mkdir(self.workingDir)
 
     def getContigNames(self):
         if self._cid2Indices is None:
