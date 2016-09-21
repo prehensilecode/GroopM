@@ -88,7 +88,7 @@ def maxscoresbelow(Z, scores, fun=np.maximum):
     Z = np.asarray(Z)
     n = Z.shape[0]+1
     max_scores = np.copy(scores)
-    max_below_scores = np.zeros(n-1, dtype=scores.dtype)
+    max_below_scores = np.zeros(n-1, dtype=max_scores.dtype)
     
     # Bottom-up traversal
     for i in range(n-1):

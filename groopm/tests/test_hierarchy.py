@@ -31,10 +31,9 @@ import numpy.random as np_random
 # local imports
 from tools import equal_arrays, is_isomorphic
 import groopm.distance as distance
-from groopm.hierarchy import (maxcoeffs,
+from groopm.hierarchy import (maxscoresbelow,
                               fcluster_merge,
                               flatten_nodes,
-                              fcluster_coeffs,
                               linkage_from_reachability,
                               ancestors,
                              )
@@ -44,7 +43,7 @@ from groopm.hierarchy import (maxcoeffs,
 ###############################################################################
 ###############################################################################              
 
-def test_maxcoeffs():
+def test_maxscoresbelow():
     #
     """Z describes tree:
         0-------+
@@ -64,8 +63,8 @@ def test_maxcoeffs():
         |-4:1-+
         3:0    
     """ 
-    assert_true(equal_arrays(maxcoeffs(Z, [1, 1, 0, 0, 1, 0, 0], np.maximum),
-                             [1, 1, 0, 0, 1, 1, 1]),
+    assert_true(equal_arrays(maxscoresbelow(Z, [1, 1, 0, 0, 1, 0, 0], np.maximum),
+                             [1, 1, 1]),
                 "returns maximum coefficients for skewed tree")
                                 
     """Assign coefficients:
@@ -75,8 +74,8 @@ def test_maxcoeffs():
         |-4:0-+
         3:0   
     """
-    assert_true(equal_arrays(maxcoeffs(Z, [0, 1, 1, 0, 0, 2, 0], np.maximum),
-                             [0, 1, 1, 0, 1, 2, 2]),
+    assert_true(equal_arrays(maxscoresbelow(Z, [0, 1, 1, 0, 0, 2, 0], np.maximum),
+                             [1, 1, 2]),
                 "returns maximum coefficients for skewed tree with large valued "
                 "internal coefficient")
                                               
@@ -87,8 +86,8 @@ def test_maxcoeffs():
         |-4:2-+
         3:0    
     """
-    assert_true(equal_arrays(maxcoeffs(Z, [0, 0, 0, 0, 2, 1, 0], np.add),
-                             [0, 0, 0, 0, 2, 2, 2]),
+    assert_true(equal_arrays(maxscoresbelow(Z, [0, 0, 0, 0, 2, 1, 0], np.add),
+                             [0, 2, 2]),
                 "returns maximum coefficients for skewed tree with lower "
                 "valued internal coefficient")
                       
@@ -118,8 +117,8 @@ def test_maxcoeffs():
         |-5:2-+
         4:0
     """
-    assert_true(equal_arrays(maxcoeffs(Z, [0, 1, 0, 2, 0, 2, 2, 1, 1], np.maximum),
-                             [0, 1, 0, 2, 0, 2, 2, 1, 2]),
+    assert_true(equal_arrays(maxscoresbelow(Z, [0, 1, 0, 2, 0, 2, 2, 1, 1], np.maximum),
+                             [2, 2, 1, 2]),
                 "computes maximum coefficients for a balanced tree")
                         
     """Assign coefficients:
@@ -132,8 +131,8 @@ def test_maxcoeffs():
         |-5:0-+
         4:2
     """
-    assert_true(equal_arrays(maxcoeffs(Z, [1, 1, 1, 1, 2, 0, 5, 0, 0], np.add),
-                             [1, 1, 1, 1, 2, 3, 5, 2, 7]),
+    assert_true(equal_arrays(maxscoresbelow(Z, [1, 1, 1, 1, 2, 0, 5, 0, 0], np.add),
+                             [3, 4, 2, 7]),
                 "returns maximum coefficients for balanced tree with singleton "
                 "and non-singleton clusters")
                       
@@ -331,70 +330,6 @@ def test_flatten_nodes():
     assert_true(equal_arrays(flatten_nodes(Z),
                              [0, 1, 5, 5, 5, 5]),
                 "assigns nodes the indices of parents and grandparents of equal height")
- 
- 
-def test_fcluster_coeffs(): 
-    #
-    """
-    Represent tree:
-        [5:0]
-         |-[9:1]-+
-        [6:1]    |-[10:1]
-        [2:0]----+  |
-                    |
-        [1:1]       |-[12:1]
-         |-[8:1]-+  |
-        [0:0]    |  |
-                 |-[11:2]
-        [3:0]    |
-         |-[7:1]-+
-        [4:1]
-    """
-    # with different heights
-    Z = np.array([[ 3.,  4., 1., 2.],
-                  [ 0.,  1., 2., 2.],
-                  [ 5.,  6., 3., 2.],
-                  [ 2.,  9., 4., 3.],
-                  [ 7.,  8., 5., 4.],
-                  [10., 11., 6., 7.]])
-    # with some equal heights
-    Z_eq = np.array([[ 3.,  4., 1., 2.],
-                     [ 0.,  1., 2., 2.],
-                     [ 5.,  6., 3., 2.],
-                     [ 2.,  9., 3., 3.],
-                     [ 7.,  8., 3., 4.],
-                     [10., 11., 3., 7.]])
-    v = [0, 1, 0, 0, 1, 0, 1, 1, 1, 1, 1, 2, 1]
-
-    assert_true(is_isomorphic(fcluster_coeffs(Z, v, merge="max"),
-                              [1, 1, 2, 1, 1, 2, 2]) and
-                is_isomorphic(fcluster_coeffs(Z_eq, v, merge="max"),
-                              [1, 1, 1, 1, 1, 1, 1]),
-                "flattens nested clusters of equal height when highest cluster "
-                "would be flattened")
-    
-    """
-    Tree with different data
-        [5:0]
-         |-[9:-1]-+
-        [6:-1]    |-[10:-1]
-        [2:0]-----+  |
-                     |
-        [1:1]        |-[12:-1]
-         |-[8:1]-+   |
-        [0:0]    |   |
-                 |--[11:1]
-        [3:0]    |
-        |-[7:1]--+
-        [4:1]
-    """
-    v2 = [0, 1, 0, 0, 1, 0, -1, 1, 1, -1, -1, 1, -1]
-    assert_true(is_isomorphic(fcluster_coeffs(Z, v2, merge="max"),
-                              [1, 1, 2, 1, 1, 3, 4]) and
-                is_isomorphic(fcluster_coeffs(Z_eq, v2, merge="max"),
-                              [1, 1, 2, 3, 3, 4, 5]),
-                "doesn't flatten nested clusters when the highest cluster does "
-                "not have a maximum coefficient")
                         
                      
 def test_linkage_from_reachability():
