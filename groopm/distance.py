@@ -49,7 +49,6 @@ __email__ = "t.lamberton@uq.edu.au"
 
 import numpy as np
 import scipy.spatial.distance as sp_distance
-from Queue import PriorityQueue
 
 # local imports
 
@@ -219,7 +218,7 @@ def reachability_order(Y):
     return (o, d[o])
     
     
-def condensed_index_(n, i, j):
+def _condensed_index(n, i, j):
     """
     Calculate the condensed index of element (i, j) in an n x n condensed
     matrix.
@@ -232,7 +231,7 @@ def condensed_index_(n, i, j):
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
         
         
-condensed_index = np.vectorize(condensed_index_, otypes=[np.intp])
+condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
     
     
 def pairs(n):

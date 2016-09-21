@@ -82,29 +82,6 @@ class ClassificationManager:
             return np.array([], dtype=np.intp)
         return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
         
-    def purity(self, indices):
-        """Compute purity using largest clique"""
-        indices = np.asarray(indices)
-        clique = indices[self.maxClique(indices)]
-        try:
-            prec = len(clique) * 1. / len(indices)
-        except ZeroDivisionError:
-            return (1, 0)
-        match_all = np.flatnonzero(np.all(self._mC[clique], axis=0))
-        best_clique_size = len(self.maxClique(match_all))
-        recall = len(clique) / best_clique_size
-        return (prec, recall)
-        
-    def disagreement(self, indices):
-        """Compute size difference between 2 largest cliques"""
-        if len(indices) == 0:
-            return 0
-        indices = np.asarray(indices)
-        first_clique = greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
-        remaining = np.setdiff1d(indices, indices[first_clique])
-        second_clique = greedy_clique_by_elimination(self._mC[np.ix_(remaining, remaining)])
-        return abs(len(first_clique) - len(second_clique))
-        
     def consensusTag(self, indices):
         indices = np.asarray(indices)
         q = indices[self.maxClique(indices)]

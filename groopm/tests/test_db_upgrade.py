@@ -76,7 +76,7 @@ class TestDBUpgrade:
         db_copy = self.generate_db_copy(0)
         cmd = "PYTHONPATH=%s:$PYTHONPATH %s %s" % (os.getcwd(), self.dbUpgradeScript, db_copy)
         proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        (stdoutdata, _stderrdata) = proc.communicate("\n".join([self.fasta, fasta]))
+        (stdoutdata, _stderrdata) = proc.communicate("\n".join([self.fasta, self.fasta]))
         if proc.returncode != 0:
             print stdoutdata
             raise AssertionError("Upgrade script returned error code: %d" % proc.returncode)
