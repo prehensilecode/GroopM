@@ -64,7 +64,8 @@ np.seterr(all='raise')
 ############################################################################### 
     
 def maxscoresbelow(Z, scores, fun=np.maximum):
-    """Compute maximum cumulative score of disjoint clusters below nodes.
+    """Compute maximum cumulative score of disjoint cluster sets below 
+    cluster hierarchy nodes.
     
     Parameters
     ----------
@@ -103,7 +104,7 @@ def maxscoresbelow(Z, scores, fun=np.maximum):
     
     
 def iterlinkage(Z):
-    """Iterate over cluster hierarchy"""
+    """Bottom-up iteration over leaf node sets for cluster hierarchy nodes"""
     Z = np.asarray(Z)
     n = Z.shape[0]+1
     
@@ -170,8 +171,7 @@ def fcluster_merge(Z, merge, return_nodes=False):
     
      
 def flatten_nodes(Z):
-    """Collapse nested clusters of equal height by mapping descendent nodes to their earliest
-    equal height ancestor
+    """Map nested cluster nodes to their earliest equal height ancestor
     """
     Z = np.asarray(Z)
     n = Z.shape[0] + 1
@@ -209,6 +209,9 @@ def linkage_from_reachability(o, d):
     n = len(o)
     Z = np.empty((n - 1, 4), dtype=d.dtype)
     
+    # observations ordered from smallest to largest density distance. clusters
+    # will be formed by repeatedly splitting the parent cluster containing the
+    # largest distance.
     splits = reachability_splits(d)
     # dict of { node_id: (range_from, range_to) }
     # this encodes the range of `o` of observations below the node with `node_id` in the hierarchy
@@ -216,20 +219,33 @@ def linkage_from_reachability(o, d):
     indices_dict = dict([(2*n-2, (0, n))])
     
     for i in range(n-2, -1, -1):
+        # ordering positions of observations in current cluster
         (low, high) = indices_dict.pop(n+i)
-        split = splits[i] # split using index of the next largest observation
+        # determine the next largest observation at which to split the cluster
+        split = splits[i]
+        # the split clusters will occupy ordering positions in the ranges
+        # (low, split) and (split, high)
+        
+        # determine the iterations at which the split clusters will themselves
+        # be split by finding the descendent observations with the largest
+        # density distance in the `splits` list. The rows in the linkage matrix
+        # encoding are in reverse splitting order (i.e. last row is first split,
+        # etc.).
         if split == low + 1:
+            # singleton left cluster
             left_node = o[low]
         else:
-            # we determine the iteration at which left_node will be split next by finding the node's
-            # position in the distance ordering `sorting_indices` of the largest descendent
-            # observation. This iteration corresponds to the row in Z encoding the node.
+            # look in range (low, split) for position of observation with
+            # largest density distance.
             left_node = np.flatnonzero(np.logical_and(low <= splits[:i], splits[:i] < split))[-1]+n
             indices_dict[left_node] = (low, split)
             
         if split == high - 1:
+            # singleton right cluster
             right_node = o[split]
         else:
+            # look in range (split, high) for position of observation with
+            # largest density distance.
             right_node = np.flatnonzero(np.logical_and(split <= splits[:i], splits[:i] < high))[-1]+n
             indices_dict[right_node] = (split, high)
         
