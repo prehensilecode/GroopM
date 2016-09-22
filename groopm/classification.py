@@ -68,7 +68,7 @@ class ClassificationManager:
         self._mC = np.logical_not(sp_distance.squareform(Y)).astype(float)
         #self._mC = mapping.makeConnectivity(d=self._d)
         
-    def BCubed(self, indices):
+    def BCubed_(self, indices):
         """Compute BCubed metrics"""
         correct = self._mC[np.ix_(indices, indices)].sum(axis=1)
         prec = correct * 1. / len(indices)
