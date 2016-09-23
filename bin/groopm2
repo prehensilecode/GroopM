@@ -375,19 +375,34 @@ class dump_command_configure:
 class binstat_command_configure:
     description="Write bin stats to text file"
     
+    DUMP_FIELDS = ['bins', 'points', 'sizes', 'lengths', 'gc', 'coverage', 'tags']
+    
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-f', '--fields', default="bins,points,sizes,tags", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
         parser.add_argument('-o', '--outfile', default="binstat.csv", help="write data to this file")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
         parser.set_defaults(run=self)
 
-    def __call__(_self, options):
+    def __call__(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in bin stats dumping mode..." % __version__
         print "*******************************************************************************"
 
+        # prep fields. Do this first cause users are mot likely to
+        # mess this part up!
+        allowable_fields = self.DUMP_FIELDS
+        fields = options.fields.split(',')
+        if fields == ['all']:
+            fields = allowable_fields
+        else:
+            for field in fields:
+                if field not in allowable_fields:
+                    print "ERROR: field '%s' not recognised. Allowable fields are:" % field
+                    print '\t',",".join(allowable_fields)
+                    return
         if options.separator == '\\t':
             separator = '\t'
         else:
@@ -395,6 +410,7 @@ class binstat_command_configure:
 
         bm = groopm.BinStatsDumper(options.dbname)
         bm.dumpBinStats(timer,
+                        fields,
                         options.outfile,
                         separator,
                         not options.no_headers)

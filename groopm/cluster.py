@@ -382,7 +382,8 @@ class FlatClusterEngine:
             3. As allowed by 1 and 2, the total size of clusters is maximum.
         
         The strategy used is:
-            - Find a minimal set of clusters that maximises the sum quality
+            - Find a minimal set of minimum standard clusters which maximise the
+              sum quality
             - Grow clusters by greedily merging only below standard clusters
         
         Parameters

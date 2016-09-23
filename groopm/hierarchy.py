@@ -331,6 +331,7 @@ def ancestors(Z, indices, inclusive=False):
         return np.flatnonzero(isancestor_or_index)
     else:
         return np.flatnonzero(isancestor)
+
         
 ###############################################################################
 ###############################################################################
