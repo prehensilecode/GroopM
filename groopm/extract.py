@@ -267,7 +267,6 @@ class MarkerExtractor:
                 print "Could not open file for writing:",file_name,sys.exc_info()[0]
                 raise
     
-    
                            
 class BinStatsDumper:
     def __init__(self,

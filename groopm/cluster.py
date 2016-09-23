@@ -534,16 +534,15 @@ class FlatClusterEngine:
 class MarkerCheckFCE(FlatClusterEngine):
     """Seed clusters using taxonomy and marker completeness"""
     
-    def __init__(self, profile, minPts=None, minSize=None, filter_leaves=[]):
+    def __init__(self, profile, minPts=None, minSize=None):
         self._profile = profile
         self._minSize = minSize
         self._minPts = minPts
-        self._filterLeaves = filter_leaves
         if self._minSize is None and self._minPts is None:
             raise ValueError("'minPts' and 'minSize' cannot both be None.")
     
     def getScores(self, Z):
-        return MarkerCheckCQE(self._profile, filter_leaves=self._filterLeaves).makeScores(Z)
+        return MarkerCheckCQE(self._profile).makeScores(Z)
         
     def isLowQualityCluster(self, Z):
         Z = np.asarray(Z)
@@ -687,14 +686,15 @@ class MarkerCheckCQE(ClusterQualityEngine):
     alpha which can be combined additively when assessing multiple clusters.
     """
     
-    def __init__(self, profile, filter_leaves=[]):
+    def __init__(self, profile):
         self._alpha = 0.5
         self._d = 1
         self._mapping = profile.mapping
         
         # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
         # taxonomically 'similar enough', otherwise 0.
-        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
+        #self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
         
         # Represent single-copy marker groups by integers for efficiency
         (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
@@ -707,13 +707,9 @@ class MarkerCheckCQE(ClusterQualityEngine):
         self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
         self._mscalefactors = 1./self._mcounts
         
-        # exclude any mapping data for these observations
-        self._filterLeaves = filter_leaves
-        
     def getLeafData(self):
         """Leaf data is a list of indices of mappings."""
-        filter_leaf_set = set(self._filterLeaves)
-        return dict([(i, data) for (i, data) in self._mapping.iterindices() if i not in filter_leaf_set])
+        return dict([(i, data) for (i, data) in self._mapping.iterindices()])
         
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
@@ -733,4 +729,56 @@ class MarkerCheckCQE(ClusterQualityEngine):
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
+    
+class MarkerTree:
+    def __init__(self, profile):
+        self._profile = profile
+        Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
+        self._Z = np.asarray(Z)
+        self._n = self._Z.shape[0]+1
+        self._flat_ids = hierarchy.flatten_ids(self._Z)
+        self._cluster_ids = self._cluster_ids()
+        qe = MarkerCheckEngine(self._profile)
+        self._scores = qe.makeScores(self._Z)
+        
+    def getTree(self, node_id=None):
+        node_id = self._cluster_ids[-1] if node_id is None else self._cluster_ids[node_id]
+        score = self._scores[node_id]
+        if node_id < self._n:
+            return ["%.1f(%d)" % (score, node_id)]
+        else:
+            i = node_id-n
+            children = Z[i,:2].astype(int)
+            child_lines = self.getTree(children[0])++self.getTree(children[1])
+            if self._flat_ids[i] == i:
+                return ["%.1f" % score]+['--'+l for l in child_lines]
+            else:
+                return child_lines
+        
+    def _cluster_ids(self):
+        Z = self._Z
+        n = self._n
+        flat_ids = self._flat_ids
+        
+        is_marker_leaf = np.zeros(2*n-1, dtype=bool)
+        is_marker_leaf[self._profile.mapping.rowIndices] = True
+        num_marker_leaves_below = is_marker_leaf.astype(int)
+        num_marker_leaves_below[n:] = hierarchy.maxscorebelow(Z, is_marker_leaf.astype(int), operator.add)
+        num_marker_leaves_below[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
+        
+        is_marker_cluster = is_marker_leaf.copy()
+        is_marker_cluster[n:] = hierarchy.maxscorebelow(Z, num_marker_leaves_below, operator.max) < num_marker_leaves_below
+        
+        marker_node = np.zeros(2*n-1, dtype=int)
+        marker_node[is_marker_cluster] = np.flatnonzero(is_marker_cluster)
+        cluster_ids = hierarchy.maxscorebelow(Z, marker_node, operator.max)
+        cluster_ids[is_marker_cluster[n:]] = np.flatnonzero([is_marker_cluster[n:]])+n
+        cluster_ids = cluster_ids[flat_ids]
+        
+        return cluster_ids
+       
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+    
