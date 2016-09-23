@@ -56,7 +56,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class ClassificationManager:
+class ClassificationManager_:
     """Wraps a connectivity matrix and determines consensus classifications by
     finding `cliques` (fully-connected subgraphs) in the matrix.
     """
@@ -95,7 +95,47 @@ class ClassificationManager:
                     consensus_tag = t
                     level = o
         return consensus_tag
+
         
+class BinClassifier:
+    """Wraps a connectivity matrix and determines consensus classifications by
+    finding `cliques` (fully-connected subgraphs) in the matrix.
+    """
+    
+    def __init__(self, mapping):
+        self._classification = mapping.classification
+        self._d = 1
+        #Y = np.logical_or(mapping.makeDistances(), self._classification.makeDistances() >= self._d)
+        #self._mC = np.logical_not(sp_distance.squareform(Y)).astype(float)
+        #self._mC = mapping.makeConnectivity(d=self._d)
+        
+        # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
+        # taxonomically 'similar enough', otherwise 0.
+        # In this case we want 
+        self._mdists = np.logical_not(sp_distance.squareform(self._classification.makeDistances() >= self._d)).astype(float)
+        
+    def maxClique(self, indices):
+        """Compute a maximal set of indices such that `C[j,k] == True`
+        for all pairs `j`,`k` from set"""
+        if len(indices) == 0:
+            return np.array([], dtype=np.intp)
+        return greedy_clique_by_elimination(self._mdists[np.ix_(indices, indices)])
+        
+    def consensusTag(self, indices):
+        indices = np.asarray(indices)
+        if len(indices) == 0:
+            return ""
+        q = indices[self.maxClique(indices)]
+        consensus_tag = ""
+        level = 7
+        for i in q:
+            tags = [t for t in zip(range(7-self._d), self._classification.tags(i))]
+            if len(tags) > 0:
+                (o, t) = tags[-1]
+                if level > o:
+                    consensus_tag = t
+                    level = o
+        return "{:s}(%{:.0f})".format(consensus_tag, 100.*len(q)/len(indices))
         
 def greedy_clique_by_elimination(C):
     """Find clique from connectivity matrix by repeatedly removing least connected
