@@ -27,6 +27,7 @@ __email__ = "tim.lamberton@gmail.com"
 from nose.tools import assert_true
 import numpy as np
 import numpy.random as np_random
+import operator
 
 # local imports
 from tools import equal_arrays, is_isomorphic
@@ -34,6 +35,7 @@ import groopm.distance as distance
 from groopm.hierarchy import (maxscoresbelow,
                               fcluster_merge,
                               flatten_nodes,
+                              embed_nodes,
                               linkage_from_reachability,
                               ancestors,
                              )
@@ -135,6 +137,21 @@ def test_maxscoresbelow():
                              [3, 4, 2, 7]),
                 "returns maximum coefficients for balanced tree with singleton "
                 "and non-singleton clusters")
+                                        
+    """Assign coefficients:
+        0:1
+        |----7:0----+
+        1:1         |
+                    |-8:0
+        2:2---+     |
+        3:1   |-6:0-+
+        |-5:0-+
+        4:2
+    """
+    assert_true(equal_arrays(maxscoresbelow(Z, [1, 1, 2, 1, 2, 0, 0, 0, 0], operator.add),
+                             [3, 5, 2, 7]),
+                "returns cumulative sum of leaf values with only zero interal "
+                "coefficients")
                       
                       
 def test_fcluster_merge():
@@ -291,6 +308,7 @@ def test_ancestors():
              
                      
 def test_flatten_nodes():
+    #
     """Z describes tree:
         0-------+
         2---+   |-6
@@ -420,6 +438,39 @@ def test_linkage_from_reachability():
                              Z[:, 2]),
                 "returns linkage with correct heights for a moderately complex "
                 "hierarchy")
+
+
+def test_embed_nodes():
+    #
+    """Z describes tree (embedded nodes in parentheses):
+        0----------+
+       (2)---+     |-6
+        1    |-(5)-+
+        |-4--+
+       (3)
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 2., 3.],
+                  [0., 5., 3., 4.]])
+    
+    assert_true(equal_arrays(embed_nodes(Z, [2, 3]),
+                             [3, 5, 5]),
+                "assigns nodes the first embedded descendent")
+                      
+    """Z describes tree (embedded nodes in parentheses):
+       (0)-------+
+       (2)---+   |-(6)
+        1    |-5-+
+        |-4--+
+        3
+    """
+    Z = np.array([[1., 3., 1., 2.],
+                  [2., 4., 2., 3.],
+                  [0., 5., 3., 4.]])
+    
+    assert_true(equal_arrays(embed_nodes(Z, [0, 2]),
+                             [-1, 2, 6]),
+                "assign -1 for unembedded nodes")
     
                         
 ###############################################################################

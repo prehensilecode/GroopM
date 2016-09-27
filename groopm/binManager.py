@@ -114,7 +114,7 @@ class BinManager:
         if binIds is None:
             binIds = self.profile.binIds
         return sorted(set(binIds).difference([0]))
-        
+    
     def getBinStats(self, binIds=None):
         if binIds is None:
             binIds = self.profile.binIds

@@ -38,9 +38,9 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort, Tim Lamberton"
-__copyright__ = "Copyright 2012/2013"
-__credits__ = ["Tim Lamberton", "Michael Imelfort"]
+__author__ = "Tim Lamberton"
+__copyright__ = "Copyright 2016"
+__credits__ = ["Tim Lamberton"]
 __license__ = "GPL3"
 __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
@@ -555,6 +555,8 @@ class MarkerCheckFCE(FlatClusterEngine):
         if doMinSize:
             weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
             weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
+            flat_ids = hierarchy.flatten_nodes(Z)
+            weights[n:] = weights[flat_ids+n]
             is_low_quality = weights < self._minSize   
         if doMinPts:
             is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[:, 2] < self._minPts))
@@ -693,8 +695,8 @@ class MarkerCheckCQE(ClusterQualityEngine):
         
         # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
         # taxonomically 'similar enough', otherwise 0.
-        self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
-        #self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        #self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
+        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
         
         # Represent single-copy marker groups by integers for efficiency
         (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
@@ -724,61 +726,92 @@ class MarkerCheckCQE(ClusterQualityEngine):
         f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
         return f
         
-     
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-    
-class MarkerTree:
-    def __init__(self, profile):
-        self._profile = profile
-        Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
-        self._Z = np.asarray(Z)
-        self._n = self._Z.shape[0]+1
-        self._flat_ids = hierarchy.flatten_ids(self._Z)
-        self._cluster_ids = self._cluster_ids()
-        qe = MarkerCheckEngine(self._profile)
-        self._scores = qe.makeScores(self._Z)
-        
-    def getTree(self, node_id=None):
-        node_id = self._cluster_ids[-1] if node_id is None else self._cluster_ids[node_id]
-        score = self._scores[node_id]
-        if node_id < self._n:
-            return ["%.1f(%d)" % (score, node_id)]
-        else:
-            i = node_id-n
-            children = Z[i,:2].astype(int)
-            child_lines = self.getTree(children[0])++self.getTree(children[1])
-            if self._flat_ids[i] == i:
-                return ["%.1f" % score]+['--'+l for l in child_lines]
-            else:
-                return child_lines
-        
-    def _cluster_ids(self):
-        Z = self._Z
-        n = self._n
-        flat_ids = self._flat_ids
-        
-        is_marker_leaf = np.zeros(2*n-1, dtype=bool)
-        is_marker_leaf[self._profile.mapping.rowIndices] = True
-        num_marker_leaves_below = is_marker_leaf.astype(int)
-        num_marker_leaves_below[n:] = hierarchy.maxscorebelow(Z, is_marker_leaf.astype(int), operator.add)
-        num_marker_leaves_below[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
-        
-        is_marker_cluster = is_marker_leaf.copy()
-        is_marker_cluster[n:] = hierarchy.maxscorebelow(Z, num_marker_leaves_below, operator.max) < num_marker_leaves_below
-        
-        marker_node = np.zeros(2*n-1, dtype=int)
-        marker_node[is_marker_cluster] = np.flatnonzero(is_marker_cluster)
-        cluster_ids = hierarchy.maxscorebelow(Z, marker_node, operator.max)
-        cluster_ids[is_marker_cluster[n:]] = np.flatnonzero([is_marker_cluster[n:]])+n
-        cluster_ids = cluster_ids[flat_ids]
-        
-        return cluster_ids
        
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
-    
+
+class _TreeRecursivePrinter:
+    def __init__(self, Z, indices, leaf_labeller, node_labeller):
+        self._Z = np.asarray(Z)
+        self._n = self._Z.shape[0] + 1
+        self._flat_ids = hierarchy.flatten_nodes(self._Z)
+        self._embed_ids = hierarchy.embed_nodes(self._Z, indices)
+        self._leaf_labeller = leaf_labeller
+        self._node_labeller = node_labeller
+        self._visited = dict()
+
+    def getLines(self, node_id=None, parent_id=None):
+        n = self._n
+        try:
+            old_parent_id = self._visited[node_id]
+            raise ValueError("Visiting %d from %d: previously visited from %d" % (node_id, parent_id, old_parent_id))
+        except KeyError:
+            self._visited[node_id] = parent_id
+        if node_id is None:
+            node_id = self._embed_ids[-1]
+        elif node_id >= n:
+            node_id = self._embed_ids[node_id-n]
+        if node_id==-1:
+            return []
+        elif node_id < n:
+            return [self._leaf_labeller(node_id)]
+        else:
+            i = node_id-n
+            left_child = int(self._Z[node_id-n,0])
+            right_child = int(self._Z[node_id-n,1])
+            flat_node_id = self._flat_ids[i]
+            child_lines = self.getLines(left_child, flat_node_id)+self.getLines(right_child, flat_node_id) #
+            if parent_id is None or flat_node_id != parent_id:
+                return [self._node_labeller(flat_node_id)]+['--'+l for l in child_lines]
+            else:
+                return child_lines
+
+class MarkerTreePrinter:
+    def printTree(self, indices):
+        rp = _TreeRecursivePrinter(self.getLinkage(),
+                                   indices,
+                                   self.getLeafLabel,
+                                   self.getNodeLabel
+                                  )
+        return '\n'.join([l.replace('-', ' |-', 1) for l in rp.getLines()])
+
+    def getLinkage(self):
+        pass
+        
+    def getLeafLabel(self, node_id):
+        pass
+        
+    def getNodeLabel(self, node_id):
+        pass
+
+        
+class MarkerCheckTreePrinter(MarkerTreePrinter):
+    def __init__(self, profile):
+        self._profile = profile
+        Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
+        n = Z.shape[0] + 1
+        self._Z = Z
+        qe = MarkerCheckCQE(self._profile)
+        self._scores = qe.makeScores(self._Z)
+        weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
+        weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
+        flat_ids = hierarchy.flatten_nodes(Z)
+        weights[n:] = weights[flat_ids+n]
+        self._weights = weights
+        
+    def getLinkage(self):
+        return self._Z
+        
+    def getLeafLabel(self, node_id):
+        return "%.1f(%s)" % (self._scores[node_id], self._profile.contigNames[node_id])
+        
+    def getNodeLabel(self, node_id):
+        return "%.1f[%dbp]" % (self._scores[node_id], self._weights[node_id])
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
