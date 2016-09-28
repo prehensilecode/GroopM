@@ -689,14 +689,14 @@ class MarkerCheckCQE(ClusterQualityEngine):
     """
     
     def __init__(self, profile):
-        self._alpha = 0.5
+        self._alpha = 0.5 
         self._d = 1
         self._mapping = profile.mapping
         
         # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
         # taxonomically 'similar enough', otherwise 0.
-        #self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
-        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
+        #self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
         
         # Represent single-copy marker groups by integers for efficiency
         (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
@@ -718,13 +718,21 @@ class MarkerCheckCQE(ClusterQualityEngine):
         indices = np.asarray(indices)
         
         # Compute number of marker groups represented among 'similar' items with each item in cluster
-        correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
+        # as well as the duplicate number of markers for the current item
+        correct = np.empty(len(indices), dtype=int)
+        copies = np.empty(len(indices), dtype=int)
+        for (i, index) in enumerate(indices):
+            row = self._mdists[index, indices]
+            (uniq, counts) = np.unique(self._mgroups[indices[row]], return_counts=True)
+            correct[i] = len(uniq)
+            copies[i] = counts[uniq==self._mgroups[index]]
+        #correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
         # item precision is fraction of cluster that is correct
         prec = correct * 1. / len(indices)
         # item completeness is fraction of ideal number of marker groups calculated from the full data set in cluster
-        compl = (correct * self._mscalefactors[indices])
+        compl = (correct * self._mscalefactors[indices] / copies)
         f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
-        return f
+        return compl.sum() #f
         
        
 ###############################################################################
@@ -738,35 +746,38 @@ class _TreeRecursivePrinter:
         self._n = self._Z.shape[0] + 1
         self._flat_ids = hierarchy.flatten_nodes(self._Z)
         self._embed_ids = hierarchy.embed_nodes(self._Z, indices)
+        self._indices = indices
+        # map from flat_id -> closest embed_id
+        self._flat_embed_ids = dict(zip(self._flat_ids, self._embed_ids))
         self._leaf_labeller = leaf_labeller
         self._node_labeller = node_labeller
-        self._visited = dict()
 
-    def getLines(self, node_id=None, parent_id=None):
+    def getLines(self, node_id=None):
         n = self._n
-        try:
-            old_parent_id = self._visited[node_id]
-            raise ValueError("Visiting %d from %d: previously visited from %d" % (node_id, parent_id, old_parent_id))
-        except KeyError:
-            self._visited[node_id] = parent_id
         if node_id is None:
             node_id = self._embed_ids[-1]
-        elif node_id >= n:
-            node_id = self._embed_ids[node_id-n]
-        if node_id==-1:
-            return []
-        elif node_id < n:
-            return [self._leaf_labeller(node_id)]
+            
+        flat_id = self._flat_ids[node_id-n]+n if node_id >= n else node_id
+        embed_id = self._embed_ids[node_id-n] if node_id >= n else node_id
+        embed = node_id < n or self._flat_embed_ids[flat_id-n] == embed_id
+        if embed:
+            node_id = embed_id
+            
+        if node_id < n:
+            if node_id==-1 or not np.any(node_id == self._indices): # not embedded
+                return []
+            else:   
+                # embedded leaf 
+                return [self._node_labeller(flat_id)+self._leaf_labeller(embed_id)]
         else:
-            i = node_id-n
             left_child = int(self._Z[node_id-n,0])
             right_child = int(self._Z[node_id-n,1])
-            flat_node_id = self._flat_ids[i]
-            child_lines = self.getLines(left_child, flat_node_id)+self.getLines(right_child, flat_node_id) #
-            if parent_id is None or flat_node_id != parent_id:
-                return [self._node_labeller(flat_node_id)]+['--'+l for l in child_lines]
+            child_lines = self.getLines(left_child)+self.getLines(right_child)
+            if embed:
+                return [self._node_labeller(flat_id)]+['--'+l for l in child_lines]
             else:
                 return child_lines
+        
 
 class MarkerTreePrinter:
     def printTree(self, indices):
@@ -775,7 +786,7 @@ class MarkerTreePrinter:
                                    self.getLeafLabel,
                                    self.getNodeLabel
                                   )
-        return '\n'.join([l.replace('-', ' |-', 1) for l in rp.getLines()])
+        return '\n'.join([l.replace('-', '  |', 1) if l.startswith('-') else l for l in rp.getLines()])
 
     def getLinkage(self):
         pass
@@ -793,10 +804,11 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
         n = Z.shape[0] + 1
         self._Z = Z
+        self._n = n
         qe = MarkerCheckCQE(self._profile)
         self._scores = qe.makeScores(self._Z)
         weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
-        weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
+        weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=np.add)
         flat_ids = hierarchy.flatten_nodes(Z)
         weights[n:] = weights[flat_ids+n]
         self._weights = weights
@@ -805,7 +817,7 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         return self._Z
         
     def getLeafLabel(self, node_id):
-        return "%.1f(%s)" % (self._scores[node_id], self._profile.contigNames[node_id])
+        return ":%s" % self._profile.contigNames[node_id]
         
     def getNodeLabel(self, node_id):
         return "%.1f[%dbp]" % (self._scores[node_id], self._weights[node_id])
