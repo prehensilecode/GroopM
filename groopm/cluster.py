@@ -716,23 +716,24 @@ class MarkerCheckCQE(ClusterQualityEngine):
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
+        factor = 1. / len(indices)
         
         # Compute number of marker groups represented among 'similar' items with each item in cluster
         # as well as the duplicate number of markers for the current item
-        correct = np.empty(len(indices), dtype=int)
-        copies = np.empty(len(indices), dtype=int)
+        prec = 0.
+        compl = 0.
         for (i, index) in enumerate(indices):
             row = self._mdists[index, indices]
             (uniq, counts) = np.unique(self._mgroups[indices[row]], return_counts=True)
-            correct[i] = len(uniq)
-            copies[i] = counts[uniq==self._mgroups[index]]
+            num_correct = len(uniq)
+            prec += num_correct * factor
+            compl += (num_correct * (num_correct-1) + np.count_nonzero(row)) * self._mscalefactors[index] * factor
+            #compl += np.sum([x**2 for x in (np.count_nonzero(counts>i) for i in range(max(counts)))]) * self._mscalefactors[index] * factor
         #correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
         # item precision is fraction of cluster that is correct
-        prec = correct * 1. / len(indices)
         # item completeness is fraction of ideal number of marker groups calculated from the full data set in cluster
-        compl = (correct * self._mscalefactors[indices] / copies)
-        f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
-        return compl.sum() #f
+        f = self._alpha * prec + (1 - self._alpha) * compl
+        return f
         
        
 ###############################################################################
@@ -820,7 +821,7 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         return ":%s" % self._profile.contigNames[node_id]
         
     def getNodeLabel(self, node_id):
-        return "%.1f[%dbp]" % (self._scores[node_id], self._weights[node_id])
+        return "%.2f[%dbp]" % (self._scores[node_id], self._weights[node_id])
 
 
 ###############################################################################
