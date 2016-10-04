@@ -62,6 +62,7 @@ import hierarchy
 from profileManager import ProfileManager
 #from classification import ClassificationManager
 from groopmExceptions import SavedDistancesInvalidNumberException
+from utils import group_iterator
 
 ###############################################################################
 ###############################################################################
@@ -431,7 +432,7 @@ class FlatClusterEngine:
         # the combined nodes' children.
         flat_ids = hierarchy.flatten_nodes(Z)
         scores = np.asarray(self.getScores(Z))
-        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = 0 # always propagate descendent scores to equal height parents
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = np.min(scores) # always propagate descendent scores to equal height parents
         # NOTE: support is a measure of the degree to which a cluster quality
         # improves on the combined quality of the best clusters below (computed
         # by maxscorebelow). Positive values indicate that the parent cluster 
@@ -689,25 +690,18 @@ class MarkerCheckCQE(ClusterQualityEngine):
     """
     
     def __init__(self, profile):
-        self._alpha = 0.5 
         self._d = 1
+        self._alpha = 0.5
         self._mapping = profile.mapping
         
         # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
         # taxonomically 'similar enough', otherwise 0.
-        self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
-        #self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
         
-        # Represent single-copy marker groups by integers for efficiency
-        (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
+        # Compute the number of copies for each marker
+        (_name, bin, copies) = np.unique(self._mapping.markerNames, return_inverse=True, return_counts=True)
+        self._mscalefactors = 1. / copies[bin]
         
-        # With single-copy markers, ideally each marker group will be represented
-        # at most once in each cluster.
-        # This is the number of marker groups represented among 'similar'
-        # mappings for each mapping. We use this number as the ideal number of
-        # categories when computing the completeness / recall score for a cluster item.
-        self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
-        self._mscalefactors = 1./self._mcounts
         
     def getLeafData(self):
         """Leaf data is a list of indices of mappings."""
@@ -716,24 +710,16 @@ class MarkerCheckCQE(ClusterQualityEngine):
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
-        factor = 1. / len(indices)
         
-        # Compute number of marker groups represented among 'similar' items with each item in cluster
-        # as well as the duplicate number of markers for the current item
-        prec = 0.
-        compl = 0.
-        for (i, index) in enumerate(indices):
-            row = self._mdists[index, indices]
-            (uniq, counts) = np.unique(self._mgroups[indices[row]], return_counts=True)
-            num_correct = len(uniq)
-            prec += num_correct * factor
-            compl += (num_correct * (num_correct-1) + np.count_nonzero(row)) * self._mscalefactors[index] * factor
-            #compl += np.sum([x**2 for x in (np.count_nonzero(counts>i) for i in range(max(counts)))]) * self._mscalefactors[index] * factor
-        #correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
-        # item precision is fraction of cluster that is correct
-        # item completeness is fraction of ideal number of marker groups calculated from the full data set in cluster
-        f = self._alpha * prec + (1 - self._alpha) * compl
-        return f
+        markerNames = self._mapping.markerNames[indices]
+        singles = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
+        # item contamination is fraction of cluster that are duplicated markers
+        contam = 1 - (singles - 1) * 1. / len(indices)
+        # item copy number is the fraction of markers from the same group in cluster
+        (_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
+        copynum = copies[bin] * self._mscalefactors[indices]
+        f = self._alpha * contam + (1 - self._alpha) * copynum
+        return -f.sum()
         
        
 ###############################################################################
@@ -818,10 +804,10 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         return self._Z
         
     def getLeafLabel(self, node_id):
-        return ":%s" % self._profile.contigNames[node_id]
+        return "'%s" % self._profile.contigNames[node_id]
         
     def getNodeLabel(self, node_id):
-        return "%.2f[%dbp]" % (self._scores[node_id], self._weights[node_id])
+        return ":%.2f[%dbp]" % (self._scores[node_id], self._weights[node_id])
 
 
 ###############################################################################
