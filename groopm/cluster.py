@@ -699,9 +699,13 @@ class MarkerCheckCQE(ClusterQualityEngine):
         self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
         
         # Compute the number of copies for each marker
-        (_name, bin, copies) = np.unique(self._mapping.markerNames, return_inverse=True, return_counts=True)
+        markerNames = self._mapping.markerNames
+        (_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
         self._mscalefactors = 1. / copies[bin]
         
+        # Compute the compatible marker group sizes
+        gsizes = np.array([len(np.unique(markerNames[row])) for row in self._mdists])
+        self._gscalefactors = 1 + 1. / gsizes
         
     def getLeafData(self):
         """Leaf data is a list of indices of mappings."""
@@ -712,10 +716,14 @@ class MarkerCheckCQE(ClusterQualityEngine):
         indices = np.asarray(indices)
         
         markerNames = self._mapping.markerNames[indices]
-        singles = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
-        # item contamination is fraction of cluster that are duplicated markers
-        contam = 1 - (singles - 1) * 1. / len(indices)
+        gsizes = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
+        # item contamination is ??
+        # ~inverse precision
+        #contam = (len(indices) - gsizes + 1. / gsizes) / len(indices)
+        # item contamination is ??
+        contam = (len(indices) - (gsizes - 1) * self._gscalefactors[indices]) / len(indices)
         # item copy number is the fraction of markers from the same group in cluster
+        # ~inverse recall
         (_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
         copynum = copies[bin] * self._mscalefactors[indices]
         f = self._alpha * contam + (1 - self._alpha) * copynum
