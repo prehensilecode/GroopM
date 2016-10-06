@@ -705,7 +705,7 @@ class MarkerCheckCQE(ClusterQualityEngine):
         
         # Compute the compatible marker group sizes
         gsizes = np.array([len(np.unique(markerNames[row])) for row in self._mdists])
-        self._gscalefactors = 1 + 1. / gsizes
+        self._gscalefactors = 1. / gsizes
         
     def getLeafData(self):
         """Leaf data is a list of indices of mappings."""
@@ -714,20 +714,23 @@ class MarkerCheckCQE(ClusterQualityEngine):
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
-        
+        nscalefactor = 1. / len(indices)
         markerNames = self._mapping.markerNames[indices]
         gsizes = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
-        # item contamination is ??
+        # item contamination is the number of repeated markers in cluster
         # ~inverse precision
-        #contam = (len(indices) - gsizes + 1. / gsizes) / len(indices)
+        contam = (1. - gsizes * nscalefactor).sum()
         # item contamination is ??
-        contam = (len(indices) - (gsizes - 1) * self._gscalefactors[indices]) / len(indices)
-        # item copy number is the fraction of markers from the same group in cluster
+        #contam = 1 - (gsizes - 1) * gsizes * self._gscalefactors[indices] / len(indices)
+        # item incompleteness is the number of compatible genes outside cluster
+        # for good markers in cluster
         # ~inverse recall
-        (_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
-        copynum = copies[bin] * self._mscalefactors[indices]
-        f = self._alpha * contam + (1 - self._alpha) * copynum
-        return -f.sum()
+        incompl = (1. - (gsizes - 1) * gsizes * self._gscalefactors[indices] * nscalefactor).sum()
+        # item copynum is ??
+        #(_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
+        #copynum = copies[bin] * self._mscalefactors[indices]
+        f = self._alpha * contam + (1 - self._alpha) * incompl
+        return -f #minimise f
         
        
 ###############################################################################
