@@ -714,18 +714,17 @@ class MarkerCheckCQE(ClusterQualityEngine):
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
-        nscalefactor = 1. / len(indices)
         markerNames = self._mapping.markerNames[indices]
         gsizes = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
         # item contamination is the number of repeated markers in cluster
         # ~inverse precision
-        contam = (1. - gsizes * nscalefactor).sum()
+        contam = (1. - gsizes * 1. / len(indices)).sum()
         # item contamination is ??
         #contam = 1 - (gsizes - 1) * gsizes * self._gscalefactors[indices] / len(indices)
         # item incompleteness is the number of compatible genes outside cluster
         # for good markers in cluster
         # ~inverse recall
-        incompl = (1. - (gsizes - 1) * gsizes * self._gscalefactors[indices] * nscalefactor).sum()
+        incompl = (1. - (gsizes - 1) * gsizes * self._gscalefactors[indices] * 1. / len(indices)).sum()
         # item copynum is ??
         #(_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
         #copynum = copies[bin] * self._mscalefactors[indices]
