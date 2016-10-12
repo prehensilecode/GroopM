@@ -126,8 +126,8 @@ class CoreCreator:
         if not keepDists:
             try:
                 os.remove(savedCovDists)
-                os.remove(savedKmerDists)
-                os.remove(savedWeights)
+                #os.remove(savedKmerDists)
+                #os.remove(savedWeights)
             except:
                 raise
             
@@ -283,7 +283,7 @@ class CachingProfileDistanceEngine:
             with tables.open_file(self._savedDists, mode="r") as h5file:
                 weights = h5file.get_node("/", "weights").read()
                 assert_num_obs(len(contigLengths), weights)
-        except IOError:        
+        except tables.exceptions.NoSuchNodeError:        
             (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             weights = 1. * lens_i * lens_j
             #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
@@ -304,7 +304,7 @@ class CachingProfileDistanceEngine:
             with tables.open_file(self._savedDists, mode="r") as h5file:
                 cov_ranks = h5file.get_node("/", "coverage").read()
             assert_num_obs(n, cov_ranks)
-        except IOError:
+        except tables.exceptions.NoSuchNodeError:
             cached_weights = self._getWeights(contigLengths)
             scale_factor = 1. / cached_weights.sum()
             cov_ranks = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
@@ -314,7 +314,7 @@ class CachingProfileDistanceEngine:
             with tables.open_file(self._savedDists, mode="r") as h5file:
                 kmer_ranks = h5file.get_node("/", "kmer").read()
             assert_num_obs(n, kmer_ranks)
-        except IOError:
+        except tables.exceptions.NoSuchNodeError:
             del cov_ranks # save a bit of memory
             if cached_weights is None:
                 cached_weights = self._getWeights(contigLengths)
