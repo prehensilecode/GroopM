@@ -324,13 +324,15 @@ class CachingProfileDistanceEngine:
                 h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
                 cov_ranks = h5file.get_node("/", "coverage").read()
         return (cov_ranks, kmer_ranks, cached_weights)
-        
+    
+    @profile    
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks, cached_weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if cached_weights is None:
             cached_weights = self._getWeights(contigLengths)
         return (cov_ranks, kmer_ranks, cached_weights)
     
+    @profile
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute norms in {coverage rank space x kmer rank space}
         """
@@ -340,6 +342,7 @@ class CachingProfileDistanceEngine:
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
     
+    @profile
     def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
         """Compute density distances for pairs of contigs
         """
