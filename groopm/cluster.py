@@ -371,13 +371,13 @@ def assert_num_obs(n, y):
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-class FlatClusterEngine:
+class FlatClusterEngine_:
     """Flat clustering pipeline.
     
     Subclass should provide `getScores` and `isLowQuality` methods with the
     described interfaces.
     """
+    support_tol = 0.
     
     def unbinClusters(self, unbin, out_bins):
         out_bins[unbin] = 0
@@ -440,7 +440,153 @@ class FlatClusterEngine:
         # values indicate that the best clusters below should be prefered.
         support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
         support = support[flat_ids] # map values from parents to descendents of equal height
-        node_support = np.concatenate((scores, support))
+        node_support = np.concatenate((scores[:n], support))
+        
+        is_low_quality_cluster = np.asarray(self.isLowQualityCluster(Z))
+        is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
+        
+        # NOTE: conservative bins are a minimal set of clusters that have
+        # maximum combined quality. The returned conservative bins have below
+        # standard bins dissolved.
+        (conservative_bins, conservative_leaders) = hierarchy.fcluster_merge(Z, support>0, return_nodes=True)
+        conservative_bins += 1 # bin ids start at 1
+        self.unbinClusters(is_low_quality_cluster[conservative_leaders], out_bins=conservative_bins)
+        
+        (bins, leaders) = hierarchy.fcluster_merge(Z, support>=0, return_nodes=True)
+        bins += 1 # bin ids start at 1
+        self.unbinClusters(is_low_quality_cluster[leaders], out_bins=bins)
+                     
+        if not (return_leaders or return_low_quality or return_support or return_coeffs or
+                return_seeds or return_conservative_bins or return_conservative_leaders):
+            return bins
+            
+        out = (bins,)
+        if return_leaders:
+            out += (leaders,)
+        if return_low_quality:
+            out += (is_low_quality_cluster,)
+        if return_support:
+            out += (support,)
+        if return_coeffs:
+            out += (scores,)
+        if return_seeds:
+            out += (is_seed_cluster,)
+        if return_conservative_bins:
+            out += (conservative_bins,)
+        if return_conservative_leaders:
+            out += (conservative_leaders,)
+        return out
+    
+    def getScores(self, Z):
+        """Compute cluster quality scores for nodes in a hierarchical clustering.
+        
+        Parameters
+        ----------
+        Z : ndarray
+            Linkage matrix encoding a hierarchical clustering. See 
+            `linkage` in `scipy` documentation.
+        
+        Returns
+        -------
+        scores : ndarray
+            1-D array. `scores[i]` where `i < n` is the `quality` score for the
+            singleton cluster consisting of original observation `i`. 
+            `scores[i]` where `i >= n` is the `quality` score for the cluster
+            consisting of the original observations below the node represented
+            by the `i-n`th row of `Z`.
+        """
+        pass #subclass to override
+        
+    def isLowQualityCluster(self, Z):
+        """Bit of a hack. Indicate clusters that are intrinsically low quality
+        e.g. too small,  not enough bp, but don't 'infect' the quality of higher
+        clusters.
+        
+        Parameters
+        ----------
+        Z : ndarray
+            Linkage matrix encoding a hierarchical clustering.
+        
+        Returns
+        -------
+        l : ndarray
+            1-D boolean array. `l[i]` is True for clusters that are
+            low quality and otherwise False. Here `i` is a singleton 
+            cluster for `i < n` and an internal cluster for `i >= n`.
+        """
+        pass #subclass to overrride
+        
+        
+class FlatClusterEngine:
+    """Flat clustering pipeline.
+    
+    Subclass should provide `getScores` and `isLowQuality` methods with the
+    described interfaces.
+    """
+    support_tol = 0.
+    
+    def unbinClusters(self, unbin, out_bins):
+        out_bins[unbin] = 0
+        (_, new_bids) = np.unique(out_bins[out_bins != 0], return_inverse=True)
+        out_bins[out_bins != 0] = new_bids+1
+    
+    def makeClusters(self,
+                     Z,
+                     return_leaders=False,
+                     return_low_quality=False,
+                     return_coeffs=False,
+                     return_support=False,
+                     return_seeds=False,
+                     return_conservative_bins=False,
+                     return_conservative_leaders=False):
+        """Implements algorithm for cluster formation.
+        
+        The set of flat clusters returned (should) satisfy the following
+        constraints:
+            1. All clusters exceed a minimum standard (as reported by
+               `isLowQuality` method);
+            2. As allowed by 1, the number of clusters is the maximimum such
+               that no smaller number of clusters has a higher sum quality (as
+               reported by `getScore` method);
+            3. As allowed by 1 and 2, the total size of clusters is maximum.
+        
+        The strategy used is:
+            - Find a minimal set of minimum standard clusters which maximise the
+              sum quality
+            - Grow clusters by greedily merging only below standard clusters
+        
+        Parameters
+        ----------
+        Z : ndarray
+            Linkage matrix encoding a hierarchical clustering of a set of
+            original observations.
+        
+        Returns
+        -------
+        T : ndarray
+            1-D array. `T[i]` is the flat cluster number to which original
+            observation `i` belongs.
+        """
+        Z = np.asarray(Z)
+        n = Z.shape[0]+1
+        
+        # NOTE: Cases of nested clusters where the child and parent cluster heights
+        # are equal are ambiguously encoded in hierarchical clusterings. 
+        # This is handled by finding the row of the highest ancestor node of equal height
+        # and computing scores as if all equal height descendents were considered as the
+        # same node as the highest ancestor, with children corresponding to the union of
+        # the combined nodes' children.
+        flat_ids = hierarchy.flatten_nodes(Z)
+        scores = np.asarray(self.getScores(Z))
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = np.min(scores) # always propagate descendent scores to equal height parents
+        # NOTE: support is a measure of the degree to which a cluster quality
+        # improves on the combined quality of the best clusters below (computed
+        # by maxscorebelow). Positive values indicate that the parent cluster 
+        # should be favoured, zero values indicate no preference, and negative
+        # values indicate that the best clusters below should be prefered.
+        support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
+        support = support[flat_ids] # map values from parents to descendents of equal height
+        node_support = np.concatenate((scores[:n], support))
         
         is_low_quality_cluster = np.asarray(self.isLowQualityCluster(Z))
         is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
@@ -453,8 +599,13 @@ class FlatClusterEngine:
         self.unbinClusters(is_low_quality_cluster[conservative_leaders], out_bins=conservative_bins)
         
         # NOTE: A seed cluster is any putative cluster that meets the minimum
-        # standard, and is not already part of a conservative bin. 
+        # standard, is not already part of a conservative bin, and is within
+        # support tolerance of conservative bins below. 
         is_seed_cluster = np.logical_not(is_low_quality_cluster)
+        is_seed_cluster[Z[support<-self.support_tol, :2].astype(int)] = True
+        #for i in range(n-1):
+        #    if (node_support[n+i]<-self.support_tol):
+        #        is_seed_cluster[Z[i,0]] = is_seed_cluster[Z[i,1]] = True
         is_seed_cluster[hierarchy.descendents(Z, conservative_leaders)] = False
         is_seed_cluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent scores to equal height parents
         # NOTE: to_merge is true for nodes that have at most 1 seed cluster
@@ -467,9 +618,6 @@ class FlatClusterEngine:
         # NOTE: any new clusters that are below minimum standard are dissolved
         # here. 
         self.unbinClusters(is_low_quality_cluster[leaders], out_bins=bins)
-        bins[is_low_quality_cluster[leaders]] = 0
-        (_, new_bids) = np.unique(bins[bins != 0], return_inverse=True)
-        bins[bins != 0] = new_bids+1
                      
         if not (return_leaders or return_low_quality or return_support or return_coeffs or
                 return_seeds or return_conservative_bins or return_conservative_leaders):
@@ -534,13 +682,14 @@ class FlatClusterEngine:
         
 class MarkerCheckFCE(FlatClusterEngine):
     """Seed clusters using taxonomy and marker completeness"""
-    
     def __init__(self, profile, minPts=None, minSize=None):
         self._profile = profile
         self._minSize = minSize
         self._minPts = minPts
         if self._minSize is None and self._minPts is None:
             raise ValueError("'minPts' and 'minSize' cannot both be None.")
+            
+    support_tol = 1.
     
     def getScores(self, Z):
         return MarkerCheckCQE(self._profile).makeScores(Z)
@@ -716,20 +865,14 @@ class MarkerCheckCQE(ClusterQualityEngine):
         indices = np.asarray(indices)
         markerNames = self._mapping.markerNames[indices]
         gsizes = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
-        # item contamination is the number of repeated markers in cluster
-        # ~inverse precision
-        contam = (1. - gsizes * 1. / len(indices)).sum()
-        # item contamination is ??
-        #contam = 1 - (gsizes - 1) * gsizes * self._gscalefactors[indices] / len(indices)
-        # item incompleteness is the number of compatible genes outside cluster
-        # for good markers in cluster
-        # ~inverse recall
-        incompl = (1. - (gsizes - 1) * gsizes * self._gscalefactors[indices] * 1. / len(indices)).sum()
-        # item copynum is ??
-        #(_name, bin, copies) = np.unique(markerNames, return_inverse=True, return_counts=True)
-        #copynum = copies[bin] * self._mscalefactors[indices]
-        f = self._alpha * contam + (1 - self._alpha) * incompl
-        return -f #minimise f
+        # item precision is the average number of compatible unique markers in
+        # cluster
+        prec = (gsizes * 1. / len(indices)).sum()
+        # item completeness / recall is the percentage of compatible genes in
+        # cluster for good markers in cluster
+        recall = ((gsizes - 1) * gsizes * self._gscalefactors[indices] * 1. / len(indices)).sum()
+        f = self._alpha * recall + (1 - self._alpha) * prec
+        return f
         
        
 ###############################################################################
