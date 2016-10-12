@@ -58,9 +58,12 @@ from bamm.bamExtractor import BamExtractor as BMBE
 # local imports
 from profileManager import ProfileManager
 from binManager import BinManager
+from classification import BinClassifier
 from data3 import ContigParser, MappingParser
 from utils import makeSurePathExists
+from cluster import MarkerCheckTreePrinter
 import distance
+import hierarchy
 
 
 ###############################################################################
@@ -196,7 +199,7 @@ class BinExtractor:
 
         bam_parser.extract(threads=threads,
                            verbose=verbose)
-                           
+
                            
 class MarkerExtractor:
     def __init__(self,
@@ -215,12 +218,56 @@ class MarkerExtractor:
                                  loadBins=True,
                                  loadMarkers=True,
                                  loadTaxstrings=True,
+                                 loadReachability=True,
                                  minLength=cutoff,
                                  bids=[0] if removeBins else bids,
                                  removeBins=removeBins,
                                 )
         
     def extractMappingInfo(self,
+                           timer,
+                           bids=[],
+                           prefix='',
+                           separator='\t',
+                           cutoff=0
+                           ):
+        """Extract markers from bins and write to file"""
+        if prefix is None or prefix == '':
+            prefix=os.path.basename(self.dbFileName) \
+                            .replace(".gm", "") \
+                            .replace(".sm", "")
+        
+        profile = self.loadProfile(timer, bids, cutoff)
+        bm = BinManager(profile)
+        mt = MarkerCheckTreePrinter(profile)
+        
+        # now print out the marker info
+        print "Writing files"
+        for bid in bm.getBids():
+            file_name = os.path.join(self._outDir, "%s_bin_%d.txt" % (prefix, bid))
+            
+            bin_indices = bm.getBinIndices([bid])
+            idx = np.flatnonzero(np.in1d(profile.mapping.rowIndices, bin_indices))
+            
+            labels = profile.mapping.markerNames[idx]
+            cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
+            taxstrings = profile.mapping.taxstrings[idx]
+            
+            try:
+                with open(file_name, 'w') as f:
+                    #labels and lineages
+                    f.write('#info table\n%s\n' % separator.join(['label', 'taxonomy', 'contig_name']))
+                    for (label, taxstring, cname) in zip(labels, taxstrings, cnames):
+                        f.write('%s\n' % separator.join([label, '\'%s\'' % taxstring, cname]))
+                    
+                    #distance table
+                    f.write('\n#marker tree\n')
+                    f.write(mt.printTree(profile.mapping.rowIndices[idx]))
+            except:
+                print "Could not open file for writing:",file_name,sys.exc_info()[0]
+                raise
+                
+    def extractMappingInfo_(self,
                            timer,
                            bids=[],
                            prefix='',
@@ -265,7 +312,6 @@ class MarkerExtractor:
                 print "Could not open file for writing:",file_name,sys.exc_info()[0]
                 raise
     
-    
                            
 class BinStatsDumper:
     def __init__(self,
@@ -275,7 +321,7 @@ class BinStatsDumper:
         
     def loadProfile(self, timer):
         return self._pm.loadData(timer,
-                                 loadMarkers=False,
+                                 loadMarkers=True,
                                  loadBins=True,
                                  bids=[0],
                                  removeBins=True,
@@ -283,43 +329,82 @@ class BinStatsDumper:
                                 
     def dumpBinStats(self,
                      timer,
+                     fields,
                      outFile,
                      separator,
                      useHeaders
                     ):
         """Compute bin statistics"""
         
-        
         # load all the contigs which have been assigned to bins
         profile = self.loadProfile(timer)
         bm = BinManager(profile)
+        bc = BinClassifier(profile.mapping)
         
         stats = bm.getBinStats()
+        
+        #data to output
+        header_strings = []
+        data_arrays = []
+        data_converters = []
+        
+        for field in fields:
+            if field == 'bins':
+                header_strings.append('bid')
+                data_arrays.append(stats.bids)
+                data_converters.append(lambda x: str(x))
+                
+            elif field == 'points':
+                header_strings.append('num_contigs')
+                data_arrays.append(stats.numContigs)
+                data_converters.append(lambda x: str(x))
+            
+            elif field == 'sizes':
+                header_strings.append('size')
+                data_arrays.append(stats.sizes)
+                data_converters.append(lambda x: str(x))
+                
+            elif field == 'lengths':
+                header_strings.append('length_min')
+                header_strings.append('length_median')
+                header_strings.append('length_max')
+                data_arrays.append(stats.lengthRanges[:,0])
+                data_arrays.append(stats.lengthMedians)
+                data_arrays.append(stats.lengthRanges[:,1])
+                data_converters.append(lambda x: str(x))
+                data_converters.append(lambda x: str(x))
+                data_converters.append(lambda x: str(x))
+            
+            elif field == 'gc':
+                header_strings.append("GC%_mean")
+                header_strings.append("GC%_std")
+                data_arrays.append(stats.GCMeans)
+                data_arrays.append(stats.GCStdDevs)
+                data_converters.append(lambda x : "%0.4f" % x)
+                data_converters.append(lambda x : "%0.4f" % x)
+            
+            elif field == 'coverage':
+                stoits = profile.stoitNames
+                header_strings.append(separator.join([separator.join([i + "_mean", i + "_std"]) for i in stoits]))
+                interleaved = np.dsplit(np.transpose(np.dstack((stats.covMeans, stats.covStdDevs)), axes=[0, 2, 1]))
+                data_arrays.append(interleaved)
+                data_converters.append(lambda x: separator.join(["%0.4f"+separator+"%0.4f" % i for i in x]))
 
+            elif field == 'tags':
+                header_strings.append('taxonomy')
+                data_arrays.append(stats.tags)
+                data_converters.append(lambda x: x)
+            
         # now print out the sequences
         try:
             with open(outFile, 'w') as f:
                 if useHeaders:
-                    header = separator.join(['bid',
-                                             'num_contigs',
-                                             'size',
-                                             'length_min',
-                                             'length_median',
-                                             'length_max',
-                                             'gc_mean',
-                                             'gc_std']) + '\n'
+                    header = separator.join(header_strings) + '\n'
                     f.write(header)
                 
-                num_rows = len(stats.bids)
+                num_rows = len(data_arrays[0])
                 for i in range(num_rows):
-                    row = separator.join(['%d' % stats.bids[i],
-                                          '%d' % stats.numContigs[i], 
-                                          '%d' % stats.sizes[i],
-                                          '%d' % stats.lengthRanges[i, 0],
-                                          '%d' % stats.lengthMedians[i],
-                                          '%d' % stats.lengthRanges[i, 1],
-                                          '%.2f' % stats.GCMeans[i],
-                                          '%.2f' % stats.GCStdDevs[i]])
+                    row = separator.join([conv(arr[i]) for (conv, arr) in zip(data_converters, data_arrays)])
                     f.write(row+'\n')
         except:
             print "Could not open file for writing:",outFile,sys.exc_info()[0]

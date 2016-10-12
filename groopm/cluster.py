@@ -38,9 +38,9 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort, Tim Lamberton"
-__copyright__ = "Copyright 2012/2013"
-__credits__ = ["Tim Lamberton", "Michael Imelfort"]
+__author__ = "Tim Lamberton"
+__copyright__ = "Copyright 2016"
+__credits__ = ["Tim Lamberton"]
 __license__ = "GPL3"
 __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
@@ -54,13 +54,13 @@ import scipy.spatial.distance as sp_distance
 import scipy.stats as sp_stats
 import operator
 import os
+import tables
 
 # local imports
 import distance
 import recruit
 import hierarchy
 from profileManager import ProfileManager
-#from classification import ClassificationManager
 from groopmExceptions import SavedDistancesInvalidNumberException
 
 ###############################################################################
@@ -267,9 +267,103 @@ class ProfileDistanceEngine:
             minWt = np.maximum(minSize - v, 0) * v
         den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
         return den_dist
-        
+
         
 class CachingProfileDistanceEngine:
+    """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
+
+    def __init__(self, savedCovDists, savedKmerDists, savedWeights):
+        self._savedDists = savedCovDists
+        with tables.open_file(self._savedDists, mode="w", title="Distance store"):
+            pass
+            
+    
+    def _getWeights(self, contigLengths):
+        try:
+            with tables.open_file(self._savedDists, mode="r") as h5file:
+                weights = h5file.get_node("/", "weights").read()
+                assert_num_obs(len(contigLengths), weights)
+        except IOError:        
+            (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
+            weights = 1. * lens_i * lens_j
+            #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
+            with tables.open_file(self._savedDists, mode="a") as h5file:
+                h5file.create_array("/", "weights", weights, "Distance weights")
+        return weights
+    
+    def _getScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+        """Compute pairwise rank distances separately for coverage profiles and
+        kmer signatures, and give rank distances as a fraction of the largest rank.
+        """
+        n = len(contigLengths)
+        if(not silent):
+            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
+        cached_weights = None
+        scale_factor = None
+        try:
+            with tables.open_file(self._savedDists, mode="r") as h5file:
+                cov_ranks = h5file.get_node("/", "coverage").read()
+            assert_num_obs(n, cov_ranks)
+        except IOError:
+            cached_weights = self._getWeights(contigLengths)
+            scale_factor = 1. / cached_weights.sum()
+            cov_ranks = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
+            with tables.open_file(self._savedDists, mode="a") as h5file:
+                h5file.create_array("/", "coverage", cov_ranks, "Coverage distance ranks")
+        try:
+            with tables.open_file(self._savedDists, mode="r") as h5file:
+                kmer_ranks = h5file.get_node("/", "kmer").read()
+            assert_num_obs(n, kmer_ranks)
+        except IOError:
+            del cov_ranks # save a bit of memory
+            if cached_weights is None:
+                cached_weights = self._getWeights(contigLengths)
+                scaled_factor = 1. / cached_weights.sum()
+            kmer_ranks = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
+            with tables.open_file(self._savedDists, mode="a") as h5file:
+                h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
+                cov_ranks = h5file.get_node("/", "coverage").read()
+        return (cov_ranks, kmer_ranks, cached_weights)
+        
+    def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+        (cov_ranks, kmer_ranks, cached_weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        if cached_weights is None:
+            cached_weights = self._getWeights(contigLengths)
+        return (cov_ranks, kmer_ranks, cached_weights)
+    
+    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+        """Compute norms in {coverage rank space x kmer rank space}
+        """
+        (cov_ranks, kmer_ranks, w) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        del w # save some memory
+        rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
+        w = self._getWeights(contigLengths)
+        return (rank_norms, w)
+    
+    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
+        """Compute density distances for pairs of contigs
+        """
+        (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        if not silent:
+            print "Reticulating splines"
+            
+        # Convert the minimum size in bp of a bin to the minimum weighted density
+        # used to compute the density distance. For a contig of size L, the sum of
+        # nearest neighbour weights will be W=L*{sum of nearest neighbour lengths}. The
+        # corresponding size of the bin including the nearest neighbours will be
+        # S=L+{sum of nearest neighbour lengths}. Applying the size constraint S>minSize
+        # yields the weight constraint W>L*(minSize - L).
+        if minSize is None:
+            minWt = None
+        else:
+            v = np.full(len(contigLengths), contigLengths.min())
+            #v = contigLengths
+            minWt = np.maximum(minSize - v, 0) * v
+        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
+        return den_dist
+        
+        
+class CachingProfileDistanceEngine_:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
     def __init__(self, savedCovDists, savedKmerDists, savedWeights):
@@ -399,7 +493,7 @@ class FlatClusterEngine:
         
         The set of flat clusters returned (should) satisfy the following
         constraints:
-            1. Clusters exceed a minimum standard (as reported by
+            1. All clusters exceed a minimum standard (as reported by
                `isLowQuality` method);
             2. As allowed by 1, the number of clusters is the maximimum such
                that no smaller number of clusters has a higher sum quality (as
@@ -407,7 +501,8 @@ class FlatClusterEngine:
             3. As allowed by 1 and 2, the total size of clusters is maximum.
         
         The strategy used is:
-            - Find a minimal set of clusters that maximises the sum quality
+            - Find a minimal set of minimum standard clusters which maximise the
+              sum quality
             - Grow clusters by greedily merging only below standard clusters
         
         Parameters
@@ -536,16 +631,15 @@ class FlatClusterEngine:
 class MarkerCheckFCE(FlatClusterEngine):
     """Seed clusters using taxonomy and marker completeness"""
     
-    def __init__(self, profile, minPts=None, minSize=None, filter_leaves=[]):
+    def __init__(self, profile, minPts=None, minSize=None):
         self._profile = profile
         self._minSize = minSize
         self._minPts = minPts
-        self._filterLeaves = filter_leaves
         if self._minSize is None and self._minPts is None:
             raise ValueError("'minPts' and 'minSize' cannot both be None.")
     
     def getScores(self, Z):
-        return MarkerCheckCQE(self._profile, filter_leaves=self._filterLeaves).makeScores(Z)
+        return MarkerCheckCQE(self._profile).makeScores(Z)
         
     def isLowQualityCluster(self, Z):
         Z = np.asarray(Z)
@@ -558,6 +652,8 @@ class MarkerCheckFCE(FlatClusterEngine):
         if doMinSize:
             weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
             weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
+            flat_ids = hierarchy.flatten_nodes(Z)
+            weights[n:] = weights[flat_ids+n]
             is_low_quality = weights < self._minSize   
         if doMinPts:
             is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[:, 2] < self._minPts))
@@ -689,14 +785,15 @@ class MarkerCheckCQE(ClusterQualityEngine):
     alpha which can be combined additively when assessing multiple clusters.
     """
     
-    def __init__(self, profile, filter_leaves=[]):
-        self._alpha = 0.5
+    def __init__(self, profile):
+        self._alpha = 0.5 
         self._d = 1
         self._mapping = profile.mapping
         
         # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
         # taxonomically 'similar enough', otherwise 0.
-        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        self._mdists = np.logical_not(sp_distance.squareform(self._mapping.classification.makeDistances()) >= self._d)
+        #self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
         
         # Represent single-copy marker groups by integers for efficiency
         (_mnames, self._mgroups) = np.unique(self._mapping.markerNames, return_inverse=True)
@@ -709,30 +806,121 @@ class MarkerCheckCQE(ClusterQualityEngine):
         self._mcounts = np.array([len(np.unique(self._mgroups[row])) for row in self._mdists])
         self._mscalefactors = 1./self._mcounts
         
-        # exclude any mapping data for these observations
-        self._filterLeaves = filter_leaves
-        
     def getLeafData(self):
         """Leaf data is a list of indices of mappings."""
-        filter_leaf_set = set(self._filterLeaves)
-        return dict([(i, data) for (i, data) in self._mapping.iterindices() if i not in filter_leaf_set])
+        return dict([(i, data) for (i, data) in self._mapping.iterindices()])
         
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
         
         # Compute number of marker groups represented among 'similar' items with each item in cluster
-        correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
+        # as well as the duplicate number of markers for the current item
+        correct = np.empty(len(indices), dtype=int)
+        copies = np.empty(len(indices), dtype=int)
+        for (i, index) in enumerate(indices):
+            row = self._mdists[index, indices]
+            (uniq, counts) = np.unique(self._mgroups[indices[row]], return_counts=True)
+            correct[i] = len(uniq)
+            copies[i] = counts[uniq==self._mgroups[index]]
+        #correct = np.array([len(np.unique(self._mgroups[indices[row]])) for row in self._mdists[np.ix_(indices, indices)]])
         # item precision is fraction of cluster that is correct
         prec = correct * 1. / len(indices)
         # item completeness is fraction of ideal number of marker groups calculated from the full data set in cluster
-        compl = (correct * self._mscalefactors[indices])
+        compl = (correct * self._mscalefactors[indices] / copies)
         f = self._alpha * prec.sum() + (1 - self._alpha) * compl.sum()
-        return f
+        return compl.sum() #f
         
-     
+       
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
+class _TreeRecursivePrinter:
+    def __init__(self, Z, indices, leaf_labeller, node_labeller):
+        self._Z = np.asarray(Z)
+        self._n = self._Z.shape[0] + 1
+        self._flat_ids = hierarchy.flatten_nodes(self._Z)
+        self._embed_ids = hierarchy.embed_nodes(self._Z, indices)
+        self._indices = indices
+        # map from flat_id -> closest embed_id
+        self._flat_embed_ids = dict(zip(self._flat_ids, self._embed_ids))
+        self._leaf_labeller = leaf_labeller
+        self._node_labeller = node_labeller
+
+    def getLines(self, node_id=None):
+        n = self._n
+        if node_id is None:
+            node_id = self._embed_ids[-1]
+            
+        flat_id = self._flat_ids[node_id-n]+n if node_id >= n else node_id
+        embed_id = self._embed_ids[node_id-n] if node_id >= n else node_id
+        embed = node_id < n or self._flat_embed_ids[flat_id-n] == embed_id
+        if embed:
+            node_id = embed_id
+            
+        if node_id < n:
+            if node_id==-1 or not np.any(node_id == self._indices): # not embedded
+                return []
+            else:   
+                # embedded leaf 
+                return [self._node_labeller(flat_id)+self._leaf_labeller(embed_id)]
+        else:
+            left_child = int(self._Z[node_id-n,0])
+            right_child = int(self._Z[node_id-n,1])
+            child_lines = self.getLines(left_child)+self.getLines(right_child)
+            if embed:
+                return [self._node_labeller(flat_id)]+['--'+l for l in child_lines]
+            else:
+                return child_lines
+        
+
+class MarkerTreePrinter:
+    def printTree(self, indices):
+        rp = _TreeRecursivePrinter(self.getLinkage(),
+                                   indices,
+                                   self.getLeafLabel,
+                                   self.getNodeLabel
+                                  )
+        return '\n'.join([l.replace('-', '  |', 1) if l.startswith('-') else l for l in rp.getLines()])
+
+    def getLinkage(self):
+        pass
+        
+    def getLeafLabel(self, node_id):
+        pass
+        
+    def getNodeLabel(self, node_id):
+        pass
+
+        
+class MarkerCheckTreePrinter(MarkerTreePrinter):
+    def __init__(self, profile):
+        self._profile = profile
+        Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
+        n = Z.shape[0] + 1
+        self._Z = Z
+        self._n = n
+        qe = MarkerCheckCQE(self._profile)
+        self._scores = qe.makeScores(self._Z)
+        weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
+        weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=np.add)
+        flat_ids = hierarchy.flatten_nodes(Z)
+        weights[n:] = weights[flat_ids+n]
+        self._weights = weights
+        
+    def getLinkage(self):
+        return self._Z
+        
+    def getLeafLabel(self, node_id):
+        return ":%s" % self._profile.contigNames[node_id]
+        
+    def getNodeLabel(self, node_id):
+        return "%.1f[%dbp]" % (self._scores[node_id], self._weights[node_id])
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################

@@ -68,7 +68,7 @@ from profileManager import ProfileManager
 from binManager import BinManager
 import distance
 from cluster import ClassificationClusterEngine, ProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
-from classification import ClassificationManager
+from classification import BinClassifier
 import hierarchy
 
 np.seterr(all='raise')
@@ -392,7 +392,7 @@ class BarPlotter(Plotter2D):
 class ProfileReachabilityPlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
-        self._cf = ClassificationManager(self._profile.mapping)
+        self._bc = BinClassifier(self._profile.mapping)
         self._colourmap = getColorMap(colourmap)
         
     def plot(self,
@@ -410,7 +410,7 @@ class ProfileReachabilityPlotter:
             xticklabel_rotation = "horizontal"
         elif label=="tag":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._cf.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
             xticklabel_rotation = "vertical"
         else:
@@ -518,7 +518,7 @@ class ProfileReachabilityPlotter:
 class TreePlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
-        self._cf = ClassificationManager(self._profile.mapping)
+        self._bc = BinClassifier(self._profile.mapping)
         self._cqe = MarkerCheckCQE(self._profile)
         self._colourmap = getColorMap(colourmap)
         self._Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
@@ -602,7 +602,7 @@ class TreePlotter:
         
     def leaf_label_tag(self, k):
         indices = self.indices(k)
-        return self._cf.consensusTag(indices)
+        return self._bc.consensusTag(indices)
 
   
 # Bin plotters
@@ -611,12 +611,10 @@ class BinDistancePlotter:
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
         de = ProfileDistanceEngine()
-        de.makeScaledRanks(self._profile.covProfiles,
-                           self._profile.kmerSigs,
-                           self._profile.contigLengths
-                           )
-        (self._x, self._y) = de.loadScaledRanks()
-        self._w = de.loadWeights()
+        (self._x, self._y, self._w) = de.makeScaledRanks(self._profile.covProfiles,
+                                                         self._profile.kmerSigs,
+                                                         self._profile.contigLengths
+                                                        )
 
     def plot(self,
              bid,

@@ -88,11 +88,11 @@ class _Classification:
         Array of taxonomic classification strings.
     """
     _ce = ClassificationEngine()
-        
+    
     def tags(self, index):
         """Return a list of taxonomic tags"""
         return [t+self._taxons[i] for (t, i) in zip(self._ce.TAGS, self._table[index]) if i!=0]
-    
+        
     def makeDistances(self):
         return sp_distance.pdist(self._table, self._ce.getDistance)
         
@@ -111,8 +111,8 @@ class _Mappings:
         `indices[i]` is the index into the pytables structure of mapping `i`
     markerNames : ndarray
         `markerNames[i]` is the marker id for mapping `i`.
-    markerTaxstrings : ndarray
-        `markerTaxstrings[i]` is the taxstring for mapping `i`.
+    taxstrings : ndarray
+        `taxstrings[i]` is the taxstring for mapping `i`.
     classification : _Classificaton object
         See above.
         
@@ -129,7 +129,7 @@ class _Mappings:
         """Returns an iterator of profile and marker indices."""
         return group_iterator(self.rowIndices)
         
-    def makeDistances(self):
+    def makeDistances_(self):
         """"Distance matrix using shared group membership"""
         n = self.numMappings
         Y = np.zeros(n*(n-1)//2, dtype=bool)
@@ -185,7 +185,7 @@ class _Profile:
         Names of stoits for each column of covProfiles array.
     numStoits : int
         Corresponds to number of columns of covProfiles array.
-    mappings : _Mappings object
+    mapping : _Mappings object
         See above.
     reachOrder : ndarray
         `reachOrder[i]` is the contig index in position `i` of reachability order.

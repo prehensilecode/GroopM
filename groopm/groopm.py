@@ -54,6 +54,7 @@ from extract import BinExtractor, MarkerExtractor, BinStatsDumper
 from import_ import BinImporter
 from plot import BinPlotManager, ReachabilityPlotManager, TreePlotManager
 from groopmTimekeeper import TimeKeeper
+import matlibplot_conf
 
     
 
