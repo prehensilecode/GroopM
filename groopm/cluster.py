@@ -55,6 +55,7 @@ import scipy.stats as sp_stats
 import operator
 import os
 import tables
+import sys
 
 # local imports
 import distance
@@ -99,17 +100,13 @@ class CoreCreator:
         
         if savedDistsPrefix=="":
             savedDistsPrefix = self._dbFileName
-        savedCovDists = savedDistsPrefix+".cov.npy"
-        savedKmerDists = savedDistsPrefix+".kmer.npy"
-        savedWeights = savedDistsPrefix+".weights.npy"
+        distFileName = savedDistsPrefix+".dists"
         
         ce = ClassificationClusterEngine(profile,
                                          minPts=minPts,
                                          minSize=minSize,
-                                         savedCovDists=savedCovDists,
-                                         savedKmerDists=savedKmerDists,
-                                         savedWeights=savedWeights,
-                                         )
+                                         distStore=distFileName,
+                                        )
         ce.makeBins(timer,
                     out_bins=profile.binIds,
                     out_reach_order=profile.reachOrder,
@@ -193,18 +190,14 @@ class HierarchicalClusterEngine:
 class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     
-    def __init__(self, profile, minPts, minSize, savedCovDists="", savedKmerDists="", savedWeights=""):
+    def __init__(self, profile, minPts, minSize, distStore=""):
         self._profile = profile
         self._minPts = minPts
         self._minSize = minSize
-        self._savedCovDists = savedCovDists
-        self._savedKmerDists = savedKmerDists
-        self._savedWeights = savedWeights
+        self._distStore = distStore
     
     def distances(self):
-        de = CachingProfileDistanceEngine(savedCovDists=self._savedCovDists, 
-                                          savedKmerDists=self._savedKmerDists,
-                                          savedWeights=self._savedWeights)
+        de = CachingProfileDistanceEngine(distStore=distStore)
         den_dists = de.makeDensityDistances(self._profile.covProfiles,
                                             self._profile.kmerSigs,
                                             self._profile.contigLengths, 
@@ -272,22 +265,25 @@ class ProfileDistanceEngine:
 class CachingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, savedCovDists, savedKmerDists, savedWeights):
-        self._savedDists = savedCovDists
-        with tables.open_file(self._savedDists, mode="w", title="Distance store"):
-            pass
-            
+    def __init__(self, distStore):
+        self._distStoreFile = distStore
+        try:
+            with tables.open_file(self._distStoreFile, mode="w", title="Distance store"):
+                pass
+        except:
+            print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
+            raise
     
     def _getWeights(self, contigLengths):
         try:
-            with tables.open_file(self._savedDists, mode="r") as h5file:
+            with tables.open_file(self._distStoreFile, mode="r") as h5file:
                 weights = h5file.get_node("/", "weights").read()
                 assert_num_obs(len(contigLengths), weights)
         except tables.exceptions.NoSuchNodeError:        
             (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             weights = 1. * lens_i * lens_j
             #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-            with tables.open_file(self._savedDists, mode="a") as h5file:
+            with tables.open_file(self._distStoreFile, mode="a") as h5file:
                 h5file.create_array("/", "weights", weights, "Distance weights")
         return weights
     
@@ -301,17 +297,17 @@ class CachingProfileDistanceEngine:
         cached_weights = None
         scale_factor = None
         try:
-            with tables.open_file(self._savedDists, mode="r") as h5file:
+            with tables.open_file(self._distStoreFile, mode="r") as h5file:
                 cov_ranks = h5file.get_node("/", "coverage").read()
             assert_num_obs(n, cov_ranks)
         except tables.exceptions.NoSuchNodeError:
             cached_weights = self._getWeights(contigLengths)
             scale_factor = 1. / cached_weights.sum()
             cov_ranks = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
-            with tables.open_file(self._savedDists, mode="a") as h5file:
+            with tables.open_file(self._distStoreFile, mode="a") as h5file:
                 h5file.create_array("/", "coverage", cov_ranks, "Coverage distance ranks")
         try:
-            with tables.open_file(self._savedDists, mode="r") as h5file:
+            with tables.open_file(self._distStoreFile, mode="r") as h5file:
                 kmer_ranks = h5file.get_node("/", "kmer").read()
             assert_num_obs(n, kmer_ranks)
         except tables.exceptions.NoSuchNodeError:
@@ -320,7 +316,7 @@ class CachingProfileDistanceEngine:
                 cached_weights = self._getWeights(contigLengths)
                 scaled_factor = 1. / cached_weights.sum()
             kmer_ranks = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
-            with tables.open_file(self._savedDists, mode="a") as h5file:
+            with tables.open_file(self._distStoreFile, mode="a") as h5file:
                 h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
                 cov_ranks = h5file.get_node("/", "coverage").read()
         return (cov_ranks, kmer_ranks, cached_weights)
