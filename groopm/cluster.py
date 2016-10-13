@@ -952,6 +952,7 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         flat_ids = hierarchy.flatten_nodes(Z)
         weights[n:] = weights[flat_ids+n]
         self._weights = weights
+        self._counts = np.concatenate((np.ones(n), Z[:,3]))
         
     def getLinkage(self):
         return self._Z
@@ -960,7 +961,7 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         return "'%s" % self._profile.contigNames[node_id]
         
     def getNodeLabel(self, node_id):
-        return ":%.2f[%dbp]" % (self._scores[node_id], self._weights[node_id])
+        return ":%.2f[%dbp,%d]" % (self._scores[node_id], self._weights[node_id], self._counts[node_id])
 
 
 ###############################################################################
