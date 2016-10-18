@@ -1042,7 +1042,7 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         flat_ids = hierarchy.flatten_nodes(Z)
         weights[n:] = weights[flat_ids+n]
         self._weights = weights
-        self._counts = np.concatenate((np.ones(n), Z[:,3]))
+        self._counts = np.concatenate((np.ones(n), Z[flat_ids,3]))
         
     def getLinkage(self):
         return self._Z

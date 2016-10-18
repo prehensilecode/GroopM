@@ -197,13 +197,13 @@ def embed_nodes(Z, leaves):
     num_leaves_below = is_leaf.astype(int)
     num_leaves_below[n:] = maxscoresbelow(Z, is_leaf.astype(int), operator.add)
     
-    is_embedded = is_leaf.copy()
-    is_embedded[n:] = maxscoresbelow(Z, num_leaves_below, max) < num_leaves_below[n:]
+    is_embedded_parent = is_leaf.copy()
+    is_embedded_parent[n:] = maxscoresbelow(Z, num_leaves_below, max) < num_leaves_below[n:]
     
     node_id_if_embedded = np.full(2*n-1, -1, dtype=int)
-    node_id_if_embedded[is_embedded] = np.flatnonzero(is_embedded)
+    node_id_if_embedded[is_embedded_parent] = np.flatnonzero(is_embedded_parent)
     node_ids = maxscoresbelow(Z, node_id_if_embedded, max)
-    node_ids[is_embedded[n:]] = np.flatnonzero(is_embedded[n:])+n
+    node_ids[is_embedded_parent[n:]] = np.flatnonzero(is_embedded_parent[n:])+n
     
     return node_ids
     
