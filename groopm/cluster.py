@@ -895,9 +895,6 @@ class _TreeRecursivePrinter:
         n = self._n
         if node_id is None:
             node_id = self._embed_ids[-1]
-            (_r,d) = sp_hierarchy.to_tree(self._Z, rd=True)
-            ids = d[node_id].pre_order(lambda x: x.id)
-            print self._indices.size, np.intersect(self._indices, ids).size
             
         flat_id = self._flat_ids[node_id-n]+n if node_id >= n else node_id
         embed_id = self._embed_ids[node_id-n] if node_id >= n else node_id
