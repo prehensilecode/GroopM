@@ -113,7 +113,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     do_pts = minPts is not None
     if (do_weights and minWt is None) or not (do_weights or do_pts):
         raise ValueError("Specify either 'weights' and 'minWt' or 'minPts' parameter values")
-        
+    
     if do_weights:
         core_dists = core_distance_weighted(Y, weights, minWt)
         
@@ -128,8 +128,8 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     (dists_i, dists_j) = tuple(core_dists[i] for i in pairs(n))
     dd = np.maximum(np.minimum(dists_i, dists_j), Y)
     return dd
-        
-@profile        
+
+@profile
 def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -160,8 +160,8 @@ def core_distance_weighted(Y, weights, minWt):
         minPts = int(np.sum(wm[i, sorting_indices].cumsum() < minWt[i]))
         core_dist[i] = dm[i, sorting_indices[np.minimum(n-1, minPts)]]
     return core_dist
-        
-@profile        
+
+@profile
 def core_distance(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
@@ -185,7 +185,7 @@ def core_distance(Y, minPts):
     dm.sort(axis=1)
     return dm[:, np.minimum(n-1, minPts)]
 
-    
+@profile    
 def reachability_order(Y):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -239,6 +239,7 @@ def pairs(n):
     
     
 # helpers
+@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)

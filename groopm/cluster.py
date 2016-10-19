@@ -76,7 +76,8 @@ class CoreCreator:
     def __init__(self, dbFileName):
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
-        
+    
+    @profile
     def loadProfile(self, timer, minLength):
         return self._pm.loadData(timer,
                                  minLength=minLength,
@@ -204,6 +205,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                             minSize=self._minSize)
         return den_dists
     
+    @profile
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
@@ -273,6 +275,7 @@ class CachingProfileDistanceEngine:
             print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
             raise
     
+    @profile
     def _getWeights(self, contigLengths):
         try:
             with tables.open_file(self._distStoreFile, mode="r") as h5file:
@@ -320,7 +323,6 @@ class CachingProfileDistanceEngine:
                 cov_ranks = h5file.get_node("/", "coverage").read()
         return (cov_ranks, kmer_ranks, cached_weights)
     
-    @profile    
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks, cached_weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         if cached_weights is None:
@@ -337,7 +339,6 @@ class CachingProfileDistanceEngine:
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
     
-    @profile
     def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
         """Compute density distances for pairs of contigs
         """
@@ -894,6 +895,9 @@ class _TreeRecursivePrinter:
         n = self._n
         if node_id is None:
             node_id = self._embed_ids[-1]
+            (_r,d) = sp_hierarchy.to_tree(self._Z, rd=True)
+            ids = d[node_id].pre_order(lambda x: x.id)
+            print self._indices.size, np.intersect(self._indices, ids).size
             
         flat_id = self._flat_ids[node_id-n]+n if node_id >= n else node_id
         embed_id = self._embed_ids[node_id-n] if node_id >= n else node_id
