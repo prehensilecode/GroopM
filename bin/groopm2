@@ -421,7 +421,7 @@ class import_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('infile', help="file with data to import")
+        parser.add_argument('infile', help="file with contig id and bin label columns to import")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.set_defaults(run=self)
 
