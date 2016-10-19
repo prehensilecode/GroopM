@@ -123,9 +123,7 @@ class CoreCreator:
         # Remove created files
         if not keepDists:
             try:
-                os.remove(savedCovDists)
-                #os.remove(savedKmerDists)
-                #os.remove(savedWeights)
+                os.remove(distFileName)
             except:
                 raise
             
@@ -320,99 +318,6 @@ class CachingProfileDistanceEngine:
             with tables.open_file(self._distStoreFile, mode="a") as h5file:
                 h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
                 cov_ranks = h5file.get_node("/", "coverage").read()
-        return (cov_ranks, kmer_ranks, cached_weights)
-        
-    def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        (cov_ranks, kmer_ranks, cached_weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        if cached_weights is None:
-            cached_weights = self._getWeights(contigLengths)
-        return (cov_ranks, kmer_ranks, cached_weights)
-    
-    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        """Compute norms in {coverage rank space x kmer rank space}
-        """
-        (cov_ranks, kmer_ranks, w) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        del w # save some memory
-        rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
-        w = self._getWeights(contigLengths)
-        return (rank_norms, w)
-    
-    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
-        """Compute density distances for pairs of contigs
-        """
-        (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        if not silent:
-            print "Reticulating splines"
-            
-        # Convert the minimum size in bp of a bin to the minimum weighted density
-        # used to compute the density distance. For a contig of size L, the sum of
-        # nearest neighbour weights will be W=L*{sum of nearest neighbour lengths}. The
-        # corresponding size of the bin including the nearest neighbours will be
-        # S=L+{sum of nearest neighbour lengths}. Applying the size constraint S>minSize
-        # yields the weight constraint W>L*(minSize - L).
-        if minSize is None:
-            minWt = None
-        else:
-            v = np.full(len(contigLengths), contigLengths.min())
-            #v = contigLengths
-            minWt = np.maximum(minSize - v, 0) * v
-        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
-        return den_dist
-        
-        
-class CachingProfileDistanceEngine_:
-    """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
-
-    def __init__(self, savedCovDists, savedKmerDists, savedWeights):
-        self._savedCovDists = savedCovDists
-        if not self._savedCovDists.endswith(".npy"):
-            self._savedCovDists += ".npy"
-        self._savedKmerDists = savedKmerDists
-        if not self._savedCovDists.endswith(".npy"):
-            self._savedCovDists += ".npy"
-        self._savedWeights = savedWeights
-        if not self._savedWeights.endswith(".npy"):
-            self._savedWeights += ".npy"
-    
-    def _getWeights(self, contigLengths):
-        try:
-            weights = np.load(self._savedWeights)
-            assert_num_obs(len(contigLengths), weights)
-        except IOError:        
-            (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
-            weights = 1. * lens_i * lens_j
-            #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-            np.save(self._savedWeights, weights)
-        return weights
-    
-    def _getScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        """Compute pairwise rank distances separately for coverage profiles and
-        kmer signatures, and give rank distances as a fraction of the largest rank.
-        """
-        n = len(contigLengths)
-        if(not silent):
-            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
-        cached_weights = None
-        scale_factor = None
-        try:
-            cov_ranks = np.load(self._savedCovDists)
-            assert_num_obs(n, cov_ranks)
-        except IOError:
-            cached_weights = self._getWeights(contigLengths)
-            scale_factor = 1. / cached_weights.sum()
-            cov_ranks = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
-            np.save(self._savedCovDists, cov_ranks)
-        try:
-            kmer_ranks = np.load(self._savedKmerDists)
-            assert_num_obs(n, kmer_ranks)
-        except IOError:
-            del cov_ranks # save a bit of memory
-            if cached_weights is None:
-                cached_weights = self._getWeights(contigLengths)
-                scaled_factor = 1. / cached_weights.sum()
-            kmer_ranks = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
-            np.save(self._savedKmerDists, kmer_ranks)
-            cov_ranks = np.load(self._savedCovDists)
         return (cov_ranks, kmer_ranks, cached_weights)
         
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -787,6 +692,7 @@ class MarkerCheckFCE(FlatClusterEngine):
     def isLowQualityCluster(self, Z):
         Z = np.asarray(Z)
         n = sp_hierarchy.num_obs_linkage(Z)
+        flat_ids = hierarchy.flatten_nodes(Z)
         
         # Quality clusters have total contig length at least minSize (if
         # defined) or a number of contigs at least minPts (if defined)
@@ -795,11 +701,10 @@ class MarkerCheckFCE(FlatClusterEngine):
         if doMinSize:
             weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
             weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
-            flat_ids = hierarchy.flatten_nodes(Z)
             weights[n:] = weights[flat_ids+n]
             is_low_quality = weights < self._minSize   
         if doMinPts:
-            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[:, 2] < self._minPts))
+            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[flat_ids, 3] < self._minPts))
             if doMinSize:
                 is_low_quality = np.logical_and(is_low_quality, is_below_minPts)
             else:
@@ -1035,14 +940,15 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         n = Z.shape[0] + 1
         self._Z = Z
         self._n = n
-        qe = MarkerCheckCQE(self._profile)
-        self._scores = qe.makeScores(self._Z)
+        ce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
+        self._scores = ce.getScores(self._Z)
+        self._quals = ce.isLowQualityCluster(self._Z)
         weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
         weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=np.add)
         flat_ids = hierarchy.flatten_nodes(Z)
         weights[n:] = weights[flat_ids+n]
         self._weights = weights
-        self._counts = np.concatenate((np.ones(n), Z[flat_ids,3]))
+        self._counts = np.concatenate((np.ones(n), Z[flat_ids, 3]))
         
     def getLinkage(self):
         return self._Z
@@ -1051,7 +957,7 @@ class MarkerCheckTreePrinter(MarkerTreePrinter):
         return "'%s" % self._profile.contigNames[node_id]
         
     def getNodeLabel(self, node_id):
-        return ":%.2f[%dbp,%d]" % (self._scores[node_id], self._weights[node_id], self._counts[node_id])
+        return (":%.2f[%dbp,n=%d]" + ("L" if self._quals[node_id] else "")) % (self._scores[node_id], self._weights[node_id], self._counts[node_id])
 
 
 ###############################################################################

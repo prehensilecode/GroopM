@@ -398,7 +398,7 @@ class ProfileReachabilityPlotter:
     def plot(self,
              bids,
              label="count",
-             highlight="recruited_bins",
+             highlight="bins",
              fileName=""):
         
         h = self._profile.reachDists
