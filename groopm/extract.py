@@ -262,7 +262,7 @@ class MarkerExtractor:
                     
                     #distance table
                     f.write('\n#marker tree\n')
-                    f.write(mt.printTree(profile.mapping.rowIndices[idx]))
+                    f.write(mt.printTree(profile.mapping.rowIndices[idx], leaves_list=bin_indices))
             except:
                 print "Could not open file for writing:",file_name,sys.exc_info()[0]
                 raise

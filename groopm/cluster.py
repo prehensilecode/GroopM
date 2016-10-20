@@ -915,13 +915,16 @@ class _TreeRecursivePrinter:
         
 
 class MarkerTreePrinter:
-    def printTree(self, indices):
-        rp = _TreeRecursivePrinter(self.getLinkage(),
+    def printTree(self, indices, leaves_list=None):
+        Z = self.getLinkage()
+        Z = np.asarray(Z)
+        rp = _TreeRecursivePrinter(Z,
                                    indices,
                                    self.getLeafLabel,
                                    self.getNodeLabel
                                   )
-        return '\n'.join([l.replace('-', '  |', 1) if l.startswith('-') else l for l in rp.getLines()])
+        root = None if leaves_list is None else hierarchy.embed_nodes(Z, leaves_list)[-1]
+        return '\n'.join([l.replace('-', '  |', 1) if l.startswith('-') else l for l in rp.getLines(root)])
 
     def getLinkage(self):
         pass
