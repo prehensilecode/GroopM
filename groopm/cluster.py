@@ -278,9 +278,11 @@ class CachingProfileDistanceEngine:
             with tables.open_file(self._distStoreFile, mode="r") as h5file:
                 weights = h5file.get_node("/", "weights").read()
                 assert_num_obs(len(contigLengths), weights)
-        except tables.exceptions.NoSuchNodeError:        
-            (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
-            weights = 1. * lens_i * lens_j
+        except tables.exceptions.NoSuchNodeError:
+            l = ~np.tri(len(contigLengths), k=0, dtype=bool)
+            weights = (contigLengths * l * contigLengths)[l]
+            #(lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
+            #weights = 1. * lens_i * lens_j
             #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
             with tables.open_file(self._distStoreFile, mode="a") as h5file:
                 h5file.create_array("/", "weights", weights, "Distance weights")
