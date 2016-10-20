@@ -397,7 +397,7 @@ class ProfileReachabilityPlotter:
         
     def plot(self,
              bids,
-             label="count",
+             label=None,
              highlight="bins",
              fileName=""):
         
@@ -413,6 +413,11 @@ class ProfileReachabilityPlotter:
             (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
             xticklabel_rotation = "vertical"
+        elif label is None:
+            xticks = None
+            xticklabels = None
+            xlabel = None
+            xticklabel_rotation = None
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
