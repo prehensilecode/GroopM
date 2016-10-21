@@ -414,10 +414,10 @@ class ProfileReachabilityPlotter:
             xlabel = "lineage"
             xticklabel_rotation = "vertical"
         elif label is None:
-            xticks = None
-            xticklabels = None
-            xlabel = None
-            xticklabel_rotation = None
+            xticks = []
+            xticklabels = []
+            xlabel = ""
+            xticklabel_rotation = "horizontal"
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
