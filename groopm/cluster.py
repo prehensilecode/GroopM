@@ -77,7 +77,6 @@ class CoreCreator:
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
     
-    @profile
     def loadProfile(self, timer, minLength):
         return self._pm.loadData(timer,
                                  minLength=minLength,
@@ -205,7 +204,6 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                             minSize=self._minSize)
         return den_dists
     
-    @profile
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
@@ -275,7 +273,6 @@ class CachingProfileDistanceEngine:
             print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
             raise
     
-    @profile
     def _getWeights(self, contigLengths):
         n = len(contigLengths)
         try:
@@ -343,7 +340,6 @@ class CachingProfileDistanceEngine:
             cached_weights = self._getWeights(contigLengths)
         return (cov_ranks, kmer_ranks, cached_weights)
     
-    @profile
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute norms in {coverage rank space x kmer rank space}
         """

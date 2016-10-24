@@ -93,7 +93,6 @@ def iargrank(out, weights=None, axis=0):
         return
     np.apply_along_axis(_irank_with_ties, axis, out, weights=weights)
 
-@profile
 def density_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
@@ -137,7 +136,6 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     dd = np.maximum(np.minimum(dists_i, dists_j), Y)
     return dd
     
-@profile
 def idensity_distance(out, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
@@ -182,7 +180,6 @@ def idensity_distance(out, weights=None, minWt=None, minPts=None):
     #assert np.all(dd==out)
     return out
 
-@profile
 def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -223,7 +220,6 @@ def core_distance_weighted(Y, weights, minWt):
         #assert core_dist[i] == dm_[i, sorting_indices[np.minimum(n-1, minPts)]]
     return core_dist
 
-@profile
 def core_distance(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
@@ -257,8 +253,7 @@ def core_distance(Y, minPts):
         core_dist[i] = m[np.minimum(n-1, minPts)]
         #assert x_[i] == core_dist[i]
     return core_dist
-
-@profile    
+   
 def reachability_order(Y):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -317,7 +312,6 @@ def pairs(n):
     
     
 # helpers
-@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
@@ -350,7 +344,6 @@ def _rank_with_ties(a, weights=None):
     r[sorting_index] = sr
     return r
     
-@profile    
 def _irank_with_ties(a, weights=None):
     """Inplace-ish sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
