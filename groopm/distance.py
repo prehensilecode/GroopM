@@ -84,8 +84,16 @@ def argrank(array, weights=None, axis=0):
     if axis is None:
         return _rank_with_ties(array, weights=weights)
     return np.apply_along_axis(_rank_with_ties, axis, array, weights=weights)
+    
+    
+def iargrank(out, weights=None, axis=0):
+    """Return the positions of elements of a when sorted along the specified axis"""
+    if axis is None:
+        _irank_with_ties(out, weights=weights)
+        return
+    np.apply_along_axis(_irank_with_ties, axis, out, weights=weights)
 
-
+@profile
 def density_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
@@ -113,7 +121,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     do_pts = minPts is not None
     if (do_weights and minWt is None) or not (do_weights or do_pts):
         raise ValueError("Specify either 'weights' and 'minWt' or 'minPts' parameter values")
-        
+    
     if do_weights:
         core_dists = core_distance_weighted(Y, weights, minWt)
         
@@ -128,8 +136,53 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     (dists_i, dists_j) = tuple(core_dists[i] for i in pairs(n))
     dd = np.maximum(np.minimum(dists_i, dists_j), Y)
     return dd
+    
+@profile
+def idensity_distance(out, weights=None, minWt=None, minPts=None):
+    """Compute pairwise density distance, defined as the max of the pairwise
+    distance between two points and the minimum core distance of the two
+    points.
+
+    Parameters
+    ----------
+    out : ndarray
+        Condensed distance matrix containing distances for pairs of
+        observations. See scipy's `squareform` function for details.
+    weights : ndarray
+        Condensed matrix containing pairwise weights.
+    minWt : ndarray
+        Total cumulative neighbour weight used to compute density distance for individual points.
+    minPts : int
+        Number of neighbours used to compute density distance.
+    """
+    n = sp_distance.num_obs_y(out)
+    do_weights = minWt is not None
+    do_pts = minPts is not None
+    if (do_weights and minWt is None) or not (do_weights or do_pts):
+        raise ValueError("Specify either 'weights' and 'minWt' or 'minPts' parameter values")
+    
+    if do_weights:
+        core_dists = core_distance_weighted(out, weights, minWt)
         
-        
+    if do_pts:
+        pts_dists = core_distance(out, minPts)
+        if do_weights:
+            core_dists = np.minimum(core_dists, pts_dists)
+        else:
+            core_dists = pts_dists
+        del pts_dists # mem opt
+    
+    m = np.empty(n, dtype=out.dtype)
+    k = 0
+    for i in range(n-1):
+        out[k:k+n-1-i] = np.maximum(np.minimum(core_dists[i], core_dists[(i+1):n]), out[k:k+n-1-i])
+        k = k+n-1-i
+    #(dists_i, dists_j) = tuple(core_dists[i] for i in pairs(n))
+    #dd = np.maximum(np.minimum(dists_i, dists_j), out)
+    #assert np.all(dd==out)
+    return out
+
+@profile
 def core_distance_weighted(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -150,18 +203,27 @@ def core_distance_weighted(Y, weights, minWt):
         Core distances for data points.
     """
     n = sp_distance.num_obs_y(Y)
-    dm = sp_distance.squareform(Y)
-    wm = sp_distance.squareform(weights)
-    #sorting_indices = dm.argsort(axis=1)
+    #dm_ = sp_distance.squareform(Y)
+    #wm_ = sp_distance.squareform(weights)
     core_dist = np.empty(n, dtype=Y.dtype)
-    m = np.empty(n, dtype=int)
+    m = np.empty(n, dtype=Y.dtype) # store row distances
+    w = np.empty(n, dtype=weights.dtype) # store row weights
     for i in range(n):
-        sorting_indices = dm[i].argsort()
-        minPts = int(np.sum(wm[i, sorting_indices].cumsum() < minWt[i]))
-        core_dist[i] = dm[i, sorting_indices[np.minimum(n-1, minPts)]]
+        others = np.flatnonzero(np.arange(n)!=i)
+        m[others] = Y[condensed_index(n, i, others)]
+        m[i] = 0
+        #assert np.all(m==dm_[i])
+        w[others] = weights[condensed_index(n, i, others)]
+        w[i] = 0
+        #assert np.all(w==wm_[i])
+        sorting_indices = m.argsort()
+        minPts = int(np.sum(w[sorting_indices].cumsum() < minWt[i]))
+        #assert minPts == int(np.sum(wm_[i, sorting_indices].cumsum() < minWt[i]))
+        core_dist[i] = m[sorting_indices[np.minimum(n-1, minPts)]]
+        #assert core_dist[i] == dm_[i, sorting_indices[np.minimum(n-1, minPts)]]
     return core_dist
-        
-        
+
+@profile
 def core_distance(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
@@ -181,11 +243,22 @@ def core_distance(Y, minPts):
         Core distances for observations.
     """
     n = sp_distance.num_obs_y(Y)
-    dm = sp_distance.squareform(Y)
-    dm.sort(axis=1)
-    return dm[:, np.minimum(n-1, minPts)]
+    #dm_ = sp_distance.squareform(Y)
+    #dm_.sort(axis=1)
+    #x_ = dm_[:, np.minimum(n-1, minPts)]
+    core_dist = np.empty(n, dtype=Y.dtype)
+    m = np.empty(n, dtype=Y.dtype)
+    for i in range(n):
+        others = np.flatnonzero(np.arange(n)!=i)
+        m[others] = Y[condensed_index(n, i, others)]
+        m[i] = 0
+        m.sort()
+        #assert np.all(dm_[i] == m)
+        core_dist[i] = m[np.minimum(n-1, minPts)]
+        #assert x_[i] == core_dist[i]
+    return core_dist
 
-    
+@profile    
 def reachability_order(Y):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -203,18 +276,23 @@ def reachability_order(Y):
         1-D array. `d[i]` is the `i`th traversal distance.
     """
     n = sp_distance.num_obs_y(Y)
-    dm = sp_distance.squareform(Y)
+    #dm_ = sp_distance.squareform(Y)
     o = np.empty(n, dtype=np.intp)
     to_visit = np.ones(n, dtype=bool)
     closest = 0
     o[0] = 0
     to_visit[0] = False
-    d = dm[0].copy()
+    d = np.empty(n, dtype=Y.dtype)
+    d[0] = 0
+    d[1:] = Y[condensed_index(n, 0, np.arange(1, n))]
+    #assert np.all(d== dm_[0])
     for i in range(1, n):
         closest = np.flatnonzero(to_visit)[d[to_visit].argmin()]
         o[i] = closest
         to_visit[closest] = False
-        d[to_visit] = np.minimum(d[to_visit], dm[closest, to_visit])
+        m = Y[condensed_index(n, closest, np.flatnonzero(to_visit))]
+        #assert np.all(m==dm_[closest, to_visit])
+        d[to_visit] = np.minimum(d[to_visit], m)
     return (o, d[o])
     
     
@@ -239,6 +317,7 @@ def pairs(n):
     
     
 # helpers
+@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
@@ -270,6 +349,65 @@ def _rank_with_ties(a, weights=None):
     r = np.empty(size, dtype=np.double)
     r[sorting_index] = sr
     return r
+    
+@profile    
+def _irank_with_ties(a, weights=None):
+    """Inplace-ish sorted of array indices with tied values averaged"""
+    a = np.asanyarray(a)
+    size = a.size
+    if a.shape != (size,):
+        raise ValueError("a should be a 1-D array.")
+    
+    if weights is not None:
+        weights = np.asanyarray(weights)
+        if weights.shape != (size,):
+            raise ValueError('weights should have the same shape as a.')
+    
+    sorting_index = a.argsort() # copy!
+    #a_ = a[sorting_index]
+    a[:] = a[sorting_index] # sort a
+    #assert np.all(a_==a)
+    flag = np.empty(size+1, dtype=bool)
+    flag[0] = flag[-1] = True
+    if size > 1:
+        flag[1:-1] = a[1:] != a[:-1]
+    nnz = np.count_nonzero(flag)
+    cw_first = 0 # initial cumulative sorted weight
+    if weights is None:
+        # counts up to 
+        cw_rest = a[:nnz-1] # reserve part of buffer for rest of cumulative sorted weights
+        cw_rest[:] = np.flatnonzero(flag)[1:]
+        # a invalid
+        #cw_ = np.flatnonzero(flag).astype(float)
+    else:
+        a[:] = weights[sorting_index]  # write sorted weights into buffer
+        a[:] = a.cumsum()
+        cw_rest = a[:nnz-1]
+        cw_rest[:] = a[flag[1:]]
+        # a invalid
+        #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
+        #cw_ = cw_[flag]
+    #assert cw_[0]==cw_first and np.all(cw_[1:]==cw_rest)
+    
+    sr = cw_rest
+    if len(cw_rest) > 1:
+        sr[1:] = cw_rest[1:] + cw_rest[:-1]
+        sr[1:] -= 1
+        sr[1:] *= 0.5
+    sr[0] = (cw_rest[0] + cw_first - 1) * 0.5
+    del cw_rest # cw_rest invalid
+    
+    #sr_ = (cw_[1:] + cw_[:-1] - 1) * 0.5
+    #assert np.all(sr==sr_)
+    
+    iflag = np.cumsum(flag[:-1]) - 1 # another copy !
+    a[sorting_index] = sr[iflag]
+    
+    #r_ = np.empty(size, dtype=np.double)
+    #r_[sorting_index] = sr_[iflag]
+    #assert np.all(r_==a)
+    
+    return True
 
     
 ###############################################################################
