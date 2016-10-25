@@ -93,7 +93,7 @@ def iargrank(out, weights=None, axis=0):
         return
     np.apply_along_axis(_irank_with_ties, axis, out, weights=weights)
 
-def density_distance(Y, weights=None, minWt=None, minPts=None):
+def density_distance_(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
     points.
@@ -136,7 +136,7 @@ def density_distance(Y, weights=None, minWt=None, minPts=None):
     dd = np.maximum(np.minimum(dists_i, dists_j), Y)
     return dd
     
-def idensity_distance(out, weights=None, minWt=None, minPts=None):
+def idensity_distance_(out, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum core distance of the two
     points.
@@ -180,7 +180,63 @@ def idensity_distance(out, weights=None, minWt=None, minPts=None):
     #assert np.all(dd==out)
     return out
 
-def core_distance_weighted(Y, weights, minWt):
+def core_distance(Y, weights=None, minWt=None, minPts=None):
+    """Compute core distance for data points, defined as the distance to the furtherest
+    neighbour where the cumulative weight of closer points is less than minWt.
+
+    Parameters
+    ----------
+    Y : ndarray
+        Condensed distance matrix containing distances for pairs of
+        observations. See scipy's `squareform` function for details.
+    weights : ndarray
+        Condensed matrix containing pairwise weights.
+    minWt : ndarray
+        Total cumulative neighbour weight used to compute density distance for individual points.
+    minPts : int
+        Number of neighbours used to compute density distance.
+        
+    Returns
+    -------
+    core_distance : ndarray
+        Core distances for data points.
+    """
+    n = sp_distance.num_obs_y(Y)
+    #dm_ = sp_distance.squareform(Y)
+    core_dist = np.empty(n, dtype=Y.dtype)
+    m = np.empty(n, dtype=Y.dtype) # store row distances
+    minPts = n-1 if minPts is None else minPts
+    if weights is None or minWt is None:
+        #dm_.sort(axis=1)
+        #x_ = dm_[:, np.minimum(n-1, minPts)]
+        for (i, mp) in np.broadcast(np.arange(n), minPts):
+            others = np.flatnonzero(np.arange(n)!=i)
+            m[others] = Y[condensed_index(n, i, others)]
+            m[i] = 0
+            m.sort()
+            #assert np.all(dm_[i] == m)
+            core_dist[i] = m[np.minimum(n-1, mp)]
+            #assert x_[i] == core_dist[i]
+    else:
+        #wm_ = sp_distance.squareform(weights)
+        w = np.empty(n, dtype=weights.dtype) # store row weights
+        for (i, mp, mw) in np.broadcast(np.arange(n), minPts, minWt):
+            others = np.flatnonzero(np.arange(n)!=i)
+            m[others] = Y[condensed_index(n, i, others)]
+            m[i] = 0
+            #assert np.all(m==dm_[i])
+            w[others] = weights[condensed_index(n, i, others)]
+            w[i] = 0
+            #assert np.all(w==wm_[i])
+            sorting_indices = m.argsort()
+            minPts = np.minimum(int(np.sum(w[sorting_indices].cumsum() < mw)), mp)
+            core_dist[i] = m[sorting_indices[np.minimum(n-1, minPts)]]
+            #minPts_ = int(np.sum(wm_[i, sorting_indices].cumsum() < minWt[i]))
+            #m_ = m[sorting_indices]
+            #assert core_dist[i] == np.minimum(m_[np.minimum(n-1, mp)], m_[np.minimum(n-1, minPts_)])
+    return core_dist
+    
+def core_distance_weighted_(Y, weights, minWt):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
 
@@ -220,7 +276,7 @@ def core_distance_weighted(Y, weights, minWt):
         #assert core_dist[i] == dm_[i, sorting_indices[np.minimum(n-1, minPts)]]
     return core_dist
 
-def core_distance(Y, minPts):
+def core_distance_(Y, minPts):
     """Compute pairwise density distance, defined as the max of the pairwise
     distance between two points and the minimum distance of the minPts
     neighbours of the two points.
@@ -254,7 +310,7 @@ def core_distance(Y, minPts):
         #assert x_[i] == core_dist[i]
     return core_dist
    
-def reachability_order(Y):
+def reachability_order(Y, core_dist=None):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
     
@@ -262,6 +318,8 @@ def reachability_order(Y):
     ----------
     Y : ndarray
         Condensed distance matrix
+    core_dist : ndarray
+        Core distances for original observations of Y.
         
     Returns
     -------
@@ -279,13 +337,13 @@ def reachability_order(Y):
     to_visit[0] = False
     d = np.empty(n, dtype=Y.dtype)
     d[0] = 0
-    d[1:] = Y[condensed_index(n, 0, np.arange(1, n))]
+    d[1:] = np.maximum(Y[condensed_index(n, 0, np.arange(1, n))], core_dist[1:n])
     #assert np.all(d== dm_[0])
     for i in range(1, n):
         closest = np.flatnonzero(to_visit)[d[to_visit].argmin()]
         o[i] = closest
         to_visit[closest] = False
-        m = Y[condensed_index(n, closest, np.flatnonzero(to_visit))]
+        m = np.maximum(Y[condensed_index(n, closest, np.flatnonzero(to_visit))], core_dist[to_visit])
         #assert np.all(m==dm_[closest, to_visit])
         d[to_visit] = np.minimum(d[to_visit], m)
     return (o, d[o])

@@ -140,11 +140,11 @@ class HierarchicalClusterEngine:
         """Run binning algorithm"""
         
         print "Getting distance info"
-        dists = self.distances()
+        (pdists, core_dists) = self.distances()
         print "    %s" % timer.getTimeStamp()
         
         print "Computing cluster hierarchy"
-        (o, d) = distance.reachability_order(dists)
+        (o, d) = distance.reachability_order(pdists, core_dists)
         print "    %s" % timer.getTimeStamp()
         
         print "Finding cores"
@@ -189,27 +189,57 @@ class HierarchicalClusterEngine:
 class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     
-    def __init__(self, profile, minPts, minSize, distStore=""):
+    def __init__(self, profile, minPts=None, minSize=None, distStore=""):
+        if (minSize is None) and (minPts is None):
+            raise ValueError("Specify at least one of 'minWt' or 'minPts' parameter values")
         self._profile = profile
         self._minPts = minPts
         self._minSize = minSize
         self._distStore = distStore
     
-    def distances(self):
+    def distances(self, silent=False):
         de = CachingProfileDistanceEngine(distStore=self._distStore)
-        den_dists = de.makeDensityDistances(self._profile.covProfiles,
+        (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
                                             self._profile.kmerSigs,
                                             self._profile.contigLengths, 
-                                            minPts=self._minPts,
-                                            minSize=self._minSize)
-        return den_dists
+                                            silent=silent)
+        if not silent:
+            print "Reticulating splines"
+            
+        # Convert the minimum size in bp of a bin to the minimum weighted density
+        # used to compute the density distance. For a contig of size L, the sum of
+        # nearest neighbour weights will be W=L*{sum of nearest neighbour lengths}. The
+        # corresponding size of the bin including the nearest neighbours will be
+        # S=L+{sum of nearest neighbour lengths}. Applying the size constraint S>minSize
+        # yields the weight constraint W>L*(minSize - L).
+        if self._minSize:
+            v = np.full(len(self._profile.contigLengths), self._profile.contigLengths.min())
+            #v = contigLengths
+            minWt = np.maximum(self._minSize - v, 0) * v
+        else:
+            minWt = None
+        core_dists = distance.core_distance(rank_norms, w, minWt=minWt, minPts=self._minPts)
+        
+        #if minWt is not None:
+        #    x = distance.core_distance_weighted_(rank_norms, w, minWt)
+            
+        #if self._minPts is not None:
+        #    p = distance.core_distance_(rank_norms, self._minPts)
+        #    if minWt is not None:
+        #        x = np.minimum(x, p)
+        #    else:
+        #        x = p
+        #assert np.all(core_dists==x)
+        
+        return (rank_norms, core_dists)
     
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
         bins = fce.makeClusters(Z)
         return bins
-            
+        
+        
 ###############################################################################
 ###############################################################################
 ###############################################################################
@@ -356,31 +386,6 @@ class CachingProfileDistanceEngine:
         del cov_ranks, kmer_ranks # cov_ranks is invalid, save some memory
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
-    
-    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
-        """Compute density distances for pairs of contigs
-        """
-        (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        if not silent:
-            print "Reticulating splines"
-            
-        # Convert the minimum size in bp of a bin to the minimum weighted density
-        # used to compute the density distance. For a contig of size L, the sum of
-        # nearest neighbour weights will be W=L*{sum of nearest neighbour lengths}. The
-        # corresponding size of the bin including the nearest neighbours will be
-        # S=L+{sum of nearest neighbour lengths}. Applying the size constraint S>minSize
-        # yields the weight constraint W>L*(minSize - L).
-        if minSize is None:
-            minWt = None
-        else:
-            v = np.full(len(contigLengths), contigLengths.min())
-            #v = contigLengths
-            minWt = np.maximum(minSize - v, 0) * v
-        #x = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
-        den_dist = rank_norms
-        distance.idensity_distance(out=den_dist, weights=weights, minWt=minWt, minPts=minPts)
-        #assert np.all(x==den_dist)
-        return den_dist
         
 
 def assert_num_obs(n, y):
@@ -729,7 +734,7 @@ class MarkerCheckFCE(FlatClusterEngine):
             weights[n:] = weights[flat_ids+n]
             is_low_quality = weights < self._minSize   
         if doMinPts:
-            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts), Z[flat_ids, 3] < self._minPts))
+            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts, dtype=bool), Z[flat_ids, 3] < self._minPts))
             if doMinSize:
                 is_low_quality = np.logical_and(is_low_quality, is_below_minPts)
             else:
