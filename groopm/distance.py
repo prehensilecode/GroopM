@@ -337,13 +337,13 @@ def reachability_order(Y, core_dist=None):
     to_visit[0] = False
     d = np.empty(n, dtype=Y.dtype)
     d[0] = 0
-    d[1:] = np.maximum(Y[condensed_index(n, 0, np.arange(1, n))], core_dist[1:n])
+    d[1:] = np.maximum(Y[condensed_index(n, 0, np.arange(1, n))], core_dist[0])
     #assert np.all(d== dm_[0])
     for i in range(1, n):
         closest = np.flatnonzero(to_visit)[d[to_visit].argmin()]
         o[i] = closest
         to_visit[closest] = False
-        m = np.maximum(Y[condensed_index(n, closest, np.flatnonzero(to_visit))], core_dist[to_visit])
+        m = np.maximum(Y[condensed_index(n, closest, np.flatnonzero(to_visit))], core_dist[closest])
         #assert np.all(m==dm_[closest, to_visit])
         d[to_visit] = np.minimum(d[to_visit], m)
     return (o, d[o])
