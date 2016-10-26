@@ -327,7 +327,7 @@ class dump_command_configure:
     
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
+        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [%s] (or [%s] with --markers) or just use 'all'" % (", ".join(self.DUMP_FIELDS), ", ".join(self.DUMP_MARKER_FIELDS)))
         parser.add_argument('-o', '--outfile', default="GMdump.csv", help="write data to this file")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
@@ -350,7 +350,7 @@ class dump_command_configure:
             for field in fields:
                 if field not in allowable_fields:
                     print "ERROR: field '%s' not recognised. Allowable fields are:" % field
-                    print '\t',",".join(allowable_fields)
+                    print '\t',", ".join(allowable_fields)
                     return
         if options.separator == '\\t':
             separator = '\t'
