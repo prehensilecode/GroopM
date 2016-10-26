@@ -180,6 +180,7 @@ def idensity_distance_(out, weights=None, minWt=None, minPts=None):
     #assert np.all(dd==out)
     return out
 
+@profile
 def core_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -309,7 +310,8 @@ def core_distance_(Y, minPts):
         core_dist[i] = m[np.minimum(n-1, minPts)]
         #assert x_[i] == core_dist[i]
     return core_dist
-   
+
+@profile
 def reachability_order(Y, core_dist=None):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -370,6 +372,7 @@ def pairs(n):
     
     
 # helpers
+@profile
 def _rank_with_ties(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
@@ -401,7 +404,8 @@ def _rank_with_ties(a, weights=None):
     r = np.empty(size, dtype=np.double)
     r[sorting_index] = sr
     return r
-    
+
+@profile
 def _irank_with_ties(a, weights=None):
     """Inplace-ish sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
