@@ -51,6 +51,7 @@ __status__ = "Development"
 import argparse
 import sys
 import os
+import re
 
 import groopm
 from groopm.groopmExceptions import ExtractModeNotAppropriateException
@@ -185,6 +186,15 @@ class parse_command_configure:
             threads=options.threads)
         if not success:
             print dbFileName,"not updated"
+
+def readable_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        for (i, suffix) in enumerate("KMGTPEZY"):
+            if s.endswith(suffix):
+                return int(s[:-len(suffix)])*1000**(i+1)
+        raise        
             
 class core_command_configure:
     description = "Load saved data and make bin cores"
@@ -195,8 +205,8 @@ class core_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
-        parser.add_argument('-s', '--size', type=int, help="cumulative size of contigs which define a core, regardless of number of contigs (default if --points unspecified: %d)" % self.DEFAULT_SIZE)
-        parser.add_argument('-P', '--points', type=int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
+        parser.add_argument('-s', '--size', type=readable_int, help="cumulative size of contigs which define a core, regardless of number of contigs (default if --points unspecified: %d)" % self.DEFAULT_SIZE)
+        parser.add_argument('-P', '--points', type=readable_int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
         parser.add_argument('-f', '--force', action="store_true", help="overwrite existing DB file without prompting")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('--save_dists', default="", help="prefix to use for save distance files")
