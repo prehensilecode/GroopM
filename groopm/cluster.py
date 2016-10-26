@@ -350,10 +350,10 @@ class CachingProfileDistanceEngine:
                 kmer_ranks = h5file.get_node("/", "kmer").read()
             assert_num_obs(n, kmer_ranks)
         except tables.exceptions.NoSuchNodeError:
-            kmer_ranks = cov_ranks # reuse this memory
             if cached_weights is None:
                 cached_weights = self._getWeights(contigLengths)
                 scaled_factor = 1. / cached_weights.sum()
+            kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
             kmer_ranks[:] = sp_distance.pdist(kmerSigs, metric="euclidean")
             distance.iargrank(out=kmer_ranks, weights=cached_weights, axis=None)
             kmer_ranks *= scale_factor
