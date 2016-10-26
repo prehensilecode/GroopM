@@ -376,6 +376,7 @@ class BarAxisPlotter:
         ax.set_xticks(self.xticks)
         ax.set_xticklabels(self.xticklabels,
                            rotation=self.xticklabel_rotation)
+        ax.tick_params(axis="x", length=2, direction="out", width=1, top='off')
         for (x, y, text) in self.text:
             ax.text(x, y, text, ha='center', va='bottom')
                            
@@ -397,7 +398,7 @@ class ProfileReachabilityPlotter:
         
     def plot(self,
              bids,
-             label=None,
+             label="tag",
              highlight="bins",
              fileName=""):
         
@@ -410,7 +411,7 @@ class ProfileReachabilityPlotter:
             xticklabel_rotation = "horizontal"
         elif label=="tag":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
             xticklabel_rotation = "vertical"
         elif label is None:
