@@ -82,16 +82,17 @@ def mediod(Y):
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
-        return _rank_with_ties(array, weights=weights)
-    return np.apply_along_axis(_rank_with_ties, axis, array, weights=weights)
+        return _fractional_rank(array, weights=weights)
+    return np.apply_along_axis(_fractional_rank, axis, array, weights=weights)
     
     
 def iargrank(out, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
-        _irank_with_ties(out, weights=weights)
-        return
-    np.apply_along_axis(_irank_with_ties, axis, out, weights=weights)
+        _iordinal_rank(out, weights=weights)
+        return out
+    np.apply_along_axis(_iordinal_rank, axis, out, weights=weights)
+    return out
 
 def density_distance_(Y, weights=None, minWt=None, minPts=None):
     """Compute pairwise density distance, defined as the max of the pairwise
@@ -373,7 +374,7 @@ def pairs(n):
     
 # helpers
 @profile
-def _rank_with_ties(a, weights=None):
+def _fractional_rank(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
     size = a.size
@@ -386,28 +387,41 @@ def _rank_with_ties(a, weights=None):
             raise ValueError('weights should have the same shape as a.')
     
     sorting_index = a.argsort()
+    #a_ = a[sorting_index]
     sa = a[sorting_index]
-    flag = np.concatenate(([True], sa[1:] != sa[:-1], [True]))
-    del sa # optimise memory usage
+    del a
+    #assert np.all(a_==a)
+    #flag_ = np.concatenate(([True], a_[1:] != a_[:-1], [True]))
+    flag = np.concatenate((sa[1:] != sa[:-1], [True]))
     if weights is None:
         # counts up to 
-        cw = np.flatnonzero(flag).astype(float)
+        sa = np.flatnonzero(flag).astype(float)+1
+        #cw_ = np.flatnonzero(flag_).astype(float)
+        #assert np.all(cw_[1:]==a)
     else:
-        cw = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
-        cw = cw[flag]
-    iflag = np.cumsum(flag[:-1]) - 1
-    del flag # mem optimisation
-    sr = (cw[1:] + cw[:-1] - 1) * 0.5
-    sr = sr[iflag]
-    del iflag, cw # mem optimisation
+        sa = weights[sorting_index].cumsum().astype(float)
+        sa = sa[flag]
+        #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
+        #cw_ = cw_[flag_]
+        #assert np.all(cw_[1:]==a)
+    sa = np.concatenate((sa[:1] - 1, sa[1:] + sa[:-1] - 1)) * 0.5
+    #sr_ = (cw_[1:] + cw_[:-1] - 1) * 0.5
+    #assert np.all(sr_==a)
+    flag = np.concatenate(([0], np.cumsum(flag[:-1])))
+    #iflag_ = np.cumsum(flag_[:-1]) - 1
+    #assert np.all(iflag_==flag)
+    flag = sa[flag]
+    sa = np.empty(size, dtype=np.double)
+    sa[sorting_index] = flag
     
-    r = np.empty(size, dtype=np.double)
-    r[sorting_index] = sr
-    return r
+    #r_ = np.empty(size, dtype=np.double)
+    #r_[sorting_index] = sr_[iflag_]
+    #assert np.all(r_==a)
+    return sa
 
 @profile
-def _irank_with_ties(a, weights=None):
-    """Inplace-ish sorted of array indices with tied values averaged"""
+def _ifractional_rank(a, weights=None):
+    """Array value ranks with tied values averaged"""
     a = np.asanyarray(a)
     size = a.size
     if a.shape != (size,):
@@ -417,52 +431,86 @@ def _irank_with_ties(a, weights=None):
         weights = np.asanyarray(weights)
         if weights.shape != (size,):
             raise ValueError('weights should have the same shape as a.')
+    out = a
     
     sorting_index = a.argsort() # copy!
     #a_ = a[sorting_index]
     a[:] = a[sorting_index] # sort a
     #assert np.all(a_==a)
-    flag = np.empty(size+1, dtype=bool)
-    flag[0] = flag[-1] = True
-    if size > 1:
-        flag[1:-1] = a[1:] != a[:-1]
+    #flag_ = np.concatenate(([True], a_[1:] != a_[:-1], [True]))
+    flag = np.concatenate((a[1:] != a[:-1], [True]))
+    #flag__ = np.empty(size, dtype=bool)
+    #flag__[-1] = True
+    #flag__[:-1] = a[1:] != a[:-1]
+    #assert np.all(flag__==flag)
+    buff = np.getbuffer(a)
+    del a # a invalid
     nnz = np.count_nonzero(flag)
-    cw_first = 0 # initial cumulative sorted weight
+    
     if weights is None:
         # counts up to 
-        cw_rest = a[:nnz-1] # reserve part of buffer for rest of cumulative sorted weights
-        cw_rest[:] = np.flatnonzero(flag)[1:]
-        # a invalid
-        #cw_ = np.flatnonzero(flag).astype(float)
+        r = np.frombuffer(buff, dtype=np.int, count=nnz) # reserve part of buffer for rest of cumulative sorted weights
+        r[:] = np.flatnonzero(flag)+1
+        #cw_ = np.flatnonzero(flag_).astype(np.double)
+        #assert np.all(cw_[1:]==r)
     else:
-        a[:] = weights[sorting_index]  # write sorted weights into buffer
-        a[:] = a.cumsum()
-        cw_rest = a[:nnz-1]
-        cw_rest[:] = a[flag[1:]]
-        # a invalid
-        #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
-        #cw_ = cw_[flag]
-    #assert cw_[0]==cw_first and np.all(cw_[1:]==cw_rest)
+        cw = np.frombuffer(buff, dtype=weights.dtype)
+        cw[:] = weights[sorting_index]  # write sorted weights into buffer
+        cw[:] = cw.cumsum()
+        r = np.frombuffer(buff, dtype=np.double, count=nnz)
+        r[:] = cw[flag]
+        del cw # cw invalid
+        #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(np.double)
+        #cw_ = cw_[flag_]
+        #assert np.all(cw_[1:]==r)
     
-    sr = cw_rest
-    if len(cw_rest) > 1:
-        sr[1:] = cw_rest[1:] + cw_rest[:-1]
-        sr[1:] -= 1
-        sr[1:] *= 0.5
-    sr[0] = (cw_rest[0] + cw_first - 1) * 0.5
-    del cw_rest # cw_rest invalid
+    # compute average ranks of tied values
+    if len(r) > 1:
+        r[1:] = r[1:] + r[:-1]
+        r[1:] -= 1
+        r[1:] *= 0.5
+    r[0] = (r[0] - 1) * 0.5
     
     #sr_ = (cw_[1:] + cw_[:-1] - 1) * 0.5
-    #assert np.all(sr==sr_)
+    #assert np.all(sr_==r)
+    #iflag = np.empty(size, dtype=np.int)
+    #iflag[0] = 0
+    iflag = np.cumsum(flag[:-1]) # another copy !
+    del flag # mem_opt
+    #iflag_ = np.cumsum(flag_[:-1]) - 1
+    #assert np.all(iflag_[1:]==iflag)
+    top = r[0] # get this value first, as r and out share a buffer, and writing to out will overwrite r 
+    out[sorting_index[1:]] = r[iflag]
+    out[sorting_index[0]] = top
     
-    iflag = np.cumsum(flag[:-1]) - 1 # another copy !
-    a[sorting_index] = sr[iflag]
+    #out_ = np.empty(size, dtype=np.double)
+    #out_[sorting_index] = sr_[iflag_]
+    #assert np.all(out_==out)
     
-    #r_ = np.empty(size, dtype=np.double)
-    #r_[sorting_index] = sr_[iflag]
-    #assert np.all(r_==a)
+    return []
     
-    return True
+@profile
+def _iordinal_rank(a, weights=None):
+    """Array value ranks with tied broken by index in a"""
+    a = np.asanyarray(a)
+    size = a.size
+    if a.shape != (size,):
+        raise ValueError("a should be a 1-D array.")
+    
+    if weights is not None:
+        weights = np.asanyarray(weights)
+        if weights.shape != (size,):
+            raise ValueError('weights should have the same shape as a.')
+    out = a
+    
+    sorting_index = a.argsort() # copy!
+    if weights is None:
+        out[sorting_index] = np.arange(size)
+    else:
+        a[:] = weights[sorting_index]
+        out[sorting_index] = a.cumsum()
+        
+    return []
 
     
 ###############################################################################

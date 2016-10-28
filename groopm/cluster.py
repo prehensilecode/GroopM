@@ -341,8 +341,7 @@ class CachingProfileDistanceEngine:
         except tables.exceptions.NoSuchNodeError:
             cached_weights = self._getWeights(contigLengths)
             scale_factor = 1. / cached_weights.sum()
-            cov_ranks = sp_distance.pdist(covProfiles, metric="euclidean")
-            distance.iargrank(out=cov_ranks, weights=cached_weights, axis=None)
+            cov_ranks = distance.iargrank(out=sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
@@ -356,9 +355,9 @@ class CachingProfileDistanceEngine:
             if cached_weights is None:
                 cached_weights = self._getWeights(contigLengths)
                 scaled_factor = 1. / cached_weights.sum()
-            kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
-            kmer_ranks[:] = sp_distance.pdist(kmerSigs, metric="euclidean")
-            distance.iargrank(out=kmer_ranks, weights=cached_weights, axis=None)
+            #kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
+            del cov_ranks
+            kmer_ranks = distance.iargrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
