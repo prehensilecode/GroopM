@@ -198,8 +198,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         self._distStore = distStore
     
     def distances(self, silent=False):
-        #de = CachingProfileDistanceEngine(distStore=self._distStore)
-        de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
+        de = CachingProfileDistanceEngine(distStore=self._distStore)
+        #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
         (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
                                             self._profile.kmerSigs,
                                             self._profile.contigLengths, 
