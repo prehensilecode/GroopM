@@ -972,7 +972,8 @@ class MarkerCheckCQE(ClusterQualityEngine):
         self._mscalefactors = 1. / copies[bin]
         
         # Compute the compatible marker group sizes
-        gsizes = np.array([len(np.unique(markerNames[row])) for row in self._mdists])
+        #gsizes = np.array([len(np.unique(markerNames[row])) for row in self._mdists])
+        gsizes = np.array([np.count_nonzero(row) / np.unique(markerNames[row], return_counts=True)[1].max() for row in self._mdists])
         self._gscalefactors = 1. / gsizes
         
     def getLeafData(self):
