@@ -181,7 +181,6 @@ def idensity_distance_(out, weights=None, minWt=None, minPts=None):
     #assert np.all(dd==out)
     return out
 
-@profile
 def core_distance(Y, weights=None, minWt=None, minPts=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -312,7 +311,6 @@ def core_distance_(Y, minPts):
         #assert x_[i] == core_dist[i]
     return core_dist
 
-@profile
 def reachability_order(Y, core_dist=None):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -373,7 +371,6 @@ def pairs(n):
     
     
 # helpers
-@profile
 def _fractional_rank(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     a = np.asanyarray(a)
@@ -419,7 +416,6 @@ def _fractional_rank(a, weights=None):
     #assert np.all(r_==a)
     return sa
 
-@profile
 def _ifractional_rank(a, weights=None):
     """Array value ranks with tied values averaged"""
     a = np.asanyarray(a)
@@ -489,7 +485,6 @@ def _ifractional_rank(a, weights=None):
     
     return []
     
-@profile
 def _iordinal_rank(a, weights=None):
     """Array value ranks with tied broken by index in a"""
     a = np.asanyarray(a)
