@@ -198,6 +198,9 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         self._distStore = distStore
     
     def distances(self, silent=False):
+        if(not silent):
+            n = len(self._profile.contigLengths)
+            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         de = CachingProfileDistanceEngine(distStore=self._distStore)
         #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
         (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
@@ -255,8 +258,6 @@ class ProfileDistanceEngine:
         kmer signatures, and give rank distances as a fraction of the largest rank.
         """
         n = len(contigLengths)
-        if(not silent):
-            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(n))
         weights = lens_i * lens_j
         scale_factor = 1. / weights.sum()
@@ -269,28 +270,6 @@ class ProfileDistanceEngine:
         (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
         rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
         return (rank_norms, weights)
-    
-    def makeDensityDistances(self, covProfiles, kmerSigs, contigLengths, minSize=None, minPts=None, silent=False):
-        """Compute density distances for pairs of contigs
-        """
-        (rank_norms, weights) = self.makeNormRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        if not silent:
-            print "Reticulating splines"
-            
-        # Convert the minimum size in bp of a bin to the minimum weighted density
-        # used to compute the density distance. For a contig of size L, the sum of
-        # nearest neighbour weights will be W=L*{sum of nearest neighbour lengths}. The
-        # corresponding size of the bin including the nearest neighbours will be
-        # S=L+{sum of nearest neighbour lengths}. Applying the size constraint S>minSize
-        # yields the weight constraint W>L*(minSize - L).
-        if minSize is None:
-            minWt = None
-        else:
-            v = np.full(len(contigLengths), contigLengths.min())
-            #v = contigLengths
-            minWt = np.maximum(minSize - v, 0) * v
-        den_dist = distance.density_distance(rank_norms, weights=weights, minWt=minWt, minPts=minPts)
-        return den_dist
 
         
 class CachingProfileDistanceEngine:
@@ -299,19 +278,21 @@ class CachingProfileDistanceEngine:
     def __init__(self, distStore):
         self._distStoreFile = distStore
         try:
-            with tables.open_file(self._distStoreFile, mode="a", title="Distance store"):
+            with tables.open_file(self._distStoreFile, mode="a", title="Distance store") as h5file:
                 pass
         except:
             print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
             raise
     
-    def _getWeights(self, contigLengths):
+    def _getWeights(self, contigLengths, silent=False):
         n = len(contigLengths)
         try:
             with tables.open_file(self._distStoreFile, mode="r") as h5file:
                 weights = h5file.get_node("/", "weights").read()
-                assert_num_obs(n, weights)
+            assert_num_obs(n, weights)
         except tables.exceptions.NoSuchNodeError:
+            if not silent:
+                print "Calculating distance weights"
             #(lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             #weights = 1. * lens_i * lens_j
             weights = np.empty( n * (n-1) // 2)
@@ -329,8 +310,6 @@ class CachingProfileDistanceEngine:
         kmer signatures, and give rank distances as a fraction of the largest rank.
         """
         n = len(contigLengths)
-        if(not silent):
-            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         cached_weights = None
         scale_factor = None
         try:
@@ -338,8 +317,10 @@ class CachingProfileDistanceEngine:
                 cov_ranks = h5file.get_node("/", "coverage").read()
             assert_num_obs(n, cov_ranks)
         except tables.exceptions.NoSuchNodeError:
-            cached_weights = self._getWeights(contigLengths)
+            cached_weights = self._getWeights(contigLengths, silent=silent)
             scale_factor = 1. / cached_weights.sum()
+            if not silent:
+                print "Calculating coverage distance ranks"
             cov_ranks = distance.iargrank(out=sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
@@ -352,10 +333,12 @@ class CachingProfileDistanceEngine:
             assert_num_obs(n, kmer_ranks)
         except tables.exceptions.NoSuchNodeError:
             if cached_weights is None:
-                cached_weights = self._getWeights(contigLengths)
+                cached_weights = self._getWeights(contigLengths, silent=silent)
                 scaled_factor = 1. / cached_weights.sum()
             #kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
             del cov_ranks
+            if not silent:
+                print "Calculating tetramer distance ranks"
             kmer_ranks = distance.iargrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
@@ -363,17 +346,18 @@ class CachingProfileDistanceEngine:
             with tables.open_file(self._distStoreFile, mode="a") as h5file:
                 h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
                 cov_ranks = h5file.get_node("/", "coverage").read()
-        return (cov_ranks, kmer_ranks)
+        return (cov_ranks, kmer_ranks, cached_weights)
     
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        weights = self._getWeights(contigLengths)
+        (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        if weights is None:
+            weights = self._getWeights(contigLengths, silent=silent)
         return (cov_ranks, kmer_ranks, weights)
         
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        (cov_ranks, kmer_ranks, cached_weighted) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         #x = cov_ranks**2 + kmer_ranks**2
         rank_norms = cov_ranks
         rank_norms **= 2
@@ -382,9 +366,9 @@ class CachingProfileDistanceEngine:
         #assert np.all(rank_norms==x)
         rank_norms **= 0.5
         #assert np.all(rank_norms==np.sqrt(x))
-        if cached_weights is None:
-            cached_weights = self._getWeights(contigLengths)
-        return (rank_norms, w) 
+        if weights is None:
+            weights = self._getWeights(contigLengths)
+        return (rank_norms, weights) 
         
                 
 class CachingWeightlessProfileDistanceEngine:

@@ -337,7 +337,7 @@ def reachability_order(Y, core_dist=None):
     o[0] = 0
     to_visit[0] = False
     d = np.empty(n, dtype=Y.dtype)
-    d[0] = 0
+    d[0] = core_dist[0]
     d[1:] = np.maximum(Y[condensed_index(n, 0, np.arange(1, n))], core_dist[0])
     #assert np.all(d== dm_[0])
     for i in range(1, n):

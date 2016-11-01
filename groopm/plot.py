@@ -67,7 +67,7 @@ from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
+from cluster import ClassificationClusterEngine, CachingProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
 from classification import BinClassifier
 import hierarchy
 
@@ -398,7 +398,91 @@ class ProfileReachabilityPlotter:
         
     def plot(self,
              bids,
-             label="tag",
+             label=None,
+             highlight="bins",
+             fileName=""):
+                 
+        de = CachingProfileDistanceEngine(distStore="xx.dists")
+        (Y, w) = de.makeNormRanks(self._profile.covProfiles,
+                                  self._profile.kmerSigs,
+                                  self._profile.contigLengths)
+        n = self._profile.numContigs
+        v = np.full(n, self._profile.contigLengths.min())
+        minWt = np.maximum(1e6 - v, 0)*v
+        yy = distance.core_distance(Y, w, minWt=minWt, minPts=None)
+        (o, _h) = distance.reachability_order(Y, yy)
+        Y **= 2
+        Y *= np.pi / 4
+        fY = (Y * w.sum()) / distance.iargrank(Y.copy(), weights=w, axis=None)
+        h = np.array([1]+[fY[distance.condensed_index(n, i, j)] for (i, j) in zip(o[:-1], o[1:])])
+            
+        
+        #h = self._profile.reachDists
+        #o = self._profile.reachOrder
+        if label=="count":
+            iloc = dict(zip(o, range(len(o))))
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
+            xlabel = "count"
+            xticklabel_rotation = "horizontal"
+        elif label=="tag":
+            iloc = dict(zip(o, range(len(o))))
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
+            xlabel = "lineage"
+            xticklabel_rotation = "vertical"
+        elif label is None:
+            iloc = dict(zip(o, range(len(o))))
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
+            xlabel = ""
+            xticklabel_rotation = "horizontal"
+        else:
+            raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
+        
+        if highlight=="bins":
+            binIds = self._profile.binIds[o]
+            
+            (first_indices, last_indices) = split_contiguous(binIds)
+            is_binned = binIds[first_indices]!=0
+            first_binned_indices = first_indices[is_binned]
+            last_binned_indices = last_indices[is_binned]
+            
+            # alternate red and black stretches for different bins
+            colours = np.full(len(o), 'c', dtype="|S1")
+            for (i, (s, e)) in enumerate(zip(first_binned_indices, last_binned_indices)):
+                colours[s:e] = 'r' if i%2 else 'k'
+            
+            # label stretches with bin ids
+            group_centers = (first_binned_indices+last_binned_indices)*0.5
+            group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
+            group_labels = binIds[first_binned_indices].astype(str)
+            k = np.in1d(binIds[first_binned_indices], bids)
+            text = zip(group_centers[k], group_heights[k], group_labels[k])
+            smap = None
+        else:
+            raise ValueError("Parameter value for 'highlight' argument must be one of: 'bins'. Got: '%s'." % highlight)
+        
+        hplot = BarPlotter(
+            height=h,
+            colours=colours,
+            xlabel=xlabel,
+            ylabel="dendist",
+            xticks=xticks,
+            xticklabels=xticklabels,
+            xticklabel_rotation=xticklabel_rotation,
+            text=text,
+            colourbar=smap,
+            )
+        hplot.plot(fileName)
+        
+        
+class ProfileReachabilityPlotter_:
+    def __init__(self, profile, colourmap="Sequential"):
+        self._profile = profile
+        self._bc = BinClassifier(self._profile.mapping)
+        self._colourmap = getColorMap(colourmap)
+        
+    def plot(self,
+             bids,
+             label=None,
              highlight="bins",
              fileName=""):
         
@@ -411,12 +495,12 @@ class ProfileReachabilityPlotter:
             xticklabel_rotation = "horizontal"
         elif label=="tag":
             iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = "lineage"
             xticklabel_rotation = "vertical"
         elif label is None:
-            xticks = []
-            xticklabels = []
+            iloc = dict(zip(o, range(len(o))))
+            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
             xlabel = ""
             xticklabel_rotation = "horizontal"
         else:
