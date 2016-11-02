@@ -402,23 +402,23 @@ class ProfileReachabilityPlotter:
              highlight="bins",
              fileName=""):
                  
-        de = CachingProfileDistanceEngine(distStore="xx.dists")
-        (Y, w) = de.makeNormRanks(self._profile.covProfiles,
-                                  self._profile.kmerSigs,
-                                  self._profile.contigLengths)
-        n = self._profile.numContigs
-        v = np.full(n, self._profile.contigLengths.min())
-        minWt = np.maximum(1e6 - v, 0)*v
-        yy = distance.core_distance(Y, w, minWt=minWt, minPts=None)
-        (o, _h) = distance.reachability_order(Y, yy)
-        Y **= 2
-        Y *= np.pi / 4
-        fY = (Y * w.sum()) / distance.iargrank(Y.copy(), weights=w, axis=None)
-        h = np.array([1]+[fY[distance.condensed_index(n, i, j)] for (i, j) in zip(o[:-1], o[1:])])
+        #de = CachingProfileDistanceEngine(distStore="xx.dists")
+        #(Y, w) = de.makeNormRanks(self._profile.covProfiles,
+        #                          self._profile.kmerSigs,
+        #                          self._profile.contigLengths)
+        #n = self._profile.numContigs
+        #v = np.full(n, self._profile.contigLengths.min())
+        #minWt = np.maximum(1e6 - v, 0)*v
+        #yy = distance.core_distance(Y, w, minWt=minWt, minPts=None)
+        #(o, _h) = distance.reachability_order(Y, yy)
+        #Y **= 2
+        #Y *= np.pi / 4
+        #fY = Y * w.sum() / distance.iargrank(Y.copy(), weights=w, axis=None)
+        #h = np.array([1]+[fY[distance.condensed_index(n, i, j)] for (i, j) in zip(o[:-1], o[1:])])
             
         
-        #h = self._profile.reachDists
-        #o = self._profile.reachOrder
+        h = self._profile.reachDists
+        o = self._profile.reachOrder
         if label=="count":
             iloc = dict(zip(o, range(len(o))))
             (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])

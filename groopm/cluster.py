@@ -203,12 +203,23 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         de = CachingProfileDistanceEngine(distStore=self._distStore)
         #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
-        (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
+        (ps, w) = de.makeNormRanks(self._profile.covProfiles,
                                             self._profile.kmerSigs,
                                             self._profile.contigLengths, 
                                             silent=silent)
         if not silent:
             print "Reticulating splines"
+        l = ps<=1; nl = np.logical_not(l)
+        ps[l] **= 2
+        ps[l] *= np.pi / 4
+        o = np.sqrt(ps[nl]**2 - 1)
+        al = np.pi / 2 - 2*np.arctan(o)
+        ps[nl] **= 2
+        ps[nl] *= al / 2
+        ps[nl] += o
+        
+        counts = distance.iargrank(ps.copy(), weights=w, axis=None)
+        rank_norms = ps * w.sum() / counts
             
         # Convert the minimum size in bp of a bin to the minimum weighted density
         # used to compute the density distance. For a contig of size L, the sum of
@@ -295,7 +306,7 @@ class CachingProfileDistanceEngine:
                 print "Calculating distance weights"
             #(lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             #weights = 1. * lens_i * lens_j
-            weights = np.empty( n * (n-1) // 2)
+            weights = np.empty( n * (n-1) // 2, dtype=np.double)
             k = 0
             for i in range(n-1):
                 weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]

@@ -49,6 +49,7 @@ __email__ = "t.lamberton@uq.edu.au"
 
 import numpy as np
 import scipy.spatial.distance as sp_distance
+import scipy.stats as sp_stats
 
 # local imports
 
@@ -82,8 +83,8 @@ def mediod(Y):
 def argrank(array, weights=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
-        return _fractional_rank(array, weights=weights)
-    return np.apply_along_axis(_fractional_rank, axis, array, weights=weights)
+        return _ordinal_rank(array, weights=weights)
+    return np.apply_along_axis(_ordinal_rank, axis, array, weights=weights)
     
     
 def iargrank(out, weights=None, axis=0):
@@ -365,6 +366,22 @@ def _condensed_index(n, i, j):
         
 condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
     
+def _binom_test(x, n, p):
+    return sp_stats.binom.sf(x-1, n, p)
+    
+binom_test = np.vectorize(_binom_test, otypes=[float])
+
+def _g_test(x, n, p):
+    # o = [x, n-x], e = [np, n(1-p)]
+    stat = 0.
+    if x!=0:
+        stat += 2. * x * np.log(x / (n * p))
+    if x!=n:
+        stat += 2. * (n-x) * np.log((n-x) / n*(1-p))
+    return sp_stats.chi2.sf(stat, 1)
+    
+g_test = np.vectorize(_g_test, otypes=[float])
+    
     
 def pairs(n):
     return np.triu_indices(n, k=1)
@@ -484,6 +501,26 @@ def _ifractional_rank(a, weights=None):
     #assert np.all(out_==out)
     
     return []
+    
+def _ordinal_rank(a, weights=None):
+    """Return sorted of array indices with tied values averaged"""
+    a = np.asanyarray(a)
+    size = a.size
+    if a.shape != (size,):
+        raise ValueError("a should be a 1-D array.")
+    
+    if weights is not None:
+        weights = np.asanyarray(weights)
+        if weights.shape != (size,):
+            raise ValueError('weights should have the same shape as a.')
+    
+    sorting_index = a.argsort()
+    sa = np.empty(size, dtype=np.int)
+    if weights is None:
+        sa[sorting_index] = np.arange(size)
+    else: 
+        sa[sorting_index] = weights[sorting_index].cumsum()
+    return sa
     
 def _iordinal_rank(a, weights=None):
     """Array value ranks with tied broken by index in a"""
