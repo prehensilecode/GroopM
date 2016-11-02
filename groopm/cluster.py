@@ -142,6 +142,7 @@ class HierarchicalClusterEngine:
         print "Getting distance info"
         (pdists, core_dists) = self.distances()
         print "    %s" % timer.getTimeStamp()
+        print pdists, core_dists
         
         print "Computing cluster hierarchy"
         (o, d) = distance.reachability_order(pdists, core_dists)
@@ -203,23 +204,24 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         de = CachingProfileDistanceEngine(distStore=self._distStore)
         #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
-        (ps, w) = de.makeNormRanks(self._profile.covProfiles,
+        (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
                                             self._profile.kmerSigs,
                                             self._profile.contigLengths, 
                                             silent=silent)
         if not silent:
             print "Reticulating splines"
-        l = ps<=1; nl = np.logical_not(l)
-        ps[l] **= 2
-        ps[l] *= np.pi / 4
-        o = np.sqrt(ps[nl]**2 - 1)
-        al = np.pi / 2 - 2*np.arctan(o)
-        ps[nl] **= 2
-        ps[nl] *= al / 2
-        ps[nl] += o
+        #l = ps<=1; nl = np.logical_not(l)
+        #ps[l] **= 2
+        #ps[l] *= np.pi / 4
+        #o = np.sqrt(ps[nl]**2 - 1)
+        #al = np.pi / 2 - 2*np.arctan(o)
+        #ps[nl] **= 2
+        #ps[nl] *= al / 2
+        #ps[nl] += o
+        #ps *= 1 + ps*np.log(ps) - ps*np.log(1+ps)
         
-        counts = distance.iargrank(ps.copy(), weights=w, axis=None)
-        rank_norms = ps * w.sum() / counts
+        #counts = distance.iargrank(ps.copy(), weights=w, axis=None)
+        #rank_norms = ps * w.sum() / counts
             
         # Convert the minimum size in bp of a bin to the minimum weighted density
         # used to compute the density distance. For a contig of size L, the sum of
@@ -369,14 +371,12 @@ class CachingProfileDistanceEngine:
         """Compute norms in {coverage rank space x kmer rank space}
         """
         (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        #x = cov_ranks**2 + kmer_ranks**2
+        #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
         rank_norms = cov_ranks
-        rank_norms **= 2
-        kmer_ranks **= 2
+        rank_norms **= -1
+        kmer_ranks **= -1
         rank_norms += kmer_ranks
-        #assert np.all(rank_norms==x)
-        rank_norms **= 0.5
-        #assert np.all(rank_norms==np.sqrt(x))
+        rank_norms **= -1
         if weights is None:
             weights = self._getWeights(contigLengths)
         return (rank_norms, weights) 
