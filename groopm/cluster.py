@@ -62,7 +62,7 @@ import distance
 import recruit
 import hierarchy
 from profileManager import ProfileManager
-from groopmExceptions import SavedDistancesInvalidNumberException
+from groopmExceptions import SavedDistancesInvalidNumberException, CacheUnavailableException
 from utils import group_iterator
 
 ###############################################################################
@@ -101,12 +101,12 @@ class CoreCreator:
         
         if savedDistsPrefix=="":
             savedDistsPrefix = self._dbFileName
-        distFileName = savedDistsPrefix+".dists"
+        cacher = FileCacher(savedDistsPrefix+".dists")
         
         ce = ClassificationClusterEngine(profile,
                                          minPts=minPts,
                                          minSize=minSize,
-                                         distStore=distFileName,
+                                         cacher=cacher,
                                         )
         ce.makeBins(timer,
                     out_bins=profile.binIds,
@@ -123,7 +123,7 @@ class CoreCreator:
         # Remove created files
         if not keepDists:
             try:
-                os.remove(distFileName)
+                cacher.cleanup()
             except:
                 raise
             
@@ -142,7 +142,6 @@ class HierarchicalClusterEngine:
         print "Getting distance info"
         (pdists, core_dists) = self.distances()
         print "    %s" % timer.getTimeStamp()
-        print pdists, core_dists
         
         print "Computing cluster hierarchy"
         (o, d) = distance.reachability_order(pdists, core_dists)
@@ -190,19 +189,19 @@ class HierarchicalClusterEngine:
 class ClassificationClusterEngine(HierarchicalClusterEngine):
     """Cluster using hierarchical clusturing with feature distance ranks and marker taxonomy"""
     
-    def __init__(self, profile, minPts=None, minSize=None, distStore=""):
+    def __init__(self, profile, minPts=None, minSize=None, cacher=None):
         if (minSize is None) and (minPts is None):
             raise ValueError("Specify at least one of 'minWt' or 'minPts' parameter values")
         self._profile = profile
         self._minPts = minPts
         self._minSize = minSize
-        self._distStore = distStore
+        self._cacher = cacher
     
     def distances(self, silent=False):
         if(not silent):
             n = len(self._profile.contigLengths)
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
-        de = CachingProfileDistanceEngine(distStore=self._distStore)
+        de = ProfileDistanceEngine() if self._cacher is None else CachingProfileDistanceEngine(cacher=self._cacher)
         #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
         (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
                                             self._profile.kmerSigs,
@@ -210,18 +209,31 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                             silent=silent)
         if not silent:
             print "Reticulating splines"
-        #l = ps<=1; nl = np.logical_not(l)
-        #ps[l] **= 2
-        #ps[l] *= np.pi / 4
-        #o = np.sqrt(ps[nl]**2 - 1)
-        #al = np.pi / 2 - 2*np.arctan(o)
-        #ps[nl] **= 2
-        #ps[nl] *= al / 2
-        #ps[nl] += o
-        #ps *= 1 + ps*np.log(ps) - ps*np.log(1+ps)
-        
-        #counts = distance.iargrank(ps.copy(), weights=w, axis=None)
-        #rank_norms = ps * w.sum() / counts
+            
+        # convert to count estimate
+        if False:
+            l = rank_norms<=1; nl = np.logical_not(l)
+            
+            # radial area
+            #rank_norms **= 2
+            #rank_norms /= 2 #angular area
+            #rank_norms[l] *= np.pi / 2
+            #o = np.sqrt(2*rank_norms[nl] - 1)
+            #al = np.pi / 2 - 2*np.arctan(o)
+            #rank_norms[nl] *= al
+            #rank_norms[nl] += o
+            
+            # triangular area
+            rank_norms[l] **= 2
+            rank_norms[l] /= 2
+            rank_norms[nl] = 2 - rank_norms[nl]
+            rank_norms[nl] **= 2
+            rank_norms[nl] = 2 - rank_norms[nl]
+            rank_norms[nl] /= 2
+            rank_norms *= w.sum()
+            
+            # normalise to actual count
+            rank_norms /= distance.iargrank(rank_norms.copy(), weights=w, axis=None)
             
         # Convert the minimum size in bp of a bin to the minimum weighted density
         # used to compute the density distance. For a contig of size L, the sum of
@@ -271,10 +283,13 @@ class ProfileDistanceEngine:
         kmer signatures, and give rank distances as a fraction of the largest rank.
         """
         n = len(contigLengths)
-        (lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(n))
-        weights = lens_i * lens_j
+        weights = np.empty( n * (n-1) // 2, dtype=np.double)
+        k = 0
+        for i in range(n-1):
+            weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
+            k = k+n-1-i
         scale_factor = 1. / weights.sum()
-        (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
+        (cov_ranks, kmer_ranks) = tuple(distance.iargrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
         return (cov_ranks, kmer_ranks, weights)
     
     def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -288,22 +303,15 @@ class ProfileDistanceEngine:
 class CachingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, distStore):
-        self._distStoreFile = distStore
-        try:
-            with tables.open_file(self._distStoreFile, mode="a", title="Distance store") as h5file:
-                pass
-        except:
-            print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
-            raise
+    def __init__(self, cacher):
+        self._cacher = cacher
     
     def _getWeights(self, contigLengths, silent=False):
         n = len(contigLengths)
         try:
-            with tables.open_file(self._distStoreFile, mode="r") as h5file:
-                weights = h5file.get_node("/", "weights").read()
+            weights = self._cacher.getWeights()
             assert_num_obs(n, weights)
-        except tables.exceptions.NoSuchNodeError:
+        except CacheUnavailableException:
             if not silent:
                 print "Calculating distance weights"
             #(lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
@@ -314,8 +322,7 @@ class CachingProfileDistanceEngine:
                 weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
                 k = k+n-1-i
             #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-            with tables.open_file(self._distStoreFile, mode="a") as h5file:
-                h5file.create_array("/", "weights", weights, "Distance weights")
+            self._cacher.storeWeights(weights)
         return weights
     
     def _getScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -326,10 +333,9 @@ class CachingProfileDistanceEngine:
         cached_weights = None
         scale_factor = None
         try:
-            with tables.open_file(self._distStoreFile, mode="r") as h5file:
-                cov_ranks = h5file.get_node("/", "coverage").read()
+            cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
-        except tables.exceptions.NoSuchNodeError:
+        except CacheUnavailableException:
             cached_weights = self._getWeights(contigLengths, silent=silent)
             scale_factor = 1. / cached_weights.sum()
             if not silent:
@@ -338,16 +344,14 @@ class CachingProfileDistanceEngine:
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
-            with tables.open_file(self._distStoreFile, mode="a") as h5file:
-                h5file.create_array("/", "coverage", cov_ranks, "Coverage distance ranks")
+            self._cacher.storeCovDists(cov_ranks)
         try:
-            with tables.open_file(self._distStoreFile, mode="r") as h5file:
-                kmer_ranks = h5file.get_node("/", "kmer").read()
+            kmer_ranks = self._cacher.getKmerDists()
             assert_num_obs(n, kmer_ranks)
-        except tables.exceptions.NoSuchNodeError:
+        except CacheUnavailableException:
             if cached_weights is None:
                 cached_weights = self._getWeights(contigLengths, silent=silent)
-                scaled_factor = 1. / cached_weights.sum()
+                scale_factor = 1. / cached_weights.sum()
             #kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
             del cov_ranks
             if not silent:
@@ -356,9 +360,8 @@ class CachingProfileDistanceEngine:
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
-            with tables.open_file(self._distStoreFile, mode="a") as h5file:
-                h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
-                cov_ranks = h5file.get_node("/", "coverage").read()
+            self._cacher.storeKmerDists(kmer_ranks)
+            cov_ranks = self._cacher.getCovDists()
         return (cov_ranks, kmer_ranks, cached_weights)
     
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -373,34 +376,27 @@ class CachingProfileDistanceEngine:
         (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
         rank_norms = cov_ranks
-        rank_norms **= -1
-        kmer_ranks **= -1
+        rank_norms **= 2
+        kmer_ranks **= 2
         rank_norms += kmer_ranks
-        rank_norms **= -1
+        rank_norms **= 0.5
         if weights is None:
             weights = self._getWeights(contigLengths)
         return (rank_norms, weights) 
-        
-                
+                        
+                        
 class CachingWeightlessProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, distStore):
-        self._distStoreFile = distStore
-        try:
-            with tables.open_file(self._distStoreFile, mode="a", title="Distance store"):
-                pass
-        except:
-            print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
-            raise
+    def __init__(self, cacher):
+        self._cacher = cacher
             
     def _getWeights(self, contigLengths):
         n = len(contigLengths)
         try:
-            with tables.open_file(self._distStoreFile, mode="r") as h5file:
-                weights = h5file.get_node("/", "weights").read()
-                assert_num_obs(n, weights)
-        except tables.exceptions.NoSuchNodeError:
+            weights = self._cacher.getWeigths()
+            assert_num_obs(n, weights)
+        except CacheUnavailableException:
             #(lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             #weights = 1. * lens_i * lens_j
             weights = np.empty( n * (n-1) // 2)
@@ -409,8 +405,7 @@ class CachingWeightlessProfileDistanceEngine:
                 weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
                 k = k+n-1-i
             #weights = sp_distance.pdist(contigLengths[:, None], operator.mul)
-            with tables.open_file(self._distStoreFile, mode="a") as h5file:
-                h5file.create_array("/", "weights", weights, "Distance weights")
+            self._cacher.storeWeights(weights)
         return weights
         
     def _getScaledRanks(self, covProfiles, kmerSigs, silent=False):
@@ -423,20 +418,17 @@ class CachingWeightlessProfileDistanceEngine:
         cached_weights = None
         scale_factor = 1. / n
         try:
-            with tables.open_file(self._distStoreFile, mode="r") as h5file:
-                cov_ranks = h5file.get_node("/", "coverage").read()
+            cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
-        except tables.exceptions.NoSuchNodeError:
+        except CacheUnavailableException:
             #cached_weights = self._getWeights(contigLengths)
             cov_ranks = distance.iargrank(out=sp_distance.pdist(covProfiles, metric="euclidean"), axis=None)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
-            with tables.open_file(self._distStoreFile, mode="a") as h5file:
-                h5file.create_array("/", "coverage", cov_ranks, "Coverage distance ranks")
+            self._cacher.storeCovDists(cov_ranks)
         try:
-            with tables.open_file(self._distStoreFile, mode="r") as h5file:
-                kmer_ranks = h5file.get_node("/", "kmer").read()
+            kmer_ranks = self._cacher.getKmerDists()
             assert_num_obs(n, kmer_ranks)
         except tables.exceptions.NoSuchNodeError:
             #kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
@@ -445,9 +437,8 @@ class CachingWeightlessProfileDistanceEngine:
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
-            with tables.open_file(self._distStoreFile, mode="a") as h5file:
-                h5file.create_array("/", "kmer", kmer_ranks, "Tetramer distance ranks")
-                cov_ranks = h5file.get_node("/", "coverage").read()
+            self._cacher.storeKmerDists(kmer_dists)
+            cov_ranks = self._cacher.getCovDistS()
         return (cov_ranks, kmer_ranks)
     
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -469,6 +460,133 @@ class CachingWeightlessProfileDistanceEngine:
         #assert np.all(rank_norms==np.sqrt(x))
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
+        
+        
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################  
+class Cacher:
+    """Class for caching profile feature distances"""
+    
+    def cleanup():
+        pass
+    
+    def getWeights():
+        pass
+        
+    def storeWeights(weights):
+        pass
+        
+    def getCovDists():
+        pass
+        
+    def storeCovDists(cov_dists):
+        pass
+        
+    def getKmerDists():
+        pass
+        
+    def storeKmerDists(kmer_dists):
+        pass
+        
+        
+class FileCacher(Cacher):
+    """Cache using numpy to/fromfile"""
+    
+    def __init__(self, distStorePrefix):
+        self._weightsStore = distStorePrefix+".weights"
+        self._covDistStore = distStorePrefix+".cov"
+        self._kmerDistStore = distStorePrefix+".kmer"
+        
+    def cleanup(self):
+        os.remove(self._weightsStore)
+        os.remove(self._covDistStore)
+        os.remove(self._kmerDistStore)
+        
+    def getWeights(self):
+        try:
+            weights = np.fromfile(self._weightsStore, dtype=np.double)
+        except IOError:
+            raise CacheUnavailableException()
+        return weights
+        
+    def storeWeights(self, weights):
+        np.asanyarray(weights, dtype=np.double).tofile(self._weightsStore)
+        
+    def getCovDists(self):
+        try:
+            cov_dists = np.fromfile(self._covDistStore, dtype=np.double)
+        except IOError:
+            raise CacheUnavailableException()
+        return cov_dists
+        
+    def storeCovDists(self, cov_dists):
+        np.asanyarray(cov_dists, dtype=np.double).tofile(self._covDistStore)
+        
+    def getKmerDists(self):
+        try:
+            kmer_dists = np.fromfile(self._kmerDistStore, dtype=np.double)
+        except IOError:
+            raise CacheUnavailableException()
+        return kmer_dists
+        
+    def storeKmerDists(self, kmer_dists):
+        np.asanyarray(kmer_dists, dtype=np.double).tofile(self._kmerDistStore)
+        
+        
+class TablesCacher(Cacher):
+    """Cache using pytable"""
+
+    def __init__(self, distStore):
+        self._distStoreFile = distStore
+        try:
+            with tables.open_file(self._distStoreFile, mode="a", title="Distance store") as h5file:
+                pass
+        except:
+            print "Error creating database:", self._distStoreFile, sys.exc_info()[0]
+            raise
+            
+    def cleanup(self):
+        os.remove(self._distStoreFile)
+    
+    def getWeights(self):
+        try:
+            with tables.open_file(self._distStoreFile, mode="r") as h5file:
+                weights = h5file.get_node("/", "weights").read()
+        except tables.exceptions.NoSuchNodeError:
+            raise CacheUnavailableException()
+        return weights
+        
+    def storeWeights(self, weights):
+        with tables.open_file(self._distStoreFile, mode="a") as h5file:
+            h5file.create_array("/", "weights", weights, "Distance weights")
+    
+    def getCovDists(self):
+        try:
+            with tables.open_file(self._distStoreFile, mode="r") as h5file:
+                cov_dists = h5file.get_node("/", "coverage").read()
+        except tables.exceptions.NoSuchNodeError:
+            raise CacheUnavailableException()
+        return cov_dists
+        
+    def storeCovDists(self, cov_dists):
+        with tables.open_file(self._distStoreFile, mode="a") as h5file:
+            h5file.create_array("/", "coverage", cov_dists, "Coverage distances")
+            
+    def getKmerDists(self):
+        try:
+            with tables.open_file(self._distStoreFile, mode="r") as h5file:
+                kmer_dists = h5file.get_node("/", "kmer").read()
+            assert_num_obs(n, kmer_ranks)
+        except tables.exceptions.NoSuchNodeError:
+            raise CacheUnavailableException()
+        return kmer_dists
+        
+    def storeKmerDists(self, kmer_dists):
+        with tables.open_file(self._distStoreFile, mode="a") as h5file:
+            h5file.create_array("/", "kmer", kmer_dists, "Tetramer distances")
+        
         
 
 def assert_num_obs(n, y):
