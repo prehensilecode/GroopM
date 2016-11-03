@@ -203,37 +203,16 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         de = ProfileDistanceEngine() if self._cacher is None else CachingProfileDistanceEngine(cacher=self._cacher)
         #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
-        (rank_norms, w) = de.makeNormRanks(self._profile.covProfiles,
-                                            self._profile.kmerSigs,
-                                            self._profile.contigLengths, 
-                                            silent=silent)
+        (rank_norms, w) = de.makeRankNorms(self._profile.covProfiles,
+                                           self._profile.kmerSigs,
+                                           self._profile.contigLengths, 
+                                           silent=silent)
+        #(rank_norms, w) = DistanceStatEngine(de, mode="triangular").makeStat(self._profile.covProfiles,
+                                                                             #self._profile.kmerSigs,
+                                                                             #self._profile.contigLengths,
+                                                                             #silent=silent)
         if not silent:
             print "Reticulating splines"
-            
-        # convert to count estimate
-        if False:
-            l = rank_norms<=1; nl = np.logical_not(l)
-            
-            # radial area
-            #rank_norms **= 2
-            #rank_norms /= 2 #angular area
-            #rank_norms[l] *= np.pi / 2
-            #o = np.sqrt(2*rank_norms[nl] - 1)
-            #al = np.pi / 2 - 2*np.arctan(o)
-            #rank_norms[nl] *= al
-            #rank_norms[nl] += o
-            
-            # triangular area
-            rank_norms[l] **= 2
-            rank_norms[l] /= 2
-            rank_norms[nl] = 2 - rank_norms[nl]
-            rank_norms[nl] **= 2
-            rank_norms[nl] = 2 - rank_norms[nl]
-            rank_norms[nl] /= 2
-            rank_norms *= w.sum()
-            
-            # normalise to actual count
-            rank_norms /= distance.iargrank(rank_norms.copy(), weights=w, axis=None)
             
         # Convert the minimum size in bp of a bin to the minimum weighted density
         # used to compute the density distance. For a contig of size L, the sum of
@@ -267,8 +246,60 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
         bins = fce.makeClusters(Z)
         return bins
+
         
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################        
+   
+class DistanceStatEngine:
+    def __init__(self, de, mode="radial"):
+        self._de = de
+        if mode=="radial":
+            self._n = 2
+            self._area = _iradial_area
+        elif mode=="triangular":
+            self._n = 1
+            self._area = _itriangular_area
+        else:
+            raise ValueError("Parameter value for argument 'mode' must be one of: 'radial', 'triangular'.")
         
+    def makeStat(self, covProfiles, kmerSigs, contigLengths, silent=False):
+            
+        (norms, w) = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
+        self._area(out=norms)
+        norms *= w.sum()
+            
+        # normalise to actual count
+        norms /= distance.iargrank(norms.copy(), weights=w, axis=None)
+        
+        return (norms, w)
+    
+    
+def _iradial_area(out):
+    l = out<=1; nl = np.logical_not(l)
+    
+    # 2-norm to radial area in 1x1 square
+    out **= 2
+    out /= 2 #angular area
+    out[l] *= np.pi / 2
+    o = np.sqrt(2*out[nl] - 1)
+    al = np.pi / 2 - 2*out.arctan(o)
+    out[nl] *= al
+    out[nl] += o
+        
+def _itriangular_area(out):
+    l = out<=1; nl = np.logical_not(l)
+    
+    # 1-norm to lower-triangular area in 1x1 square
+    out[l] **= 2
+    out[l] /= 2
+    out[nl] = 2 - out[nl]
+    out[nl] **= 2
+    out[nl] = 2 - out[nl]
+    out[nl] /= 2
+    
         
 ###############################################################################
 ###############################################################################
@@ -277,7 +308,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
 
 class ProfileDistanceEngine:
     """Simple class for computing profile feature distances"""
-
+    
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute pairwise rank distances separately for coverage profiles and
         kmer signatures, and give rank distances as a fraction of the largest rank.
@@ -292,12 +323,12 @@ class ProfileDistanceEngine:
         (cov_ranks, kmer_ranks) = tuple(distance.iargrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
         return (cov_ranks, kmer_ranks, weights)
     
-    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+    def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute norms in {coverage rank space x kmer rank space}
         """
         (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
-        rank_norms = np.sqrt(cov_ranks**2 + kmer_ranks**2)
-        return (rank_norms, weights)
+        dists = np.sqrt(cov_ranks**2 + kmer_ranks**2)
+        return (dists, weights)
 
         
 class CachingProfileDistanceEngine:
@@ -370,19 +401,20 @@ class CachingProfileDistanceEngine:
             weights = self._getWeights(contigLengths, silent=silent)
         return (cov_ranks, kmer_ranks, weights)
         
-    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+    def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
         (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
         rank_norms = cov_ranks
-        rank_norms **= 2
-        kmer_ranks **= 2
+        del cov_ranks # invalidated
+        rank_norms **= n
+        kmer_ranks **= n
         rank_norms += kmer_ranks
-        rank_norms **= 0.5
+        rank_norms **= 1. / n
         if weights is None:
             weights = self._getWeights(contigLengths)
-        return (rank_norms, weights) 
+        return (rank_norms, weights)
                         
                         
 class CachingWeightlessProfileDistanceEngine:
@@ -446,17 +478,17 @@ class CachingWeightlessProfileDistanceEngine:
         w = self._getWeights(contigLengths)
         return (cov_ranks, kmer_ranks, w)
     
-    def makeNormRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+    def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
         (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, silent=silent)
         #x = cov_ranks**2 + kmer_ranks**2
         rank_norms = cov_ranks
-        rank_norms **= 2
-        kmer_ranks **= 2
+        del cov_ranks # invalidated
+        rank_norms **= n
+        kmer_ranks **= n
         rank_norms += kmer_ranks
-        #assert np.all(rank_norms==x)
-        rank_norms **= 0.5
+        rank_norms **= 1. / n
         #assert np.all(rank_norms==np.sqrt(x))
         w = self._getWeights(contigLengths)
         return (rank_norms, w)
