@@ -323,7 +323,7 @@ class ProfileDistanceEngine:
             weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
             k = k+n-1-i
         scale_factor = 1. / weights.sum()
-        (cov_ranks, kmer_ranks) = tuple(distance.iargrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
+        (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
         return (cov_ranks, kmer_ranks, weights)
     
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False):
@@ -374,7 +374,8 @@ class CachingProfileDistanceEngine:
             scale_factor = 1. / cached_weights.sum()
             if not silent:
                 print "Calculating coverage distance ranks"
-            cov_ranks = distance.iargrank(out=sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None)
+            cov_ranks = sp_distance.pdist(covProfiles, metric="euclidean")
+            distance.iargrank(out=cov_ranks, weights=cached_weights, axis=None)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
@@ -390,7 +391,8 @@ class CachingProfileDistanceEngine:
             del cov_ranks
             if not silent:
                 print "Calculating tetramer distance ranks"
-            kmer_ranks = distance.iargrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None)
+            kmer_ranks = sp_distance.pdist(kmerSigs, metric="euclidean")
+            distance.iargrank(kmer_ranks, weights=cached_weights, axis=None)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
@@ -459,7 +461,8 @@ class CachingWeightlessProfileDistanceEngine:
             #cached_weights = self._getWeights(contigLengths)
             if not silent:
                 print "Calculating coverage distance ranks"
-            cov_ranks = distance.iargrank(out=sp_distance.pdist(covProfiles, metric="euclidean"), axis=None)
+            cov_ranks = sp_distance.pdist(covProfiles, metric="euclidean")
+            distance.iargrank(out=cov_ranks, axis=None)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
@@ -472,7 +475,8 @@ class CachingWeightlessProfileDistanceEngine:
             del cov_ranks
             if not silent:
                 print "Calculating tetramer distance ranks"
-            kmer_ranks = distance.iargrank(sp_distance.pdist(kmerSigs, metric="euclidean"), axis=None)
+            kmer_ranks = sp_distance.pdist(kmerSigs, metric="euclidean")
+            distance.iargrank(out=kmer_ranks, axis=None)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
