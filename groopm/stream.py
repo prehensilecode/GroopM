@@ -60,25 +60,67 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 
-def pdist_chunks(X, filename, chunk_size=None, metric="euclidean"):
-    n = len(X)
+_dbytes = np.dtype(np.double).itemsize
+
+def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
+    X = np.asarray(X)
+    n = X.shape[0]
     npairs = n * (n - 1) // 2
-    row = 0
-    k = 0
-    itemsize = np.dtype(np.double).itemsize
-    if chunk_size is not None:
-        while npairs > chunk_size:
-            storage = np.memmap(filename, dtype=np.double, mode="w+", offset=k*itemsize, shape=(n-1-row,))
-            storage[:] = sp_distance.cdist(X[row], X[row+1:], metric=metric)
-            storage.flush()
-            k += n-1-row
-            row += 1
-            npairs -= n-1-row
-    storage = np.memmap(filename, dtype=np.double, mode="w+", offset=k*itemsize, shape=(npairs,))
-    storage[:] = sp_distance.pdist(X[row:], metric=metric)
-    storage.flush()
+    bytes = long(npairs*_dbytes)
     
+    # setup storage
+    with open(filename, 'w+b') as f:
+        f.seek(bytes-1,0)
+        f.write(np.compat.asbytes("\0"))
+        f.flush()
     
+        row = 0
+        k = 0
+        if chunk_size is not None:
+            while (npairs - k) > chunk_size:
+                storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*dbytes, shape=(n-1-row,))
+                storage[:] = sp_distance.cdist(X[row:row+1], X[row+1:], metric=metric)[:]
+                storage.flush()
+                k += n-1-row
+                row += 1
+        storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(npairs-k,))
+        storage[:] = sp_distance.pdist(X[row:], metric=metric)
+        storage.flush()
+    
+
+def argsort_chunk(infilename, outfilename, chunk_size=None):
+    with open(infilename, 'rb') as fin:
+        fin.seek(0,2)
+        bytes = fin.tell()
+        if (bytes % _dbytes):
+            raise ValueError("Size of available data is not multiple of data-type size.")
+        size = bytes // _dbytes
+        bytes = long(size*_dbytes)
+        
+        segments = 2 ** np.ceil(np.log2(size * 1. / chunk_size))
+        segment_size = size // segments
+    
+        # set up storage
+        with open(outfilename, 'w+b') as fout:
+            fout.seek(bytes-1, 0)
+            fout.write(np.compat.asbytes("\0"))
+            fout.flush()
+            
+            with open(outfilename+"2", 'w+b') as ftmp:
+                ftmp.seek(bytes-1, 0)
+                ftmp.write(np.compat.asbytes("\0"))
+                ftmp.flush()
+        
+                first_write = True
+                while True:
+                    for i in range(0, segments, 2):
+                        if first_write:
+                            left = np.memmap(fin, )
+                        offset1 = i*segment_size
+                        offset2 = (i+1)*segment_size
+                        
+                
+                
     
 ###############################################################################
 ###############################################################################
