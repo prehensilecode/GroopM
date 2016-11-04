@@ -201,8 +201,11 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if(not silent):
             n = len(self._profile.contigLengths)
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
-        de = ProfileDistanceEngine() if self._cacher is None else CachingProfileDistanceEngine(cacher=self._cacher)
-        #de = CachingWeightlessProfileDistanceEngine(distStore=self._distStore)
+        if self._cacher is None:
+            de = ProfileDistanceEngine
+        else:
+            #de = CachingProfileDistanceEngine(cacher=self._cacher)
+            de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         (rank_norms, w) = de.makeRankNorms(self._profile.covProfiles,
                                            self._profile.kmerSigs,
                                            self._profile.contigLengths, 
@@ -431,6 +434,8 @@ class CachingWeightlessProfileDistanceEngine:
         except CacheUnavailableException:
             #(lens_i, lens_j) = tuple(contigLengths[i] for i in distance.pairs(len(contigLengths)))
             #weights = 1. * lens_i * lens_j
+            if not silent:
+                print "Calculating distance weights"
             weights = np.empty( n * (n-1) // 2)
             k = 0
             for i in range(n-1):
@@ -445,8 +450,6 @@ class CachingWeightlessProfileDistanceEngine:
         kmer signatures, and give rank distances as a fraction of the largest rank.
         """
         n = len(covProfiles)
-        if(not silent):
-            print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
         cached_weights = None
         scale_factor = 1. / n
         try:
@@ -454,6 +457,8 @@ class CachingWeightlessProfileDistanceEngine:
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
             #cached_weights = self._getWeights(contigLengths)
+            if not silent:
+                print "Calculating coverage distance ranks"
             cov_ranks = distance.iargrank(out=sp_distance.pdist(covProfiles, metric="euclidean"), axis=None)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
@@ -465,6 +470,8 @@ class CachingWeightlessProfileDistanceEngine:
         except tables.exceptions.NoSuchNodeError:
             #kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
             del cov_ranks
+            if not silent:
+                print "Calculating tetramer distance ranks"
             kmer_ranks = distance.iargrank(sp_distance.pdist(kmerSigs, metric="euclidean"), axis=None)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
