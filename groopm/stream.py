@@ -61,12 +61,13 @@ np.seterr(all='raise')
 ###############################################################################
 
 _dbytes = np.dtype(np.double).itemsize
+_ibytes = np.dtype(np.int).itemsize
 
 def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
     X = np.asarray(X)
     n = X.shape[0]
-    npairs = n * (n - 1) // 2
-    bytes = long(npairs*_dbytes)
+    size = n * (n - 1) // 2
+    bytes = long(size*_dbytes)
     
     # setup storage
     with open(filename, 'w+b') as f:
@@ -76,18 +77,20 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
     
         row = 0
         k = 0
+        rem = size
         if chunk_size is not None:
-            while (npairs - k) > chunk_size:
+            while rem > chunk_size:
                 storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*dbytes, shape=(n-1-row,))
                 storage[:] = sp_distance.cdist(X[row:row+1], X[row+1:], metric=metric)[:]
                 storage.flush()
                 k += n-1-row
                 row += 1
-        storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(npairs-k,))
+                rem = size - k
+        storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(rem,))
         storage[:] = sp_distance.pdist(X[row:], metric=metric)
         storage.flush()
+        
     
-
 def argsort_chunk(infilename, outfilename, chunk_size=None):
     with open(infilename, 'rb') as fin:
         fin.seek(0,2)
@@ -95,32 +98,79 @@ def argsort_chunk(infilename, outfilename, chunk_size=None):
         if (bytes % _dbytes):
             raise ValueError("Size of available data is not multiple of data-type size.")
         size = bytes // _dbytes
-        bytes = long(size*_dbytes)
-        
-        segments = 2 ** np.ceil(np.log2(size * 1. / chunk_size))
-        segment_size = size // segments
     
-        # set up storage
+        # set up index storage
         with open(outfilename, 'w+b') as fout:
+            bytes = long(size*_ibytes)
             fout.seek(bytes-1, 0)
-            fout.write(np.compat.asbytes("\0"))
+            fout.write(np.compat.asbytes('\0'))
             fout.flush()
             
-            with open(outfilename+"2", 'w+b') as ftmp:
-                ftmp.seek(bytes-1, 0)
-                ftmp.write(np.compat.asbytes("\0"))
-                ftmp.flush()
-        
-                first_write = True
+            num_chunks = np.ceil(size / chunk_size)
+            chunk_offsets = np.arange(0, size, chunk_size)
+            chunk_sizes = np.array([chunk_size]*(num_chunks-1)+[size-chunk_offsets[-1]])
+            chunk_lower = np.empty(chunk_size, dtype=np.double)
+            chunk_upper = np.empty(chunk_size, dtype=np.double)
+            
+            # initial sorting of segments
+            for i in range(num_chunks):
+                val_storage = np.memmap(fin, dtype=np.double, mode="r+", offset=chunk_offsets[i]*_dbytes, shape=(chunk_sizes[i],))
+                indices = np.argsort(val_storage)
+                ind_storage = np.memmap(fout, dtype=np.int, mode="r+", offset=chunk_offsets[i]*_ibytes, shape=(chunk_sizes[i],))
+                ind_storage[:] = indices+chunk_offsets[i]
+                ind_storage.flush()
+                val_storage[:] = val_storage[indices]
+                val_storage.flush()
+                chunk_lower[i] = val_storage[0]
+                chunk_upper[i] = val_storage[-1]
+            
+            
+
+            def quicksort_chunk(lo, hi):
+                if lo < hi:
+                    p = partition_chunk(lo, hi)
+                    quicksort_chunk(lo, p)
+                    quicksort_chunk(p+1, hi)
+                    
+            def partition_chunk(lo, hi):
+                val_pivot = chunk_lower[lo]
+                i = lo
+                j = hi
                 while True:
-                    for i in range(0, segments, 2):
-                        if first_write:
-                            left = np.memmap(fin, )
-                        offset1 = i*segment_size
-                        offset2 = (i+1)*segment_size
+                    while chunk_upper[i] < pivot:
+                        i += 1
+                    
+                    while chunk_lower[j] > pivot:
+                        j -= 1
+                      
+                    if i >= j:
+                        return i
+                    
+                    # sort and swap i and j
+                    val_i_storage = np.memmap(fin, dtype=np.double, mode="r+", offset=chunk_offset[i]*_dbytes, size=(chunk_sizes[i],))
+                    val_j_storage = np.memmap(fin, dtype=np.double, mode="r+", offset=chunk_offset[j]*_dbytes, size=(chunk_sizes[j],))
+                    old_values = np.concatentate((val_i_storage, val_j_storage))
+                    indices = np.argsort(old_values)
+                    ind_i_storage = np.memmap(fout, dtype=np.int, mode="r+", offset=chunk_offset[i]*_ibytes, size=(chunk_sizes[i],))
+                    ind_j_storage = np.memmap(fout, dtype=np.int, mode="r+", offset=chunk_offset[j]*_ibytes, size=(chunk_sizes[j],))
+                    old_indices = np.concatenate((ind_i_storage, ind_j_storage))
+                    ind_i_storage[:] = old_indices[indices[:chunk_sizes[i]]]
+                    ind_j_storage[:] = old_indices[indices[chunk_sizes[i]:]]
+                    ind_i_storage.flush()
+                    ind_j_storage.flush()
+                    new_values = old_values[indices]
+                    val_i_storage[:] = old_values[indices[:chunk_sizes[i]]]
+                    val_j_storage[:] = old_values[indices[chunk_sizes[i]:]]
+                    chunk_lower[i] = val_i_storage[0]
+                    chunk_upper[i] = val_i_storage[-1]
+                    chunk_lower[j] = val_j_storage[0]
+                    chunk_upper[j] = val_j_storage[-1]
                         
-                
-                
+                    
+                    
+                        
+                    
+    
     
 ###############################################################################
 ###############################################################################
