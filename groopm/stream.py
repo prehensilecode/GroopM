@@ -50,6 +50,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 import scipy.stats as sp_stats
+import os
 
 # local imports
 
@@ -80,7 +81,7 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         rem = size
         if chunk_size is not None:
             while rem > chunk_size:
-                storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*dbytes, shape=(n-1-row,))
+                storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(n-1-row,))
                 storage[:] = sp_distance.cdist(X[row:row+1], X[row+1:], metric=metric)[:]
                 storage.flush()
                 k += n-1-row
@@ -90,86 +91,224 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         storage[:] = sp_distance.pdist(X[row:], metric=metric)
         storage.flush()
         
-    
-def argsort_chunk(infilename, outfilename, chunk_size=None):
-    with open(infilename, 'rb') as fin:
-        fin.seek(0,2)
-        bytes = fin.tell()
-        if (bytes % _dbytes):
-            raise ValueError("Size of available data is not multiple of data-type size.")
-        size = bytes // _dbytes
-    
-        # set up index storage
-        with open(outfilename, 'w+b') as fout:
-            bytes = long(size*_ibytes)
-            fout.seek(bytes-1, 0)
-            fout.write(np.compat.asbytes('\0'))
-            fout.flush()
-            
-            num_chunks = np.ceil(size / chunk_size)
-            chunk_offsets = np.arange(0, size, chunk_size)
-            chunk_sizes = np.array([chunk_size]*(num_chunks-1)+[size-chunk_offsets[-1]])
-            chunk_lower = np.empty(chunk_size, dtype=np.double)
-            chunk_upper = np.empty(chunk_size, dtype=np.double)
-            
-            # initial sorting of segments
-            for i in range(num_chunks):
-                val_storage = np.memmap(fin, dtype=np.double, mode="r+", offset=chunk_offsets[i]*_dbytes, shape=(chunk_sizes[i],))
-                indices = np.argsort(val_storage)
-                ind_storage = np.memmap(fout, dtype=np.int, mode="r+", offset=chunk_offsets[i]*_ibytes, shape=(chunk_sizes[i],))
-                ind_storage[:] = indices+chunk_offsets[i]
-                ind_storage.flush()
-                val_storage[:] = val_storage[indices]
-                val_storage.flush()
-                chunk_lower[i] = val_storage[0]
-                chunk_upper[i] = val_storage[-1]
-            
-            
 
-            def quicksort_chunk(lo, hi):
-                if lo < hi:
-                    p = partition_chunk(lo, hi)
-                    quicksort_chunk(lo, p)
-                    quicksort_chunk(p+1, hi)
+        
+def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
+    
+    # load input
+    fin = open(infilename, 'r+b')
+    fin.seek(0,2)
+    bytes = fin.tell()
+    if (bytes % _dbytes):
+        raise ValueError("Size of available data is not multiple of data-type size.")
+    size = bytes // _dbytes
+    
+    # set up index storage
+    fout = open(outfilename, 'w+b')
+    bytes = long(size*_ibytes)
+    fout.seek(bytes-1, 0)
+    fout.write(np.compat.asbytes('\0'))
+    fout.flush()
+    
+    def get_val_storage(offset, size):
+        return np.memmap(fin, dtype=np.double, mode="r+", offset=offset*_dbytes, shape=(size,))
+    
+    def get_ind_storage(offset, size):
+        return np.memmap(fout, dtype=np.int, mode="r+", offset=offset*_ibytes, shape=(size,))
+    
+    if chunk_size is not None:
+        # optimise chunk size
+        num_chunks = 2**np.ceil(np.log2(size / chunk_size))
+        chunk_size = int(np.ceil(size * 1. / num_chunks))
+                 
+    # initial sorting of segments
+    k = 0
+    rem = size
+    while rem > 0:
+        l = rem if chunk_size is None or rem < chunk_size else chunk_size
+        val_storage = get_val_storage(offset=k, size=l)
+        indices = np.argsort(val_storage)
+        ind_storage = get_ind_storage(offset=k, size=l)
+        ind_storage[:] = indices+k
+        ind_storage.flush()
+        val_storage[:] = val_storage[indices]
+        val_storage.flush()
+        
+        k += l
+        rem -= l
+    
+    if chunk_size is None:
+        return 
+        
+    segment_size = chunk_size
+    while segment_size < size:
+        
+        # loop over pairs of adjacent segments
+        k = 0
+        rem = size
+        while rem > 0:
+            assert rem > segment_size
+            l = np.minimum(2*segment_size, rem)
+            
+            #seg1 = get_val_storage(offset=k, size=segment_size)
+            #assert np.all(seg1[1:]>=seg1[:-1])
+            #seg2 = get_val_storage(offset=k+segment_size, size=l-segment_size)
+            #assert np.all(seg2[1:]>=seg2[:-1])
+            
+            # set up buffers
+            f2in = open(infilename+".2", "w+b")
+            f2out = open(outfilename+".2", "w+b")
+            
+            def get_val_buff(offset, size):
+                return np.memmap(f2in, dtype=np.double, mode="r+", offset=offset*_dbytes, shape=(size,))
+                
+            def get_ind_buff(offset, size):
+                return np.memmap(f2out, dtype=np.int, mode="r+", offset=offset*_ibytes, shape=(size,))
+            
+            offset_i = 0
+            offset_j = segment_size
+            offset_buff = 0
+            pos_i = 0
+            pos_j = 0
+            pos_buff = 0
+            for _ in range(l):
+                if pos_i == 0:
+                    il = np.minimum(chunk_size, l - offset_i)
+                    val_i_storage = get_val_storage(offset=k+offset_i, size=il)
+                    ind_i_storage = get_ind_storage(offset=k+offset_i, size=il)
                     
-            def partition_chunk(lo, hi):
-                val_pivot = chunk_lower[lo]
-                i = lo
-                j = hi
-                while True:
-                    while chunk_upper[i] < pivot:
-                        i += 1
+                    if offset_i < segment_size:
+                        # buffer output storage
+                        val_buff = get_val_buff(offset=offset_i, size=il)
+                        ind_buff = get_ind_buff(offset=offset_i, size=il)
+                        val_buff[:] = val_i_storage
+                        ind_buff[:] = ind_i_storage
+                        val_buff.flush()
+                        ind_buff.flush()
+                        
+                        #buff = get_val_buff(offset=0, size=offset_i+il)
+                        #assert np.all(buff[1:]>=buff[:-1])
+                        
                     
-                    while chunk_lower[j] > pivot:
-                        j -= 1
-                      
-                    if i >= j:
-                        return i
+                    # refill buffers
+                    buffl = np.minimum(chunk_size, segment_size - offset_buff)
+                    val_buff= get_val_buff(offset=offset_buff, size=buffl)
+                    ind_buff = get_ind_buff(offset=offset_buff, size=buffl)
                     
-                    # sort and swap i and j
-                    val_i_storage = np.memmap(fin, dtype=np.double, mode="r+", offset=chunk_offset[i]*_dbytes, size=(chunk_sizes[i],))
-                    val_j_storage = np.memmap(fin, dtype=np.double, mode="r+", offset=chunk_offset[j]*_dbytes, size=(chunk_sizes[j],))
-                    old_values = np.concatentate((val_i_storage, val_j_storage))
-                    indices = np.argsort(old_values)
-                    ind_i_storage = np.memmap(fout, dtype=np.int, mode="r+", offset=chunk_offset[i]*_ibytes, size=(chunk_sizes[i],))
-                    ind_j_storage = np.memmap(fout, dtype=np.int, mode="r+", offset=chunk_offset[j]*_ibytes, size=(chunk_sizes[j],))
-                    old_indices = np.concatenate((ind_i_storage, ind_j_storage))
-                    ind_i_storage[:] = old_indices[indices[:chunk_sizes[i]]]
-                    ind_j_storage[:] = old_indices[indices[chunk_sizes[i]:]]
+                    jl = np.minimum(chunk_size, l - offset_j)
+                    val_j_storage = get_val_storage(offset=k+offset_j, size=jl)
+                    ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
+                    
+                
+                if pos_j < jl  and (pos_buff==buffl or val_j_storage[pos_j] < val_buff[pos_buff]):
+                    assert pos_j < jl
+                    val_i_storage[pos_i] = val_j_storage[pos_j]
+                    ind_i_storage[pos_i] = ind_j_storage[pos_j]
+                    pos_j += 1
+                else:
+                    assert pos_buff < buffl
+                    val_i_storage[pos_i] = val_buff[pos_buff]
+                    ind_i_storage[pos_i] = ind_buff[pos_buff]
+                    pos_buff += 1
+                pos_i += 1
+                
+                if pos_i == chunk_size:
+                    offset_i += pos_i
+                    offset_j += pos_j
+                    offset_buff += pos_buff
+                    pos_i = 0
+                    pos_j = 0
+                    pos_buff = 0
+                    
+                    val_i_storage.flush()
                     ind_i_storage.flush()
-                    ind_j_storage.flush()
-                    new_values = old_values[indices]
-                    val_i_storage[:] = old_values[indices[:chunk_sizes[i]]]
-                    val_j_storage[:] = old_values[indices[chunk_sizes[i]:]]
-                    chunk_lower[i] = val_i_storage[0]
-                    chunk_upper[i] = val_i_storage[-1]
-                    chunk_lower[j] = val_j_storage[0]
-                    chunk_upper[j] = val_j_storage[-1]
-                        
                     
-                    
-                        
-                    
+                    #seg = get_val_storage(offset=k, size=offset_i)
+                    #assert np.all(seg[1:]>=seg[:-1])
+                
+            f2in.close()
+            os.remove(f2out.name)
+            f2out.close()
+            os.remove(f2in.name)
+            
+            k += l
+            rem -= l
+        
+        segment_size = 2 * segment_size
+        
+        
+def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size=None):
+    
+    # load input
+    find = open(indices_filename, 'r+b')
+    find.seek(0,2)
+    bytes = find.tell()
+    if (bytes % _ibytes):
+        raise ValueError("Size of available data is not multiple of data-type size.")
+    size = bytes // _ibytes
+    
+    fval = open(values_filename, 'r+b')
+    fval.seek(0,2)
+    if fval.tell() != bytes:
+        raise ValueError("The sizes of input files for indices and values must be equal.")
+    
+    # output array
+    out = np.empty(size, dtype=np.double)
+    
+    def get_val_storage(offset, size):
+        return np.memmap(fval, dtype=np.double, mode="r+", offset=offset*_dbytes, shape=(size,))
+    
+    def get_ind_storage(offset, size):
+        return np.memmap(find, dtype=np.int, mode="r+", offset=offset*_ibytes, shape=(size,))
+    
+    
+    # fractional ranks
+    last_weight = 0    
+    def calc_fractional_ranks(inds, flag):
+        num_unique = np.count_nonzero(flag)
+        if weights_fun is None:
+            fractional_ranks = np.flatnonzero(flag)+1+last_weight
+            last_weight += num_unique
+        else:
+            cumulative_weights = weight_fun(inds).cumsum()+last_weight
+            last_weight = cumulative_weights[-1]
+            fractional_ranks = cumulative_weights[flag]
+    
+        if len(fractional_ranks) > 1:
+            fractional_ranks[1:] = (fractional_ranks[1:] + fractional_ranks[:-1] - 1) * 0.5
+        fractional_ranks[0] = (fractional_ranks[0] - 1) * 0.5
+        
+        # index in array of unique values
+        iflag = np.concatenate(([0], np.cumsum(flag)+1))
+        return fractional_ranks[iflag]
+        
+    k = 0
+    rem = size
+    if chunk_size is not None:
+        while rem > chunk_size:
+            val_storage = get_val_storage(offset=k, size=chunk_size)
+            
+            # indicate whether a value is the last of a streak
+            flag = val_storage[1:] != val_storage[:-1]
+            
+            # drop the last value
+            keep=len(flag)
+            while not flag[keep-1]:
+                keep -= 1
+            
+            val_storage = val_storage[:keep]
+            ind_storage = get_ind_storage(offset=k, size=keep)
+            
+            out[ind_storage] = calc_fractional_weights(ind_storage, flag)
+            
+            k += keep
+            rem -= keep
+    
+    val_storage = get_val_storage(offset=k, size=rem)
+    flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
+    ind_storage = get_ind_storage(offset=k, size=rem)
+    out[ind_storage] = calc_fractional_weights(ind_storage, flag)
+        
     
     
 ###############################################################################

@@ -32,7 +32,10 @@ import os
 
 # local imports
 from tools import equal_arrays
-from groopm.stream import pdist_chunk
+from groopm.distance import argrank
+from groopm.stream import (pdist_chunk,
+                           argsort_chunk_mergesort,
+                          )
 
 ###############################################################################
 ###############################################################################
@@ -47,25 +50,94 @@ class TestStream:
         
         self.workingDir = os.path.join(os.path.split(__file__)[0], "test_stream")
         os.mkdir(self.workingDir)
-        self.storageFile = os.path.join(self.workingDir, "test_stream.store")
+        self.pdistFile = os.path.join(self.workingDir, "test_stream.pdist.store")
+        self.argsortInfile = os.path.join(self.workingDir, "test_stream.argsort.in.store")
+        self.argsortOutfile = os.path.join(self.workingDir, "test_stream.argsort.out.store")
+        self.argrankDistsFile = os.path.join(self.workingDir, "test_stream.argrank.dists.store")
+        self.argrankIndicesFile = os.path.join(self.workingDir, "test_stream.argrank.indices.store")
         
     @classmethod
     def teardown_class(self):
         try:
-            os.remove(self.storageFile)
+            os.remove(self.pdistFile)
+        except OSError:
+            pass
+        try:
+            os.remove(self.argsortInfile)
+            os.remove(self.argsortOutfile)
+            os.remove(self.argsortInfile+".2")
+            os.remove(self.argsortOutfile+".2")
+        except OSError:
+            pass
+        try:
+            os.remove(self.argrankDistsFile)
+            os.remove(self.argrankIndicesFile)
         except OSError:
             pass
         os.rmdir(self.workingDir)
         
     def testPdistChunk(self):
         #
-        features = np_random.rand(100, 50)
-        dists = sp_distance.pdist(features, metric="euclidean")
-        pdist_chunk(features, self.storageFile, chunk_size=30, metric="euclidean")
-        assert_true(equal_arrays(np.memmap(self.storageFile, dtype=np.double),
-                                 dists),
+        filename = self.pdistFile
+        f1 = np_random.rand(100, 50)
+        d1 = sp_distance.pdist(f1, metric="euclidean")
+        pdist_chunk(f1, filename, chunk_size=30, metric="euclidean")
+        assert_true(equal_arrays(np.fromfile(filename, dtype=np.double),
+                                 d1),
                     "computes same distances as unchunked function")
+        os.remove(filename)
+        
+        # high mem
+        f2 = np_random.rand(2**10, 50)
+        d2 = sp_distance.pdist(f2, metric="euclidean")
+        pdist_chunk(f2, filename, chunk_size=1e5, metric="euclidean")
+        assert_true(equal_arrays(np.fromfile(filename, dtype=np.double),
+                                 d2),
+                    "computes same distances as unchunked function for a large-ish dataset")
     
+    def testArgsortChunkMergesort(self):
+        #
+        infile = self.argsortInfile
+        outfile = self.argsortOutfile
+        d1 = np_random.rand(190).astype(np.double)
+        d1.tofile(infile)
+        i1 = d1.argsort()
+        argsort_chunk_mergesort(infile, outfile, chunk_size=30)
+        assert_true(equal_arrays(np.fromfile(outfile, dtype=np.int), i1),
+                    "sorted indices are stored in output file")
+        assert_true(equal_arrays(np.fromfile(infile, dtype=np.double), d1[i1]),
+                    "input file values are in sorted order")
+        os.remove(infile)
+        os.remove(outfile)
+        
+        # high mem
+        d2 = np_random.rand(2**10*(2**10-1)//2).astype(np.double)
+        d2.tofile(infile)
+        argsort_chunk_mergesort(infile, self.argsortOutfile, chunk_size=1e5)
+        arr = np.fromfile(infile, dtype=np.double)
+        assert_true(np.all(arr[1:]>=arr[:-1]), "large-ish input file values are sorted")
+        inds = np.fromfile(outfile, dtype=np.int)
+        assert_true(np.all(d2[inds[1:]]>=d2[inds[:-1]]), "output file contains sorting indices for large-ish input")
+        
+    def testArgrankChunk(self):
+        #
+        dist_file = self.argrankDistFile
+        indices_file = self.argrankIndicesFile
+        d1 = np_random.rand(190).astype(np.double)
+        i1 = d1.argsort()
+        d1[i1].tofile(dist_file)
+        i1.tofile(indices_file)
+        r1 = argrank(d1, axis=None)
+        assert_true(equal_arrays(argrank_chunk(indices_file, dist_file, chunk_size=40), r1),
+                    "returns equal ranks to non-chunked function")
+        
+        w2 = np_random.rand(190).astype(np.double)
+        r2 = argrank(d1, w2, axis=None)
+        assert_true(equal_arrays(argrank_chunk(indices_file, dist_file, weight_fun=lambda i: w2[i], chunk_size=40), r2),
+                    "correctly weights ranks when passed a weight function")
+        
+        
+        
                         
 ###############################################################################
 ###############################################################################
