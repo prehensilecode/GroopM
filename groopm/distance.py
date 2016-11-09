@@ -91,6 +91,7 @@ def iargrank(out, weights=None):
     """Replace elements with the fractional positions when sorted"""
     _ifractional_rank(out, weights=weights)
 
+    
 def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -112,7 +113,7 @@ def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
     core_distance : ndarray
         Core distances for data points.
     """
-    (Y, weights) = validate_y(Y, weights, name="Y")
+    (Y, _) = validate_y(Y, name="Y")
     n = sp_distance.num_obs_y(Y)
     #dm_ = sp_distance.squareform(Y)
     core_dist = np.empty(n, dtype=Y.dtype)
@@ -131,7 +132,7 @@ def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
             #assert x_[i] == core_dist[i]
     else:
         #wm_ = sp_distance.squareform(weights)
-        w = np.empty(n, dtype=weights.dtype) # store row weights
+        w = np.empty(n, dtype=np.double) # store row weights
         for (i, mp, mw) in np.broadcast(np.arange(n), minPts, minWt):
             others = np.flatnonzero(np.arange(n)!=i)
             m[others] = Y[condensed_index(n, i, others)]

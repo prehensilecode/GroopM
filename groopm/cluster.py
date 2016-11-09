@@ -205,7 +205,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            de = CachingProfileDistanceEngine(cacher=self._cacher)
+            de = StreamingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
                                       self._profile.kmerSigs,
@@ -230,7 +230,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             minWt = np.maximum(self._minSize - v, 0) * v
         else:
             minWt = None
-        core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: contigLengths[i]*contigLengths[j], minWt=minWt, minPts=self._minPts)
+        core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
         
         #if minWt is not None:
         #    x = distance.core_distance_weighted_(rank_norms, w, minWt)
@@ -353,7 +353,7 @@ class StreamingProfileDistanceEngine:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
-            def weight_fun(n, k):
+            def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
                 return contigLengths[i]*contigLengths[j]
             if not silent:
@@ -376,7 +376,7 @@ class StreamingProfileDistanceEngine:
             if not silent:
                 print "Calculating tetramer distance ranks"
             if weight_fun is None:
-                def weight_fun(n, k):
+                def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
                     return contigLengths[i]*contigLengths[j]
             kmer_filename = self._cacher.getWorkingFile()
@@ -449,7 +449,7 @@ class CachingProfileDistanceEngine:
             if not silent:
                 print "Calculating coverage distance ranks"
             cov_ranks = sp_distance.pdist(covProfiles, metric="euclidean")
-            distance.iargrank(out=cov_ranks, weights=cached_weights, axis=None)
+            distance.iargrank(out=cov_ranks, weights=cached_weights)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
@@ -466,7 +466,7 @@ class CachingProfileDistanceEngine:
             if not silent:
                 print "Calculating tetramer distance ranks"
             kmer_ranks = sp_distance.pdist(kmerSigs, metric="euclidean")
-            distance.iargrank(kmer_ranks, weights=cached_weights, axis=None)
+            distance.iargrank(kmer_ranks, weights=cached_weights)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
@@ -536,7 +536,7 @@ class CachingWeightlessProfileDistanceEngine:
             if not silent:
                 print "Calculating coverage distance ranks"
             cov_ranks = sp_distance.pdist(covProfiles, metric="euclidean")
-            distance.iargrank(out=cov_ranks, axis=None)
+            distance.iargrank(out=cov_ranks)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
@@ -550,7 +550,7 @@ class CachingWeightlessProfileDistanceEngine:
             if not silent:
                 print "Calculating tetramer distance ranks"
             kmer_ranks = sp_distance.pdist(kmerSigs, metric="euclidean")
-            distance.iargrank(out=kmer_ranks, axis=None)
+            distance.iargrank(out=kmer_ranks)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
@@ -618,23 +618,29 @@ class FileCacher(Cacher):
         self._kmerDistStore = self._prefix+".kmer"
         self._workingFiles = []
         
-    def getWorkingFile():
-        filename = self._prefix+".working%d" % len(self._workingFiles)+1
+    def getWorkingFile(self):
+        filename = self._prefix+".working%d" % (len(self._workingFiles)+1)
         self._workingFiles.append(filename)
         return filename
         
-    def cleanupWorkingFiles():
+    def _cleanupOne(self, filename):
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
+        
+    def cleanupWorkingFiles(self):
         try:
             while True:
                 f = self._workingFiles.pop()
-                os.remove(f)
+                self._cleanupOne(f)
         except IndexError:
             pass
         
     def cleanup(self):
-        os.remove(self._weightsStore)
-        os.remove(self._covDistStore)
-        os.remove(self._kmerDistStore)
+        self._cleanupOne(self._weightsStore)
+        self._cleanupOne(self._covDistStore)
+        self._cleanupOne(self._kmerDistStore)
         
     def getWeights(self):
         try:
@@ -681,7 +687,7 @@ class TablesCacher(Cacher):
         self._workingFiles = []
         
     def getWorkingFile(self):
-        filename = self._distStoreFile+".working%d" % len(self._workingFiles)+1
+        filename = self._distStoreFile+".working%d" % (len(self._workingFiles)+1)
         self._workingFiles.append(filename)
         return filename
         
