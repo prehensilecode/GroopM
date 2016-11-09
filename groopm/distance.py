@@ -91,7 +91,7 @@ def iargrank(out, weights=None):
     """Replace elements with the fractional positions when sorted"""
     _ifractional_rank(out, weights=weights)
 
-def core_distance(Y, weights=None, minWt=None, minPts=None):
+def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
 
@@ -100,8 +100,8 @@ def core_distance(Y, weights=None, minWt=None, minPts=None):
     Y : ndarray
         Condensed distance matrix containing distances for pairs of
         observations. See scipy's `squareform` function for details.
-    weights : ndarray
-        Condensed matrix containing pairwise weights.
+    weight_fun : ndarray
+        Function to calculate pairwise weights for condensed distances.
     minWt : ndarray
         Total cumulative neighbour weight used to compute density distance for individual points.
     minPts : int
@@ -118,7 +118,7 @@ def core_distance(Y, weights=None, minWt=None, minPts=None):
     core_dist = np.empty(n, dtype=Y.dtype)
     m = np.empty(n, dtype=Y.dtype) # store row distances
     minPts = n-1 if minPts is None else minPts
-    if weights is None or minWt is None:
+    if weight_fun is None or minWt is None:
         #dm_.sort(axis=1)
         #x_ = dm_[:, np.minimum(n-1, minPts)]
         for (i, mp) in np.broadcast(np.arange(n), minPts):
@@ -137,7 +137,7 @@ def core_distance(Y, weights=None, minWt=None, minPts=None):
             m[others] = Y[condensed_index(n, i, others)]
             m[i] = 0
             #assert np.all(m==dm_[i])
-            w[others] = weights[condensed_index(n, i, others)]
+            w[others] = weight_fun(i, others)
             w[i] = 0
             #assert np.all(w==wm_[i])
             sorting_indices = m.argsort()
@@ -148,6 +148,7 @@ def core_distance(Y, weights=None, minWt=None, minPts=None):
             #assert core_dist[i] == np.minimum(m_[np.minimum(n-1, mp)], m_[np.minimum(n-1, minPts_)])
     return core_dist
 
+    
 def reachability_order(Y, core_dist=None):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.

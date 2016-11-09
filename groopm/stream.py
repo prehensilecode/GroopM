@@ -263,23 +263,22 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     
     
     # fractional ranks
-    last_rank = [0]
-    def calc_fractional_ranks(inds, flag):
+    current_rank = 0
+    def calc_fractional_ranks(inds, flag, begin):
         if weight_fun is None:
-            fractional_ranks = np.flatnonzero(flag)+1+last_rank[0]
+            fractional_ranks = np.flatnonzero(flag)+1+begin
         else:
             cumulative_weights = weight_fun(inds).cumsum()
-            fractional_ranks = cumulative_weights[flag]+last_rank[0]
+            fractional_ranks = cumulative_weights[flag]+begin
         
         current_rank = fractional_ranks[-1]
         if len(fractional_ranks) > 1:
             fractional_ranks[1:] = (fractional_ranks[1:] + fractional_ranks[:-1] - 1) * 0.5
-        fractional_ranks[0] = (fractional_ranks[0] + last_rank[0] - 1) * 0.5
-        last_rank[0] = current_rank
+        fractional_ranks[0] = (fractional_ranks[0] + begin - 1) * 0.5
         
         # index in array of unique values
         iflag = np.cumsum(np.concatenate(([False], flag[:-1])))
-        return fractional_ranks[iflag]
+        return (fractional_ranks[iflag], current_rank)
        
     k = 0
     rem = size
@@ -298,7 +297,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             ind_storage = get_ind_storage(offset=k, size=keep)
             flag = flag[:keep]
             
-            out[ind_storage] = calc_fractional_ranks(ind_storage, flag)
+            (out[ind_storage], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
             
             k += keep
             rem -= keep
@@ -306,9 +305,9 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     val_storage = get_val_storage(offset=k, size=rem)
     flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
     ind_storage = get_ind_storage(offset=k, size=rem)
-    out[ind_storage] = calc_fractional_ranks(ind_storage, flag)
+    (out[ind_storage], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
     
-    return out
+    return (out, current_rank)
         
     
     
