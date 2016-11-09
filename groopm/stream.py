@@ -64,6 +64,7 @@ np.seterr(all='raise')
 _dbytes = np.dtype(np.double).itemsize
 _ibytes = np.dtype(np.int).itemsize
 
+@profile
 def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
     X = np.asarray(X)
     n = X.shape[0]
@@ -92,7 +93,7 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         storage.flush()
         
 
-        
+@profile        
 def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
     
     # load input
@@ -236,7 +237,7 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
         
         segment_size = 2 * segment_size
         
-        
+@profile        
 def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size=None):
     
     # load input

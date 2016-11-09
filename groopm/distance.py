@@ -91,7 +91,7 @@ def iargrank(out, weights=None):
     """Replace elements with the fractional positions when sorted"""
     _ifractional_rank(out, weights=weights)
 
-    
+@profile
 def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -149,7 +149,7 @@ def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
             #assert core_dist[i] == np.minimum(m_[np.minimum(n-1, mp)], m_[np.minimum(n-1, minPts_)])
     return core_dist
 
-    
+@profile    
 def reachability_order(Y, core_dist=None):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -214,7 +214,7 @@ def _condensed_index(n, i, j):
         
 condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
     
-    
+@profile    
 def _squareform_coords(n, k):
     """
     Calculate the coordinates (i, j), i < j of condensed index k in full
@@ -250,6 +250,7 @@ def pairs(n):
     
     
 # helpers
+@profile
 def _fractional_rank(a, weights=None):
     """Return sorted of array indices with tied values averaged"""
     (a, weights) = validate_y(a, weights, name="a")
@@ -287,6 +288,7 @@ def _fractional_rank(a, weights=None):
     #assert np.all(r_==a)
     return sa
 
+@profile
 def _ifractional_rank(a, weights=None):
     """Array value ranks with tied values averaged"""
     (a, weights) = validate_y(a, weights)
@@ -358,7 +360,8 @@ def _ordinal_rank(a):
     sa = np.empty(size, dtype=np.int)
     sa[sorting_index] = np.arange(size)
     return sa
-    
+
+@profile
 def _iordinal_rank(a):
     """Array value ranks with tied broken by index in a"""
     a = validate_y(a, name="a")[0]

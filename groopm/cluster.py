@@ -78,6 +78,7 @@ class CoreCreator:
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
     
+    @profile
     def loadProfile(self, timer, minLength):
         return self._pm.loadData(timer,
                                  minLength=minLength,
@@ -247,6 +248,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         
         return (rank_norms, core_dists)
     
+    @profile
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
@@ -355,6 +357,7 @@ class StreamingProfileDistanceEngine:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
+            @profile
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
                 return contigLengths[i]*contigLengths[j]
@@ -378,6 +381,7 @@ class StreamingProfileDistanceEngine:
             if not silent:
                 print "Calculating tetramer distance ranks"
             if weight_fun is None:
+                @profile
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
                     return contigLengths[i]*contigLengths[j]
@@ -395,7 +399,8 @@ class StreamingProfileDistanceEngine:
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         return (cov_ranks, kmer_ranks)
-        
+    
+    @profile
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
@@ -416,6 +421,7 @@ class CachingProfileDistanceEngine:
     def __init__(self, cacher):
         self._cacher = cacher
     
+    @profile
     def _getWeights(self, contigLengths, silent=False):
         n = len(contigLengths)
         try:
@@ -481,7 +487,8 @@ class CachingProfileDistanceEngine:
         if weights is None:
             weights = self._getWeights(contigLengths, silent=silent)
         return (cov_ranks, kmer_ranks, weights)
-        
+    
+    @profile
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
