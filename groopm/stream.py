@@ -263,25 +263,24 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     
     
     # fractional ranks
-    last_weight = 0    
+    last_rank = [0]
     def calc_fractional_ranks(inds, flag):
-        num_unique = np.count_nonzero(flag)
-        if weights_fun is None:
-            fractional_ranks = np.flatnonzero(flag)+1+last_weight
-            last_weight += num_unique
+        if weight_fun is None:
+            fractional_ranks = np.flatnonzero(flag)+1+last_rank[0]
         else:
-            cumulative_weights = weight_fun(inds).cumsum()+last_weight
-            last_weight = cumulative_weights[-1]
-            fractional_ranks = cumulative_weights[flag]
-    
+            cumulative_weights = weight_fun(inds).cumsum()
+            fractional_ranks = cumulative_weights[flag]+last_rank[0]
+        
+        current_rank = fractional_ranks[-1]
         if len(fractional_ranks) > 1:
             fractional_ranks[1:] = (fractional_ranks[1:] + fractional_ranks[:-1] - 1) * 0.5
-        fractional_ranks[0] = (fractional_ranks[0] - 1) * 0.5
+        fractional_ranks[0] = (fractional_ranks[0] + last_rank[0] - 1) * 0.5
+        last_rank[0] = current_rank
         
         # index in array of unique values
-        iflag = np.concatenate(([0], np.cumsum(flag)+1))
+        iflag = np.cumsum(np.concatenate(([False], flag[:-1])))
         return fractional_ranks[iflag]
-        
+       
     k = 0
     rem = size
     if chunk_size is not None:
@@ -296,10 +295,10 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             while not flag[keep-1]:
                 keep -= 1
             
-            val_storage = val_storage[:keep]
             ind_storage = get_ind_storage(offset=k, size=keep)
+            flag = flag[:keep]
             
-            out[ind_storage] = calc_fractional_weights(ind_storage, flag)
+            out[ind_storage] = calc_fractional_ranks(ind_storage, flag)
             
             k += keep
             rem -= keep
@@ -307,7 +306,9 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     val_storage = get_val_storage(offset=k, size=rem)
     flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
     ind_storage = get_ind_storage(offset=k, size=rem)
-    out[ind_storage] = calc_fractional_weights(ind_storage, flag)
+    out[ind_storage] = calc_fractional_ranks(ind_storage, flag)
+    
+    return out
         
     
     

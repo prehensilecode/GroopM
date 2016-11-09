@@ -31,10 +31,11 @@ import numpy.random as np_random
 import os
 
 # local imports
-from tools import equal_arrays
+from tools import (equal_arrays, almost_equal_arrays)
 from groopm.distance import argrank
 from groopm.stream import (pdist_chunk,
                            argsort_chunk_mergesort,
+                           argrank_chunk
                           )
 
 ###############################################################################
@@ -111,7 +112,7 @@ class TestStream:
         os.remove(outfile)
         
         # high mem
-        d2 = np_random.rand(2**10*(2**10-1)//2).astype(np.double)
+        d2 = np_random.rand(2**9*(2**10-1)).astype(np.double)
         d2.tofile(infile)
         argsort_chunk_mergesort(infile, self.argsortOutfile, chunk_size=1e5)
         arr = np.fromfile(infile, dtype=np.double)
@@ -121,22 +122,36 @@ class TestStream:
         
     def testArgrankChunk(self):
         #
-        dist_file = self.argrankDistFile
+        dist_file = self.argrankDistsFile
         indices_file = self.argrankIndicesFile
         d1 = np_random.rand(190).astype(np.double)
         i1 = d1.argsort()
         d1[i1].tofile(dist_file)
         i1.tofile(indices_file)
-        r1 = argrank(d1, axis=None)
-        assert_true(equal_arrays(argrank_chunk(indices_file, dist_file, chunk_size=40), r1),
+        assert_true(equal_arrays(argrank_chunk(indices_file, dist_file, chunk_size=40),
+                                 argrank(d1, axis=None)),
                     "returns equal ranks to non-chunked function")
         
         w2 = np_random.rand(190).astype(np.double)
-        r2 = argrank(d1, w2, axis=None)
-        assert_true(equal_arrays(argrank_chunk(indices_file, dist_file, weight_fun=lambda i: w2[i], chunk_size=40), r2),
+        assert_true(almost_equal_arrays(argrank_chunk(indices_file, dist_file, weight_fun=lambda i: w2[i], chunk_size=40),
+                                        argrank(d1, w2, axis=None)),
                     "correctly weights ranks when passed a weight function")
         
+        os.remove(dist_file)
+        os.remove(indices_file)
         
+        # high mem
+        numbers = np.arange(2**9*(2**10-1))
+        perm = numbers.copy()
+        np_random.shuffle(perm)
+        d2 = perm
+        i2 = np.empty(len(numbers), dtype=np.int)
+        i2[perm] = numbers
+        d2.tofile(dist_file)
+        i2.tofile(indices_file)
+        
+        arr = argrank_chunk(indices_file, dist_file, chunk_size=1e5)
+        assert_true(equal_arrays(arr, perm), "computes ranks of a large-ish permutation array")
         
                         
 ###############################################################################

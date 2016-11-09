@@ -212,6 +212,20 @@ def _condensed_index(n, i, j):
         
 condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
     
+    
+def _squareform_coords(n, k):
+    """
+    Calculate the coordinates (i, j), i < j of condensed index k in full
+    n x n distance matrix.
+    """
+    i = int(np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))))
+    j = int(i + k - (n * i - (i * (i + 1) // 2) - 1))
+    return (i, j)
+
+
+squareform_coords = np.vectorize(_squareform_coords, otypes=[np.intp, np.intp])
+    
+    
 def _binom_test(x, n, p):
     return sp_stats.binom.sf(x-1, n, p)
     

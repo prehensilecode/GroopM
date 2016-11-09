@@ -41,7 +41,8 @@ from groopm.distance import (mediod,
                              _ifractional_rank,
                              argrank,
                              pairs,
-                             condensed_index)
+                             condensed_index,
+                             squareform_coords)
 
 ###############################################################################
 ###############################################################################
@@ -299,6 +300,17 @@ def test_condensed_index():
                 "computes linear index correctly when row < col")
                         
 
+def test_squareform_coords():
+    n = random.randint(3, 10)
+    m = n * (n - 1) // 2
+    (ri, ci) = pairs(n)
+    
+    (squareform_i, squareform_j) = squareform_coords(n, range(m))
+    assert_true(equal_arrays(squareform_i, ri) and equal_arrays(squareform_j, ci),
+                "compute row and column indices for elements of condensed matrix")
+    assert_true(np.all(squareform_i <= squareform_j),
+                "returns upper triangular coordinates")
+                        
 
 ###############################################################################
 ###############################################################################
