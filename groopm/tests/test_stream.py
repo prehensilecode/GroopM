@@ -128,14 +128,16 @@ class TestStream:
         i1 = d1.argsort()
         d1[i1].tofile(dist_file)
         i1.tofile(indices_file)
-        assert_true(equal_arrays(argrank_chunk(indices_file, dist_file, chunk_size=40),
-                                 argrank(d1, axis=None)),
+        (x1, s1) = argrank_chunk(indices_file, dist_file, chunk_size=40)
+        assert_true(equal_arrays(x1, argrank(d1, axis=None)),
                     "returns equal ranks to non-chunked function")
+        assert_true(s1==190, "returns number of ranks")
         
         w2 = np_random.rand(190).astype(np.double)
-        assert_true(almost_equal_arrays(argrank_chunk(indices_file, dist_file, weight_fun=lambda i: w2[i], chunk_size=40),
-                                        argrank(d1, w2, axis=None)),
+        (x2, s2) = argrank_chunk(indices_file, dist_file, weight_fun=lambda i: w2[i], chunk_size=40)
+        assert_true(almost_equal_arrays(x2, argrank(d1, weight_fun=lambda i: w2[i], axis=None)),
                     "correctly weights ranks when passed a weight function")
+        assert_true(np.round(s2,6)==np.round(w2.sum(),6), "returns sum of weights")
         
         os.remove(dist_file)
         os.remove(indices_file)
@@ -150,8 +152,9 @@ class TestStream:
         d2.tofile(dist_file)
         i2.tofile(indices_file)
         
-        arr = argrank_chunk(indices_file, dist_file, chunk_size=1e5)
-        assert_true(equal_arrays(arr, perm), "computes ranks of a large-ish permutation array")
+        (x3, s3) = argrank_chunk(indices_file, dist_file, chunk_size=1e5)
+        assert_true(equal_arrays(x3, perm), "computes ranks of a large-ish permutation array")
+        assert_true(s3==len(numbers), "returns rank count for large-ish array")
         
                         
 ###############################################################################
