@@ -91,7 +91,7 @@ def iargrank(out, weights=None):
     """Replace elements with the fractional positions when sorted"""
     _ifractional_rank(out, weights=weights)
 
-@profile
+    
 def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
     """Compute core distance for data points, defined as the distance to the furtherest
     neighbour where the cumulative weight of closer points is less than minWt.
@@ -149,7 +149,7 @@ def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
             #assert core_dist[i] == np.minimum(m_[np.minimum(n-1, mp)], m_[np.minimum(n-1, minPts_)])
     return core_dist
 
-@profile    
+    
 def reachability_order(Y, core_dist=None):
     """Traverse collection of nodes by choosing the closest unvisited node to
     a visited node at each step to produce a reachability plot.
@@ -212,20 +212,32 @@ def _condensed_index(n, i, j):
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
         
         
-condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
+#condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
+
+def condensed_index(n, i, j):
+    """
+    Calculate the condensed index of element (i, j) in an n x n condensed
+    matrix.
+    Based on scipy Cython function:
+    https://github.com/scipy/scipy/blob/v0.17.0/scipy/cluster/_hierarchy.pyx
+    """
+    return np.where(i < j,
+                    n*i - (i * (i + 1) // 2) + (j - i - 1),
+                    n*j - (j * (j + 1) // 2) + (i - j - 1)
+                   )
     
-@profile    
-def _squareform_coords(n, k):
+    
+def squareform_coords(n, k):
     """
     Calculate the coordinates (i, j), i < j of condensed index k in full
     n x n distance matrix.
     """
-    i = int(np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))))
-    j = int(i + k - (n * i - (i * (i + 1) // 2) - 1))
+    i = np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))).astype(np.int)
+    j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=np.int) * 1
     return (i, j)
 
 
-squareform_coords = np.vectorize(_squareform_coords, otypes=[np.intp, np.intp])
+#squareform_coords = np.vectorize(_squareform_coords, otypes=[np.intp, np.intp])
     
     
 def _binom_test(x, n, p):

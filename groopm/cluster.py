@@ -78,7 +78,6 @@ class CoreCreator:
         self._pm = ProfileManager(dbFileName)
         self._dbFileName = dbFileName
     
-    @profile
     def loadProfile(self, timer, minLength):
         return self._pm.loadData(timer,
                                  minLength=minLength,
@@ -248,7 +247,6 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         
         return (rank_norms, core_dists)
     
-    @profile
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
@@ -400,7 +398,6 @@ class StreamingProfileDistanceEngine:
         (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         return (cov_ranks, kmer_ranks)
     
-    @profile
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
