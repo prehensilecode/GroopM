@@ -340,7 +340,7 @@ class ProfileDistanceEngine:
 class StreamingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, cacher, mem=1e5):
+    def __init__(self, cacher, mem=1e8):
         self._cacher = cacher
         self._mem = mem
             
