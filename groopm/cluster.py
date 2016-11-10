@@ -205,8 +205,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            #de = StreamingProfileDistanceEngine(cacher=self._cacher)
-            de = CachingProfileDistanceEngine(cacher=self._cacher)
+            de = StreamingProfileDistanceEngine(cacher=self._cacher)
+            #de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
                                       self._profile.kmerSigs,
@@ -358,7 +358,10 @@ class StreamingProfileDistanceEngine:
             @profile
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
-                return contigLengths[i]*contigLengths[j]
+                weights = i
+                weights[:] = contigLengths[i]
+                weights[:] *= contigLengths[j]
+                return weights
             if not silent:
                 print "Calculating coverage distance ranks"
             
@@ -382,7 +385,10 @@ class StreamingProfileDistanceEngine:
                 @profile
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
-                    return contigLengths[i]*contigLengths[j]
+                    weights = i
+                    weights[:] = contigLengths[i]
+                    weights[:] *= contigLengths[j]
+                    return weights
             kmer_filename = self._cacher.getWorkingFile()
             kmerind_filename = self._cacher.getWorkingFile()
             stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=self._mem, metric="euclidean")
