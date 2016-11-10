@@ -205,10 +205,10 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            #de = StreamingProfileDistanceEngine(cacher=self._cacher)
-            de = CachingProfileDistanceEngine(cacher=self._cacher)
+            de = StreamingProfileDistanceEngine(cacher=self._cacher)
+            #de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
-        (rank_norms, w) = de.makeRankNorms(self._profile.covProfiles,
+        rank_norms = de.makeRankNorms(self._profile.covProfiles,
                                       self._profile.kmerSigs,
                                       self._profile.contigLengths, 
                                       silent=silent)
@@ -231,8 +231,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             minWt = np.maximum(self._minSize - v, 0) * v
         else:
             minWt = None
-        core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: w[condensed_index(n, i, j)], minWt=minWt, minPts=self._minPts)
-        #core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
+        #core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: w[distance.condensed_index(n, i, j)], minWt=minWt, minPts=self._minPts)
+        core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
         
         #if minWt is not None:
         #    x = distance.core_distance_weighted_(rank_norms, w, minWt)
@@ -340,7 +340,7 @@ class ProfileDistanceEngine:
 class StreamingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, cacher, mem=1e8):
+    def __init__(self, cacher, mem=1e5):
         self._cacher = cacher
         self._mem = mem
             

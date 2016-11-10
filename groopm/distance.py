@@ -211,22 +211,31 @@ def _condensed_index(n, i, j):
     elif i > j:
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
         
-        
-condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
+condensed_index_ = np.vectorize(_condensed_index, otypes=[np.intp])
+
+
+def condensed_index(n, i, j):
+    """
+    Calculate the condensed index of element (i, j) in an n x n condensed
+    matrix.
+    Based on scipy Cython function:
+    https://github.com/scipy/scipy/blob/v0.17.0/scipy/cluster/_hierarchy.pyx
+    """
+    return np.where(i < j,
+                    n*i - (i * (i + 1) // 2) + (j - i - 1),
+                    n*j - (j * (j + 1) // 2) + (i - j - 1)
+                   )
     
     
-def _squareform_coords(n, k):
+def squareform_coords(n, k):
     """
     Calculate the coordinates (i, j), i < j of condensed index k in full
     n x n distance matrix.
     """
-    i = int(np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))))
-    j = int(i + k - (n * i - (i * (i + 1) // 2) - 1))
+    i = np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))).astype(int)
+    j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=int) * 1
     return (i, j)
-
-
-squareform_coords = np.vectorize(_squareform_coords, otypes=[np.intp, np.intp])
-    
+  
     
 def _binom_test(x, n, p):
     return sp_stats.binom.sf(x-1, n, p)
