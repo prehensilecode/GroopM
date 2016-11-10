@@ -91,11 +91,9 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(rem,))
         storage[:] = sp_distance.pdist(X[row:], metric=metric)
         storage.flush()
-        
 
 @profile        
 def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
-    
     # load input
     fin = open(infilename, 'r+b')
     fin.seek(0,2)
@@ -236,10 +234,9 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
             rem -= l
         
         segment_size = 2 * segment_size
-        
-@profile        
+
+@profile       
 def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size=None):
-    
     # load input
     find = open(indices_filename, 'r+b')
     find.seek(0,2)
@@ -264,7 +261,6 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     
     
     # fractional ranks
-    current_rank = 0
     def calc_fractional_ranks(inds, flag, begin):
         if weight_fun is None:
             fractional_ranks = np.flatnonzero(flag)+1+begin
@@ -281,6 +277,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
         iflag = np.cumsum(np.concatenate(([False], flag[:-1])))
         return (fractional_ranks[iflag], current_rank)
        
+    current_rank = 0
     k = 0
     rem = size
     if chunk_size is not None:

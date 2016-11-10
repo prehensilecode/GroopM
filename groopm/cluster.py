@@ -212,7 +212,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                       self._profile.kmerSigs,
                                       self._profile.contigLengths, 
                                       silent=silent)
-        #(rank_norms, w) = DistanceStatEngine(de, mode="triangular").makeStat(self._profile.covProfiles,
+        #rank_norms = DistanceStatEngine(de, mode="triangular").makeStat(self._profile.covProfiles,
                                                                              #self._profile.kmerSigs,
                                                                              #self._profile.contigLengths,
                                                                              #silent=silent)
@@ -326,15 +326,15 @@ class ProfileDistanceEngine:
             weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
             k = k+n-1-i
         scale_factor = 1. / weights.sum()
-        (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weights=weights, axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
-        return (cov_ranks, kmer_ranks, weights)
+        (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weight_fun=lambda i: weights[i], axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
+        return (cov_ranks, kmer_ranks)
     
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        (cov_ranks, kmer_ranks, weights) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
+        (cov_ranks, kmer_ranks) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
         dists = np.sqrt(cov_ranks**2 + kmer_ranks**2)
-        return (dists, weights)
+        return dists
 
 
 class StreamingProfileDistanceEngine:
@@ -443,18 +443,22 @@ class CachingProfileDistanceEngine:
         kmer signatures, and give rank distances as a fraction of the largest rank.
         """
         n = len(contigLengths)
-        cached_weights = None
+        weight_fun = None
         scale_factor = None
         try:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
-            cached_weights = self._getWeights(contigLengths, silent=silent)
-            scale_factor = 1. / cached_weights.sum()
+            def weight_fun(k):
+                (i, j) = distance.squareform_coords(n, k)
+                return contigLengths[i]*contigLengths[j]
+            scale_factor = 0
+            for i in range(0, n-1):
+                scale_factor += (contigLengths[i]*contigLengths[i+1:n]).sum()
             if not silent:
                 print "Calculating coverage distance ranks"
             cov_ranks = sp_distance.pdist(covProfiles, metric="euclidean")
-            distance.iargrank(out=cov_ranks, weights=cached_weights)
+            distance.iargrank(out=cov_ranks, weight_fun=weight_fun)
             cov_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==cov_ranks)
@@ -463,33 +467,34 @@ class CachingProfileDistanceEngine:
             kmer_ranks = self._cacher.getKmerDists()
             assert_num_obs(n, kmer_ranks)
         except CacheUnavailableException:
-            if cached_weights is None:
-                cached_weights = self._getWeights(contigLengths, silent=silent)
+            if weight_fun is None:
+                def weight_fun(k):
+                    (i, j) = distance.squareform_coords(n, k)
+                    return contigLengths[i]*contigLengths[j]
+                scale_factor = 0
+                for i in range(0, n-1):
+                    scale_factor += (contigLengths[i]*contigLengths[i+1:n]).sum()
                 scale_factor = 1. / cached_weights.sum()
             #kmer_ranks = cov_ranks # mem opt, reuse cov_ranks memory
             del cov_ranks
             if not silent:
                 print "Calculating tetramer distance ranks"
             kmer_ranks = sp_distance.pdist(kmerSigs, metric="euclidean")
-            distance.iargrank(kmer_ranks, weights=cached_weights)
+            distance.iargrank(kmer_ranks, weight_fun=weight_fun)
             kmer_ranks *= scale_factor
             #x = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weights=cached_weights, axis=None) * scale_factor
             #assert np.all(x==kmer_ranks)
             self._cacher.storeKmerDists(kmer_ranks)
             cov_ranks = self._cacher.getCovDists()
-        return (cov_ranks, kmer_ranks, cached_weights)
+        return (cov_ranks, kmer_ranks)
     
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        if weights is None:
-            weights = self._getWeights(contigLengths, silent=silent)
-        return (cov_ranks, kmer_ranks, weights)
-    
-    @profile
+        return self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        (cov_ranks, kmer_ranks, weights) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
         rank_norms = cov_ranks
         del cov_ranks # invalidated
@@ -497,9 +502,7 @@ class CachingProfileDistanceEngine:
         kmer_ranks **= n
         rank_norms += kmer_ranks
         rank_norms **= 1. / n
-        if weights is None:
-            weights = self._getWeights(contigLengths)
-        return (rank_norms, weights)
+        return rank_norms
                         
                         
 class CachingWeightlessProfileDistanceEngine:

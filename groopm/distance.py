@@ -80,16 +80,16 @@ def mediod(Y):
     return index
     
     
-def argrank(array, weights=None, axis=0):
+def argrank(array, weight_fun=None, axis=0):
     """Return the positions of elements of a when sorted along the specified axis"""
     if axis is None:
-        return _fractional_rank(array, weights=weights)
-    return np.apply_along_axis(_fractional_rank, axis, array, weights=weights)
+        return _fractional_rank(array, weight_fun=weight_fun)
+    return np.apply_along_axis(_fractional_rank, axis, array, weight_fun=weight_fun)
     
     
-def iargrank(out, weights=None):
+def iargrank(out, weight_fun=None):
     """Replace elements with the fractional positions when sorted"""
-    _ifractional_rank(out, weights=weights)
+    _ifractional_rank(out, weight_fun=weight_fun)
 
     
 def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
@@ -210,9 +210,9 @@ def _condensed_index(n, i, j):
         return n * i - (i * (i + 1) // 2) + (j - i - 1)
     elif i > j:
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
-        
-        
-#condensed_index = np.vectorize(_condensed_index, otypes=[np.intp])
+
+condensed_index_ = np.vectorize(_condensed_index, otypes=[np.intp])
+
 
 def condensed_index(n, i, j):
     """
@@ -232,12 +232,9 @@ def squareform_coords(n, k):
     Calculate the coordinates (i, j), i < j of condensed index k in full
     n x n distance matrix.
     """
-    i = np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))).astype(np.int)
-    j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=np.int) * 1
+    i = np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))).astype(int)
+    j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=int) * 1
     return (i, j)
-
-
-#squareform_coords = np.vectorize(_squareform_coords, otypes=[np.intp, np.intp])
     
     
 def _binom_test(x, n, p):
@@ -263,9 +260,9 @@ def pairs(n):
     
 # helpers
 @profile
-def _fractional_rank(a, weights=None):
+def _fractional_rank(a, weight_fun=None):
     """Return sorted of array indices with tied values averaged"""
-    (a, weights) = validate_y(a, weights, name="a")
+    (a, _) = validate_y(a, name="a")
     size = a.size
     sorting_index = a.argsort()
     #a_ = a[sorting_index]
@@ -274,13 +271,13 @@ def _fractional_rank(a, weights=None):
     #assert np.all(a_==a)
     #flag_ = np.concatenate(([True], a_[1:] != a_[:-1], [True]))
     flag = np.concatenate((sa[1:] != sa[:-1], [True]))
-    if weights is None:
+    if weight_fun is None:
         # counts up to 
         sa = np.flatnonzero(flag).astype(float)+1
         #cw_ = np.flatnonzero(flag_).astype(float)
         #assert np.all(cw_[1:]==a)
     else:
-        sa = weights[sorting_index].cumsum().astype(float)
+        sa = weight_fun(sorting_index).cumsum().astype(float)
         sa = sa[flag]
         #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
         #cw_ = cw_[flag_]
@@ -301,9 +298,9 @@ def _fractional_rank(a, weights=None):
     return sa
 
 @profile
-def _ifractional_rank(a, weights=None):
+def _ifractional_rank(a, weight_fun=None):
     """Array value ranks with tied values averaged"""
-    (a, weights) = validate_y(a, weights)
+    (a, _) = validate_y(a, name="a")
     size = a.size
     out = a
     
@@ -321,15 +318,15 @@ def _ifractional_rank(a, weights=None):
     del a # a invalid
     nnz = np.count_nonzero(flag)
     
-    if weights is None:
+    if weight_fun is None:
         # counts up to 
         r = np.frombuffer(buff, dtype=np.double, count=nnz) # reserve part of buffer for rest of cumulative sorted weights
         r[:] = np.flatnonzero(flag)+1
         #cw_ = np.flatnonzero(flag_).astype(np.double)
         #assert np.all(cw_[1:]==r)
     else:
-        cw = np.frombuffer(buff, dtype=weights.dtype)
-        cw[:] = weights[sorting_index]  # write sorted weights into buffer
+        cw = np.frombuffer(buff, dtype=np.double)
+        cw[:] = weight_fun(sorting_index)  # write sorted weights into buffer
         cw[:] = cw.cumsum()
         r = np.frombuffer(buff, dtype=np.double, count=nnz)
         r[:] = cw[flag]
@@ -361,28 +358,6 @@ def _ifractional_rank(a, weights=None):
     #out_[sorting_index] = sr_[iflag_]
     #assert np.all(out_==out)
     
-    return []
-    
-def _ordinal_rank(a):
-    """Return sorted of array indices with tied values averaged"""
-    a = validate_y(a, name="a")[0]
-    size = a.size
-    
-    sorting_index = a.argsort()
-    sa = np.empty(size, dtype=np.int)
-    sa[sorting_index] = np.arange(size)
-    return sa
-
-@profile
-def _iordinal_rank(a):
-    """Array value ranks with tied broken by index in a"""
-    a = validate_y(a, name="a")[0]
-    out = a
-    
-    sorting_index = a.argsort() # copy!
-    out[sorting_index] = np.arange(a.size)
-        
-    return []
 
 def validate_y(Y, weights=None, name="Y"):
     Y = np.asanyarray(Y)
