@@ -263,8 +263,10 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
         if weight_fun is None:
             fractional_ranks = np.flatnonzero(flag)+1+begin
         else:
-            cumulative_weights = weight_fun(inds).cumsum()
+            cumulative_weights = weight_fun(inds)
+            cumulative_weights[:] = cumulative_weights.cumsum()
             fractional_ranks = cumulative_weights[flag]+begin
+            del cumulative_weights
         
         current_rank = fractional_ranks[-1]
         if len(fractional_ranks) > 1:

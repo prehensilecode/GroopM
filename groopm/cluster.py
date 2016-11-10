@@ -357,7 +357,10 @@ class StreamingProfileDistanceEngine:
         except CacheUnavailableException:
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
-                return contigLengths[i]*contigLengths[j]
+                weights = i
+                weights[:] = contigLengths[i]
+                weights[:] *= contigLengths[j]
+                return weights
             if not silent:
                 print "Calculating coverage distance ranks"
             
@@ -380,7 +383,10 @@ class StreamingProfileDistanceEngine:
             if weight_fun is None:
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
-                    return contigLengths[i]*contigLengths[j]
+                    weights = i
+                    weights[:] = contigLengths[i]
+                    weights[:] *= contigLengths[j]
+                    return weights
             kmer_filename = self._cacher.getWorkingFile()
             kmerind_filename = self._cacher.getWorkingFile()
             stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=self._mem, metric="euclidean")
