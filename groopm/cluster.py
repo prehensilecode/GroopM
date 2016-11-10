@@ -205,8 +205,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            de = StreamingProfileDistanceEngine(cacher=self._cacher)
-            #de = CachingProfileDistanceEngine(cacher=self._cacher)
+            #de = StreamingProfileDistanceEngine(cacher=self._cacher)
+            de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
                                       self._profile.kmerSigs,
@@ -449,9 +449,13 @@ class CachingProfileDistanceEngine:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
+            @profile
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
-                return contigLengths[i]*contigLengths[j]
+                weights = i
+                weights[:] = contigLengths[i]
+                weights[:] *= contigLengths[j]
+                return weights
             scale_factor = 0
             for i in range(0, n-1):
                 scale_factor += (contigLengths[i]*contigLengths[i+1:n]).sum()
@@ -468,9 +472,13 @@ class CachingProfileDistanceEngine:
             assert_num_obs(n, kmer_ranks)
         except CacheUnavailableException:
             if weight_fun is None:
+                @profile
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
-                    return contigLengths[i]*contigLengths[j]
+                    weights = i
+                    weights[:] = contigLengths[i]
+                    weights[:] *= contigLengths[j]
+                    return weights
                 scale_factor = 0
                 for i in range(0, n-1):
                     scale_factor += (contigLengths[i]*contigLengths[i+1:n]).sum()
