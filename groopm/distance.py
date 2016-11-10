@@ -227,7 +227,7 @@ def condensed_index(n, i, j):
                    )
     
     
-def squareform_coords(n, k):
+def squareform_coords_(n, k):
     """
     Calculate the coordinates (i, j), i < j of condensed index k in full
     n x n distance matrix.
@@ -236,6 +236,28 @@ def squareform_coords(n, k):
     j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=int) * 1
     return (i, j)
   
+    
+def squareform_coords(n, k):
+    """
+    Calculate the coordinates (i, j), i < j of condensed index k in full
+    n x n distance matrix.
+    """
+    i = (2*n - 1)**2 - 8*k
+    i **= 0.5
+    i *= -1
+    i += 2*n - 1
+    i *= 0.5
+    i = np.floor(i).astype(np.int)
+    j = i + 1
+    j *= i
+    j //= 2
+    j *= -1
+    j += n*i
+    j *= -1
+    j += i - 1
+    j += k
+    j = np.asarray(j, dtype=np.int)*1
+    return (i, j)
     
 def _binom_test(x, n, p):
     return sp_stats.binom.sf(x-1, n, p)
