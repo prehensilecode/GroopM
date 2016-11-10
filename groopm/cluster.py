@@ -231,7 +231,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             minWt = np.maximum(self._minSize - v, 0) * v
         else:
             minWt = None
-        #core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: w[condensed_index(n, i, j)], minWt=minWt, minPts=self._minPts)
+        #core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: w[distance.condensed_index(n, i, j)], minWt=minWt, minPts=self._minPts)
         core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
         
         #if minWt is not None:
