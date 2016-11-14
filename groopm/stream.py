@@ -54,6 +54,7 @@ import os
 from heapq import merge as hq_merge
 
 # local imports
+from stream_ext import merge
 
 np.seterr(all='raise')
 
@@ -166,6 +167,7 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
             def get_ind_buff(offset, size):
                 return np.memmap(f2out, dtype=np.int, mode="r+", offset=offset*_ibytes, shape=(size,))
             
+            
             offset_i = 0
             offset_j = segment_size
             offset_buff = 0
@@ -196,39 +198,29 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
                 val_j_storage = get_val_storage(offset=k+offset_j, size=jl)
                 ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
                 
-                # heapq.merge
-                merged = hq_merge(zip(val_j_storage, ind_j_storage, [False]*jl), zip(val_buff, ind_buff, [True]*buffl))
+                # numpy sort
+                #orig_indices = np.concatenate((ind_j_storage, ind_buff))
+                #orig_values = np.concatenate((val_j_storage, val_buff))
+                #indices = orig_values.argsort(kind="mergesort")[:il]
+                #val_i_storage[:] = orig_values[indices]
+                #ind_i_storage[:] = orig_indices[indices]
+                #pos_j = indices[indices <= jl][-1]+1
+                #pos_buff = indices[indices>jl][-1]+1-jl
+                
+                # extension loop
                 pos_j = 0
                 pos_buff = 0
-                for i in range(il):
-                    (val_i_storage[i], ind_i_storage[i], i) = merged.next()
-                    if i:
-                        pos_buff+=1
-                    else:
-                        pos_j+=1
-                
-                # numpy sort
-                orig_indices = np.concatenate((ind_j_storage, ind_buff))
-                orig_values = np.concatenate((val_j_storage, val_buff))
-                indices = orig_values.argsort(kind="mergesort")[:il]
-                val_i_storage[:] = orig_values[indices]
-                ind_i_storage[:] = orig_indices[indices]
-                pos_j = indices[indices <= jl][-1]+1
-                pos_buff = indices[indices>jl][-1]+1-jl
-                
-                # python loop
-                #pos_j = 0
-                #pos_buff = 0
-                #for pos_i in range(il):
-                    #if pos_j < jl  and (pos_buff==buffl or val_j_storage[pos_j] < val_buff[pos_buff]):
-                        #val_i_storage[pos_i] = val_j_storage[pos_j]
-                        #ind_i_storage[pos_i] = ind_j_storage[pos_j]
-                        #pos_j += 1
-                    #else:
-                        #assert pos_buff < buffl
-                        #val_i_storage[pos_i] = val_buff[pos_buff]
-                        #ind_i_storage[pos_i] = ind_buff[pos_buff]
-                        #pos_buff += 1
+                merge(buffl,
+                      val_buff,
+                      inds_buff,
+                      jl,
+                      val_j_storage,
+                      ind_j_storage,
+                      il,
+                      val_i_storage,
+                      ind_i_storage,
+                      pos_buff,
+                      pos_j)
                 
                 offset_i += chunk_size
                 offset_j += pos_j
@@ -287,6 +279,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             cumulative_weights = weight_fun(inds)
             cumulative_weights[:] = cumulative_weights.cumsum()
             fractional_ranks = cumulative_weights[flag]+begin
+            del cumulative_weights
         
         current_rank = fractional_ranks[-1]
         if len(fractional_ranks) > 1:

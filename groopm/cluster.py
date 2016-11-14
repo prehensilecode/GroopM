@@ -282,7 +282,7 @@ class DistanceStatEngine:
         for i in range(n-1):
             weight_sum += np.sum(contigLengths[i]*contigLengths[i+1:])
         norms *= weight_sum
-            
+        
         # normalise to actual count
         norms /= distance.iargrank(norms.copy(), weight_fun=weight_fun, axis=None)
         
