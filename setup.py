@@ -1,6 +1,5 @@
 from distutils.core import setup
-from distutils.extension import Extension
-from Cython.Distutils import build_ext
+from Cython.Build import cythonize
 
 setup(
     name='GroopM',
@@ -19,6 +18,5 @@ setup(
         "matplotlib >= 1.3.0",
         "tables >= 3.2.0"
     ],
-    cmd_class = {'build_ext': build_ext},
-    ext_modules = [Extension("stream_ext", ["stream.pyx"])], 
+    ext_modules = cythonize("stream_ext.pyx"), 
 )
