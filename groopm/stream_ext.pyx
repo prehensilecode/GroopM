@@ -4,18 +4,18 @@ import cython
 #cimport numpy as np
 
 
-    # hot loop
-def merge(x,
+# hot loop
+def merge(int x_len,
+          x,
           x_inds,
-          int x_len,
-          int i,
+          int y_len,
           y,
           y_inds,
-          int y_len,
-          int j,
+          int out_len,
           out,
           out_inds,
-          int out_len):
+          int i,
+          int j):
     for k in range(out_len):
         if j < y_len  and (i==x_len or y[j] < x[i]):
             out[k] = y[j]

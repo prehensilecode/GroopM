@@ -53,6 +53,7 @@ import scipy.stats as sp_stats
 import os
 
 # local imports
+from stream_ext import merge
 
 np.seterr(all='raise')
 
@@ -163,66 +164,70 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
             def get_ind_buff(offset, size):
                 return np.memmap(f2out, dtype=np.int, mode="r+", offset=offset*_ibytes, shape=(size,))
             
+            
             offset_i = 0
             offset_j = segment_size
             offset_buff = 0
-            pos_i = 0
-            pos_j = 0
-            pos_buff = 0
-            for _ in range(l):
-                if pos_i == 0:
-                    il = np.minimum(chunk_size, l - offset_i)
-                    val_i_storage = get_val_storage(offset=k+offset_i, size=il)
-                    ind_i_storage = get_ind_storage(offset=k+offset_i, size=il)
+            while offset_i < l:
+                il = np.minimum(chunk_size, l - offset_i)
+                val_i_storage = get_val_storage(offset=k+offset_i, size=il)
+                ind_i_storage = get_ind_storage(offset=k+offset_i, size=il)
+                
+                if offset_i < segment_size:
+                    # buffer output storage
+                    val_buff = get_val_buff(offset=offset_i, size=il)
+                    ind_buff = get_ind_buff(offset=offset_i, size=il)
+                    val_buff[:] = val_i_storage
+                    ind_buff[:] = ind_i_storage
+                    val_buff.flush()
+                    ind_buff.flush()
                     
-                    if offset_i < segment_size:
-                        # buffer output storage
-                        val_buff = get_val_buff(offset=offset_i, size=il)
-                        ind_buff = get_ind_buff(offset=offset_i, size=il)
-                        val_buff[:] = val_i_storage
-                        ind_buff[:] = ind_i_storage
-                        val_buff.flush()
-                        ind_buff.flush()
-                        
-                        #buff = get_val_buff(offset=0, size=offset_i+il)
-                        #assert np.all(buff[1:]>=buff[:-1])
-                        
-                    
-                    # refill buffers
-                    buffl = np.minimum(chunk_size, segment_size - offset_buff)
-                    val_buff= get_val_buff(offset=offset_buff, size=buffl)
-                    ind_buff = get_ind_buff(offset=offset_buff, size=buffl)
-                    
-                    jl = np.minimum(chunk_size, l - offset_j)
-                    val_j_storage = get_val_storage(offset=k+offset_j, size=jl)
-                    ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
+                    #buff = get_val_buff(offset=0, size=offset_i+il)
+                    #assert np.all(buff[1:]>=buff[:-1])
                     
                 
-                if pos_j < jl  and (pos_buff==buffl or val_j_storage[pos_j] < val_buff[pos_buff]):
-                    assert pos_j < jl
-                    val_i_storage[pos_i] = val_j_storage[pos_j]
-                    ind_i_storage[pos_i] = ind_j_storage[pos_j]
-                    pos_j += 1
-                else:
-                    assert pos_buff < buffl
-                    val_i_storage[pos_i] = val_buff[pos_buff]
-                    ind_i_storage[pos_i] = ind_buff[pos_buff]
-                    pos_buff += 1
-                pos_i += 1
+                # refill buffers
+                buffl = np.minimum(chunk_size, segment_size - offset_buff)
+                val_buff= get_val_buff(offset=offset_buff, size=buffl)
+                ind_buff = get_ind_buff(offset=offset_buff, size=buffl)
                 
-                if pos_i == chunk_size:
-                    offset_i += pos_i
-                    offset_j += pos_j
-                    offset_buff += pos_buff
-                    pos_i = 0
-                    pos_j = 0
-                    pos_buff = 0
-                    
-                    val_i_storage.flush()
-                    ind_i_storage.flush()
-                    
-                    #seg = get_val_storage(offset=k, size=offset_i)
-                    #assert np.all(seg[1:]>=seg[:-1])
+                jl = np.minimum(chunk_size, l - offset_j)
+                val_j_storage = get_val_storage(offset=k+offset_j, size=jl)
+                ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
+                
+                # numpy sort
+                #orig_indices = np.concatenate((ind_j_storage, ind_buff))
+                #orig_values = np.concatenate((val_j_storage, val_buff))
+                #indices = orig_values.argsort(kind="mergesort")[:il]
+                #val_i_storage[:] = orig_values[indices]
+                #ind_i_storage[:] = orig_indices[indices]
+                #pos_j = indices[indices <= jl][-1]+1
+                #pos_buff = indices[indices>jl][-1]+1-jl
+                
+                # extension loop
+                pos_j = 0
+                pos_buff = 0
+                merge(buffl,
+                      val_buff,
+                      inds_buff,
+                      jl,
+                      val_j_storage,
+                      ind_j_storage,
+                      il,
+                      val_i_storage,
+                      ind_i_storage,
+                      pos_buff,
+                      pos_j)
+                
+                offset_i += chunk_size
+                offset_j += pos_j
+                offset_buff += pos_buff
+                
+                val_i_storage.flush()
+                ind_i_storage.flush()
+                
+                #seg = get_val_storage(offset=k, size=offset_i)
+                #assert np.all(seg[1:]>=seg[:-1])
                 
             f2in.close()
             os.remove(f2out.name)
