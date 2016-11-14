@@ -5,17 +5,17 @@ import cython
 
 
 # hot loop
-def merge(int x_len,
+def merge(x_len,
           x,
           x_inds,
-          int y_len,
+          y_len,
           y,
           y_inds,
-          int out_len,
+          out_len,
           out,
           out_inds,
-          int i,
-          int j):
+          i,
+          j):
     for k in range(out_len):
         if j < y_len  and (i==x_len or y[j] < x[i]):
             out[k] = y[j]
