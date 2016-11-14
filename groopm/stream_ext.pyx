@@ -15,7 +15,7 @@ def merge(x,
           int j,
           out,
           out_inds,
-          int out_len)
+          int out_len):
     for k in range(out_len):
         if j < y_len  and (i==x_len or y[j] < x[i]):
             out[k] = y[j]
