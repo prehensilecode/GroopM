@@ -18,5 +18,5 @@ setup(
         "matplotlib >= 1.3.0",
         "tables >= 3.2.0"
     ],
-    ext_modules = cythonize("stream_ext.pyx"), 
+    ext_modules = cythonize("groopm/stream_ext.pyx"), 
 )
