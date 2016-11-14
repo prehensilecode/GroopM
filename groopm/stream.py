@@ -212,7 +212,7 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
                 pos_buff = 0
                 merge(buffl,
                       val_buff,
-                      inds_buff,
+                      ind_buff,
                       jl,
                       val_j_storage,
                       ind_j_storage,
