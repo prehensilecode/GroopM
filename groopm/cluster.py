@@ -273,14 +273,20 @@ class DistanceStatEngine:
         
     def makeStat(self, covProfiles, kmerSigs, contigLengths, silent=False):
             
-        (norms, w) = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
+        norms = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
         self._area(out=norms)
-        norms *= w.sum()
+        
+        def weight_fun(i, j):
+            return contigLengths[i]*contigLengths[j]
+        weight_sum = 0
+        for i in range(n-1):
+            weight_sum += np.sum(contigLengths[i]*contigLengths[i+1:])
+        norms *= weight_sum
             
         # normalise to actual count
-        norms /= distance.iargrank(norms.copy(), weights=w, axis=None)
+        norms /= distance.iargrank(norms.copy(), weight_fun=weight_fun, axis=None)
         
-        return (norms, w)
+        return norms
     
     
 def _iradial_area(out):
@@ -340,7 +346,7 @@ class ProfileDistanceEngine:
 class StreamingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, cacher, mem=1e8):
+    def __init__(self, cacher, mem=5e5):
         self._cacher = cacher
         self._mem = mem
             
@@ -355,7 +361,6 @@ class StreamingProfileDistanceEngine:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
-            @profile
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
                 weights = i
@@ -382,7 +387,6 @@ class StreamingProfileDistanceEngine:
             if not silent:
                 print "Calculating tetramer distance ranks"
             if weight_fun is None:
-                @profile
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
                     weights = i
@@ -425,7 +429,7 @@ class CachingProfileDistanceEngine:
         self._cacher = cacher
     
     @profile
-    def _getWeights(self, contigLengths, silent=False):
+    def _getWeights_(self, contigLengths, silent=False):
         n = len(contigLengths)
         try:
             weights = self._cacher.getWeights()
@@ -455,7 +459,6 @@ class CachingProfileDistanceEngine:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
-            @profile
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
                 weights = i
@@ -478,7 +481,6 @@ class CachingProfileDistanceEngine:
             assert_num_obs(n, kmer_ranks)
         except CacheUnavailableException:
             if weight_fun is None:
-                @profile
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
                     weights = i

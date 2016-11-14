@@ -238,7 +238,7 @@ def squareform_coords_(n, k):
     j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=int) * 1
     return (i, j)
     
-@profile
+    
 def squareform_coords(n, k):
     """
     Calculate the coordinates (i, j), i < j of condensed index k in full
