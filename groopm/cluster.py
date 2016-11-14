@@ -273,12 +273,18 @@ class DistanceStatEngine:
         
     def makeStat(self, covProfiles, kmerSigs, contigLengths, silent=False):
             
-        (norms, w) = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
+        norms = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
         self._area(out=norms)
-        norms *= w.sum()
-            
+        
+        def weight_fun(i, j):
+            return contigLengths[i]*contigLengths[j]
+        weight_sum = 0
+        for i in range(n-1):
+            weight_sum += np.sum(contigLengths[i]*contigLengths[i+1:])
+        norms *= weight_sum
+        
         # normalise to actual count
-        norms /= distance.iargrank(norms.copy(), weights=w, axis=None)
+        norms /= distance.iargrank(norms.copy(), weight_fun=weight_fun, axis=None)
         
         return (norms, w)
     
