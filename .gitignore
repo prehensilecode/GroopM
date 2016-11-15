@@ -4,3 +4,5 @@ dist/
 groopm/*.pyc
 groopm/*/*.pyc
 pip-log.txt
+groopm/stream_ext.c
+groopm/stream_ext.so
