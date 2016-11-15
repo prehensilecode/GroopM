@@ -50,13 +50,10 @@ def test_merge():
     n = np_random.random_integers(5, values.size)
     merged = np.zeros(n, dtype=values.dtype)
     merged_indices = np.zeros(n, dtype=indices.dtype)
-    merge(left.size,
-          left,
+    merge(left,
           np.arange(left.size),
-          right.size,
           right,
           np.arange(left.size, values.size),
-          n,
           merged,
           merged_indices,
           )

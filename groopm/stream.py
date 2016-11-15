@@ -51,6 +51,7 @@ import numpy as np
 import scipy.spatial.distance as sp_distance
 import scipy.stats as sp_stats
 import os
+from heapq import merge as hq_merge
 
 # local imports
 from stream_ext import merge
@@ -64,6 +65,7 @@ np.seterr(all='raise')
 
 _dbytes = np.dtype(np.double).itemsize
 _ibytes = np.dtype(np.int).itemsize
+
 
 def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
     X = np.asarray(X)
@@ -117,7 +119,8 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
     
     if chunk_size is not None:
         # optimise chunk size
-        num_chunks = 2**np.ceil(np.log2(size / chunk_size))
+        num_rounds = np.ceil(np.log2(size * 1. / chunk_size))
+        num_chunks = 2**num_rounds
         chunk_size = int(np.ceil(size * 1. / num_chunks))
                  
     # initial sorting of segments
@@ -169,6 +172,8 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
             offset_j = segment_size
             offset_buff = 0
             while offset_i < l:
+                #print offset_i, offset_j - segment_size + offset_buff
+                assert offset_j - segment_size + offset_buff == offset_i
                 il = np.minimum(chunk_size, l - offset_i)
                 val_i_storage = get_val_storage(offset=k+offset_i, size=il)
                 ind_i_storage = get_ind_storage(offset=k+offset_i, size=il)
@@ -195,40 +200,53 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
                 val_j_storage = get_val_storage(offset=k+offset_j, size=jl)
                 ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
                 
+                #(pos_buff, pos_j) = merge(val_buff,
+                                            #ind_buff,
+                                            #val_j_storage,
+                                            #ind_j_storage,
+                                            #val_i_storage,
+                                            #ind_i_storage)
+                # extension loop
+                #x = val_buff.copy()
+                #x_ind = ind_buff.copy()
+                #y = val_j_storage.copy()
+                #y_ind = ind_j_storage.copy()
+                #out = np.zeros(il, dtype=x.dtype)
+                #out_ind = np.zeros(il, dtype=x_ind.dtype)
+                #(i, j) = merge(x,
+                               #x_ind,
+                               #y,
+                               #y_ind,
+                               #out,
+                               #out_ind)
                 # numpy sort
-                orig_indices = np.concatenate((ind_j_storage, ind_buff))
-                orig_values = np.concatenate((val_j_storage, val_buff))
+                orig_indices = np.concatenate((ind_buff, ind_j_storage))
+                orig_values = np.concatenate((val_buff, val_j_storage))
+                #assert np.all(_orig_values[:buffl] == x)
+                #assert np.all(_orig_values[buffl:] == y)
                 low = orig_values.argpartition(il-1)[:il]
                 orig_indices = orig_indices[low]
                 orig_values = orig_values[low]
                 indices = orig_values.argsort(kind="mergesort")
-                val_i_storage[:] = orig_values[indices]
-                ind_i_storage[:] = orig_indices[indices]
+                orig_indices = orig_indices[indices]
+                orig_values = orig_values[indices]
                 low = low[indices]
-                pos_j = low[low <= jl][-1]+1
-                pos_buff = low[low>jl][-1]+1-jl
+                pos_buff = np.count_nonzero(low < buffl)
+                pos_j = np.count_nonzero(low >= buffl)
+                #assert np.all(orig_values == out)
+                val_i_storage[:] = orig_values
+                ind_i_storage[:] = orig_indices
                 
-                # extension loop
-                #pos_j = 0
-                #pos_buff = 0
-                #merge(buffl,
-                      #val_buff,
-                      #inds_buff,
-                      #jl,
-                      #val_j_storage,
-                      #ind_j_storage,
-                      #il,
-                      #val_i_storage,
-                      #ind_i_storage,
-                      #pos_buff,
-                      #pos_j)
+                #assert pos_buff==i and pos_j==j
+                #assert pos_buff + pos_j == il
+                #assert np.all(val_i_storage[1:] >= val_i_storage[:-1])
+                val_i_storage.flush()
+                ind_i_storage.flush()
                 
-                offset_i += chunk_size
+                offset_i += il
                 offset_j += pos_j
                 offset_buff += pos_buff
                 
-                val_i_storage.flush()
-                ind_i_storage.flush()
                 
                 #seg = get_val_storage(offset=k, size=offset_i)
                 #assert np.all(seg[1:]>=seg[:-1])
@@ -242,6 +260,7 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
             rem -= l
         
         segment_size = 2 * segment_size
+
         
 def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size=None):
     # load input
@@ -283,7 +302,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
         fractional_ranks[0] = (fractional_ranks[0] + begin - 1) * 0.5
         
         # index in array of unique values
-        iflag = np.cumsum(np.concatenate(([False], flag[:-1])))
+        iflag = np.concatenate(([False], flag[:-1])).cumsum()
         return (fractional_ranks[iflag], current_rank)
        
     current_rank = 0
@@ -310,7 +329,9 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             rem -= keep
     
     val_storage = get_val_storage(offset=k, size=rem)
-    flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
+    flag = np.ones(rem, dtype=bool)
+    np.not_equal(val_storage[1:], val_storage[:-1], out=flag[:-1])
+    #flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
     ind_storage = get_ind_storage(offset=k, size=rem)
     (out[ind_storage], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
     

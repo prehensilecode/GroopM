@@ -205,8 +205,8 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            #de = StreamingProfileDistanceEngine(cacher=self._cacher)
-            de = CachingProfileDistanceEngine(cacher=self._cacher)
+            de = StreamingProfileDistanceEngine(cacher=self._cacher)
+            #de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
                                       self._profile.kmerSigs,
@@ -286,7 +286,7 @@ class DistanceStatEngine:
         # normalise to actual count
         norms /= distance.iargrank(norms.copy(), weight_fun=weight_fun, axis=None)
         
-        return (norms, w)
+        return norms
     
     
 def _iradial_area(out):
@@ -346,7 +346,7 @@ class ProfileDistanceEngine:
 class StreamingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, cacher, mem=1e8):
+    def __init__(self, cacher, mem=5e5):
         self._cacher = cacher
         self._mem = mem
             
@@ -407,7 +407,7 @@ class StreamingProfileDistanceEngine:
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         return (cov_ranks, kmer_ranks)
-        
+    
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
@@ -428,7 +428,7 @@ class CachingProfileDistanceEngine:
     def __init__(self, cacher):
         self._cacher = cacher
     
-    def _getWeights(self, contigLengths, silent=False):
+    def _getWeights_(self, contigLengths, silent=False):
         n = len(contigLengths)
         try:
             weights = self._cacher.getWeights()
@@ -460,7 +460,10 @@ class CachingProfileDistanceEngine:
         except CacheUnavailableException:
             def weight_fun(k):
                 (i, j) = distance.squareform_coords(n, k)
-                return contigLengths[i]*contigLengths[j]
+                weights = i
+                weights[:] = contigLengths[i]
+                weights[:] *= contigLengths[j]
+                return weights
             scale_factor = 0
             for i in range(0, n-1):
                 scale_factor += (contigLengths[i]*contigLengths[i+1:n]).sum()
@@ -479,7 +482,10 @@ class CachingProfileDistanceEngine:
             if weight_fun is None:
                 def weight_fun(k):
                     (i, j) = distance.squareform_coords(n, k)
-                    return contigLengths[i]*contigLengths[j]
+                    weights = i
+                    weights[:] = contigLengths[i]
+                    weights[:] *= contigLengths[j]
+                    return weights
                 scale_factor = 0
                 for i in range(0, n-1):
                     scale_factor += (contigLengths[i]*contigLengths[i+1:n]).sum()
@@ -499,7 +505,7 @@ class CachingProfileDistanceEngine:
     
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         return self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        
+
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """

@@ -210,7 +210,7 @@ def _condensed_index(n, i, j):
         return n * i - (i * (i + 1) // 2) + (j - i - 1)
     elif i > j:
         return n * j - (j * (j + 1) // 2) + (i - j - 1)
-        
+
 condensed_index_ = np.vectorize(_condensed_index, otypes=[np.intp])
 
 
@@ -237,7 +237,7 @@ def squareform_coords_(n, k):
     i = np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))).astype(int)
     j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=int) * 1
     return (i, j)
-  
+    
     
 def squareform_coords(n, k):
     """
@@ -325,6 +325,7 @@ def _fractional_rank(a, weight_fun=None):
     #assert np.all(r_==a)
     return sa
 
+    
 def _ifractional_rank(a, weight_fun=None):
     """Array value ranks with tied values averaged"""
     (a, _) = validate_y(a, name="a")
@@ -384,7 +385,7 @@ def _ifractional_rank(a, weight_fun=None):
     #out_ = np.empty(size, dtype=np.double)
     #out_[sorting_index] = sr_[iflag_]
     #assert np.all(out_==out)
-
+    
 
 def validate_y(Y, weights=None, name="Y"):
     Y = np.asanyarray(Y)
