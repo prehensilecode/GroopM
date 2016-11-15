@@ -46,23 +46,20 @@ def test_merge():
     values = np.concatenate((left, right))
     indices = values.argsort()
     sorted_values = values[indices]
-    
-    merged = np.zeros_like(values)
-    merged_indices = np.zeros_like(indices)
-    print left.size, left, right.size, right, merged.size, merged, merged_indices
-    merge(left.size,
-          left,
+
+    n = np_random.random_integers(5, values.size)
+    merged = np.zeros(n, dtype=values.dtype)
+    merged_indices = np.zeros(n, dtype=indices.dtype)
+    merge(left,
           np.arange(left.size),
-          right.size,
           right,
-          np.arange(left.size, merged.size),
-          merged.size,
+          np.arange(left.size, values.size),
           merged,
           merged_indices,
           )
-    assert_true(equal_arrays(sorted_values, merged),
+    assert_true(equal_arrays(sorted_values[:n], merged),
                 "sorts values in output array")
-    assert_true(equal_arrays(indices, merged_indices),
+    assert_true(equal_arrays(indices[:n], merged_indices),
                 "writes sorting indices into output indices array")
                         
 ###############################################################################
