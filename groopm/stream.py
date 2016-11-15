@@ -196,28 +196,32 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
                 ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
                 
                 # numpy sort
-                #orig_indices = np.concatenate((ind_j_storage, ind_buff))
-                #orig_values = np.concatenate((val_j_storage, val_buff))
-                #indices = orig_values.argsort(kind="mergesort")[:il]
-                #val_i_storage[:] = orig_values[indices]
-                #ind_i_storage[:] = orig_indices[indices]
-                #pos_j = indices[indices <= jl][-1]+1
-                #pos_buff = indices[indices>jl][-1]+1-jl
+                orig_indices = np.concatenate((ind_j_storage, ind_buff))
+                orig_values = np.concatenate((val_j_storage, val_buff))
+                low = orig_values.argpartition(il-1)[:il]
+                orig_indices = orig_indices[low]
+                orig_values = orig_values[low]
+                indices = orig_values.argsort(kind="mergesort")
+                val_i_storage[:] = orig_values[indices]
+                ind_i_storage[:] = orig_indices[indices]
+                low = low[indices]
+                pos_j = low[low <= jl][-1]+1
+                pos_buff = low[low>jl][-1]+1-jl
                 
                 # extension loop
-                pos_j = 0
-                pos_buff = 0
-                merge(buffl,
-                      val_buff,
-                      inds_buff,
-                      jl,
-                      val_j_storage,
-                      ind_j_storage,
-                      il,
-                      val_i_storage,
-                      ind_i_storage,
-                      pos_buff,
-                      pos_j)
+                #pos_j = 0
+                #pos_buff = 0
+                #merge(buffl,
+                      #val_buff,
+                      #inds_buff,
+                      #jl,
+                      #val_j_storage,
+                      #ind_j_storage,
+                      #il,
+                      #val_i_storage,
+                      #ind_i_storage,
+                      #pos_buff,
+                      #pos_j)
                 
                 offset_i += chunk_size
                 offset_j += pos_j
