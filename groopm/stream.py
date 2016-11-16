@@ -83,6 +83,7 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         k = 0
         rem = size
         if chunk_size is not None:
+            print "chunk size: %d" % chunk_size
             while rem > chunk_size:
                 storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(n-1-row,))
                 storage[:] = sp_distance.cdist(X[row:row+1], X[row+1:], metric=metric)[:]
@@ -122,6 +123,7 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
         num_rounds = np.ceil(np.log2(size * 1. / chunk_size))
         num_chunks = 2**num_rounds
         chunk_size = int(np.ceil(size * 1. / num_chunks))
+        print "chunk size: %d" % chunk_size
                  
     # initial sorting of segments
     k = 0
@@ -314,6 +316,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     k = 0
     rem = size
     if chunk_size is not None:
+        print "chunk size: %d" % chunk_size
         while rem > chunk_size:
             val_storage = get_val_storage(offset=k, size=chunk_size)
             
@@ -361,6 +364,7 @@ def iapply_func_chunk(out, filename, fun, chunk_size=None):
     rem = size
     if chunk_size is not None:
         chunk_size = int(chunk_size)
+        print "chunk size: %d" % chunk_size
         while rem > chunk_size:
             storage = get_storage(offset=k, size=chunk_size)
             
