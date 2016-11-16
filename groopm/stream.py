@@ -260,6 +260,9 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
             rem -= l
         
         segment_size = 2 * segment_size
+        
+    fin.close()
+    fout.close()
 
         
 def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size=None):
@@ -335,7 +338,40 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     ind_storage = get_ind_storage(offset=k, size=rem)
     (out[ind_storage], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
     
+    find.close()
+    fval.close()
     return (out, current_rank)
+    
+    
+def iapply_func_chunk(out, filename, fun, chunk_size=None):
+    size = out.shape[0]
+    bytes = size*_dbytes
+    
+    f = open(filename, 'rb')
+    f.seek(0,2)
+    if f.tell() != bytes:
+        raise ValueError("The size of input file must be equal to output array store.")
+    
+    def get_storage(offset, size):
+        return np.memmap(f, dtype=np.double, mode="r", offset=offset*_dbytes, shape=(size,))
+        
+    k = 0
+    rem = size
+    if chunk_size is not None:
+        chunk_size = int(chunk_size)
+        while rem > chunk_size:
+            storage = get_storage(offset=k, size=chunk_size)
+            
+            out[k:k+chunk_size] = fun(out[k:k+chunk_size], storage)
+            
+            k += chunk_size
+            rem -= chunk_size
+    
+    storage = get_storage(offset=k, size=rem)
+    out[k:] = fun(out[k:], storage)
+    
+    f.close()
+    
         
     
     
