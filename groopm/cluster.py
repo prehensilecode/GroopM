@@ -350,7 +350,17 @@ class StreamingProfileDistanceEngine:
         self._cacher = cacher
         self._mem = mem
             
-    def _getScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
+    def _getWeightFun(self, contigLengths):
+        n = len(contigLengths)
+        def weight_fun(k):
+            (i, j) = distance.squareform_coords(n, k)
+            weights = i
+            weights[:] = contigLengths[i]
+            weights[:] *= contigLengths[j]
+            return weights
+        return weight_fun
+            
+    def _calculateScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
         """Compute pairwise rank distances separately for coverage profiles and
         kmer signatures, and give rank distances as a fraction of the largest rank.
         """
@@ -361,12 +371,7 @@ class StreamingProfileDistanceEngine:
             cov_ranks = self._cacher.getCovDists()
             assert_num_obs(n, cov_ranks)
         except CacheUnavailableException:
-            def weight_fun(k):
-                (i, j) = distance.squareform_coords(n, k)
-                weights = i
-                weights[:] = contigLengths[i]
-                weights[:] *= contigLengths[j]
-                return weights
+            weight_fun = self._getWeightFun(contigLengths)
             if not silent:
                 print "Calculating coverage distance ranks"
             
@@ -379,20 +384,15 @@ class StreamingProfileDistanceEngine:
             cov_ranks *= scale_factor
             self._cacher.cleanupWorkingFiles()
             self._cacher.storeCovDists(cov_ranks)
+        del cov_ranks
         try:
             kmer_ranks = self._cacher.getKmerDists()
             assert_num_obs(n, kmer_ranks)
         except CacheUnavailableException:
-            del cov_ranks
+            if weight_fun is None:
+                weight_fun = self._getWeightFun(contigLengths)
             if not silent:
                 print "Calculating tetramer distance ranks"
-            if weight_fun is None:
-                def weight_fun(k):
-                    (i, j) = distance.squareform_coords(n, k)
-                    weights = i
-                    weights[:] = contigLengths[i]
-                    weights[:] *= contigLengths[j]
-                    return weights
             kmer_filename = self._cacher.getWorkingFile()
             kmerind_filename = self._cacher.getWorkingFile()
             stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=self._mem, metric="euclidean")
@@ -401,24 +401,22 @@ class StreamingProfileDistanceEngine:
             kmer_ranks *= scale_factor
             self._cacher.cleanupWorkingFiles()
             self._cacher.storeKmerDists(kmer_ranks)
-            cov_ranks = self._cacher.getCovDists()
-        return (cov_ranks, kmer_ranks)
+        del kmer_ranks
     
     def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=False):
-        (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        return (cov_ranks, kmer_ranks)
+        self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        return (self._cacher.getCovDists(), self._cacher.getKmerDists())
     
     def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        (cov_ranks, kmer_ranks) = self._getScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
-        rank_norms = cov_ranks
-        del cov_ranks # invalidated
-        rank_norms **= n
-        kmer_ranks **= n
-        rank_norms += kmer_ranks
-        rank_norms **= 1. / n
+        kmer_rank_file = self._cacher.getWorkingFile()
+        self._cacher.getKmerDists().tofile(kmer_rank_file)
+        rank_norms = self._cacher.getCovDists()
+        stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._mem)
+        self._cacher.cleanupWorkingFiles()
         return rank_norms
         
         
@@ -428,7 +426,6 @@ class CachingProfileDistanceEngine:
     def __init__(self, cacher):
         self._cacher = cacher
     
-    @profile
     def _getWeights_(self, contigLengths, silent=False):
         n = len(contigLengths)
         try:

@@ -46,7 +46,7 @@ def test_merge():
     values = np.concatenate((left, right))
     indices = values.argsort()
     sorted_values = values[indices]
-
+    
     n = np_random.random_integers(5, values.size)
     merged = np.zeros(n, dtype=values.dtype)
     merged_indices = np.zeros(n, dtype=indices.dtype)

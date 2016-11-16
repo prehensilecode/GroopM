@@ -288,7 +288,6 @@ def pairs(n):
     
     
 # helpers
-@profile
 def _fractional_rank(a, weight_fun=None):
     """Return sorted of array indices with tied values averaged"""
     (a, _) = validate_y(a, name="a")
@@ -326,7 +325,7 @@ def _fractional_rank(a, weight_fun=None):
     #assert np.all(r_==a)
     return sa
 
-@profile
+    
 def _ifractional_rank(a, weight_fun=None):
     """Array value ranks with tied values averaged"""
     (a, _) = validate_y(a, name="a")
