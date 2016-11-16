@@ -1,22 +1,21 @@
 # stream_ext.pyx
 
-import cython
-#cimport numpy as np
-
+#import cython
+cimport numpy as np
 
 # hot loop
-def merge(x,
-          x_inds,
-          y,
-          y_inds,
-          out,
-          out_inds):
-    i = 0
-    j = 0
-    x_len = len(x)
-    y_len = len(y)
-    out_len = len(out)
-    #assert y_len + x_len >= out_len
+def merge(np.ndarray[np.double_t] x,
+          np.ndarray[np.int_t] x_inds,
+          np.ndarray[np.double_t] y,
+          np.ndarray[np.int_t] y_inds,
+          np.ndarray[np.double_t] out,
+          np.ndarray[np.int_t] out_inds):
+    cdef int i = 0
+    cdef int j = 0
+    cdef int x_len = x.size
+    cdef int y_len = y.size
+    cdef int out_len = out.size
+    cdef int k
     for k in range(out_len):
         if j < y_len  and (i==x_len or y[j] < x[i]):
             out[k] = y[j]
