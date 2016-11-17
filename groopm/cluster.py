@@ -205,7 +205,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            de = StreamingProfileDistanceEngine(cacher=self._cacher)
+            de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(np.ceil(n*(n-1)/8)))
             #de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
@@ -346,9 +346,9 @@ class ProfileDistanceEngine:
 class StreamingProfileDistanceEngine:
     """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
 
-    def __init__(self, cacher, mem=1e8):
+    def __init__(self, cacher, size):
         self._cacher = cacher
-        self._mem = mem
+        self._size = size
             
     def _getWeightFun(self, contigLengths):
         n = len(contigLengths)
@@ -377,9 +377,9 @@ class StreamingProfileDistanceEngine:
             
             cov_filename = self._cacher.getWorkingFile()
             covind_filename = self._cacher.getWorkingFile()
-            stream.pdist_chunk(covProfiles, cov_filename, chunk_size=self._mem, metric="euclidean")
-            stream.argsort_chunk_mergesort(cov_filename, covind_filename, chunk_size=self._mem)
-            (cov_ranks, scale_factor) = stream.argrank_chunk(covind_filename, cov_filename, weight_fun=weight_fun, chunk_size=self._mem)
+            stream.pdist_chunk(covProfiles, cov_filename, chunk_size=2*self._size, metric="euclidean")
+            stream.argsort_chunk_mergesort(cov_filename, covind_filename, chunk_size=self._size)
+            (cov_ranks, scale_factor) = stream.argrank_chunk(covind_filename, cov_filename, weight_fun=weight_fun, chunk_size=self._size)
 
             cov_ranks *= scale_factor
             self._cacher.cleanupWorkingFiles()
@@ -395,9 +395,9 @@ class StreamingProfileDistanceEngine:
                 print "Calculating tetramer distance ranks"
             kmer_filename = self._cacher.getWorkingFile()
             kmerind_filename = self._cacher.getWorkingFile()
-            stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=self._mem, metric="euclidean")
-            stream.argsort_chunk_mergesort(kmer_filename, kmerind_filename, chunk_size=self._mem)
-            (kmer_ranks, scale_factor) = stream.argrank_chunk(kmerind_filename, kmer_filename, weight_fun=weight_fun, chunk_size=self._mem)
+            stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=2*self._size, metric="euclidean")
+            stream.argsort_chunk_mergesort(kmer_filename, kmerind_filename, chunk_size=self._size)
+            (kmer_ranks, scale_factor) = stream.argrank_chunk(kmerind_filename, kmer_filename, weight_fun=weight_fun, chunk_size=self._size)
             kmer_ranks *= scale_factor
             self._cacher.cleanupWorkingFiles()
             self._cacher.storeKmerDists(kmer_ranks)
@@ -415,7 +415,7 @@ class StreamingProfileDistanceEngine:
         kmer_rank_file = self._cacher.getWorkingFile()
         self._cacher.getKmerDists().tofile(kmer_rank_file)
         rank_norms = self._cacher.getCovDists()
-        stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._mem)
+        stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._size)
         self._cacher.cleanupWorkingFiles()
         return rank_norms
         
