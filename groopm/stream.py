@@ -84,12 +84,15 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         rem = size
         if chunk_size is not None:
             while rem > chunk_size:
-                storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(n-1-row,))
-                storage[:] = sp_distance.cdist(X[row:row+1], X[row+1:], metric=metric)[:]
+                storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(chunk_size,))
+                pos_storage = 0
+                while pos_storage + n-1-row < chunk_size:
+                    storage[pos_storage:pos_storage+n-1-row] = sp_distance.cdist(X[row:row+1], X[row+1:], metric=metric)
+                    pos_storage += n-1-row
+                    row += 1
                 storage.flush()
-                k += n-1-row
-                row += 1
-                rem = size - k
+                k += pos_storage
+                rem -= pos_storage
         storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(rem,))
         storage[:] = sp_distance.pdist(X[row:], metric=metric)
         storage.flush()
@@ -128,13 +131,13 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
     rem = size
     while rem > 0:
         l = rem if chunk_size is None or rem < chunk_size else chunk_size
-        val_storage = get_val_storage(offset=k, size=l)
-        indices = np.argsort(val_storage)
-        ind_storage = get_ind_storage(offset=k, size=l)
-        ind_storage[:] = indices+k
-        ind_storage.flush()
-        val_storage[:] = val_storage[indices]
-        val_storage.flush()
+        val_i_storage = get_val_storage(offset=k, size=l)
+        indices = np.argsort(val_i_storage)
+        ind_i_storage = get_ind_storage(offset=k, size=l)
+        ind_i_storage[:] = indices+k
+        val_i_storage[:] = val_i_storage[indices]
+        ind_i_storage.flush()
+        val_i_storage.flush()
         
         k += l
         rem -= l
@@ -281,9 +284,6 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     if fval.tell() != bytes:
         raise ValueError("The sizes of input files for indices and values must be equal.")
     
-    # output array
-    out = np.empty(size, dtype=np.double)
-    
     def get_val_storage(offset, size):
         return np.memmap(fval, dtype=np.double, mode="r+", offset=offset*_dbytes, shape=(size,))
     
@@ -328,7 +328,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             ind_storage = get_ind_storage(offset=k, size=keep)
             flag = flag[:keep]
             
-            (out[ind_storage], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
+            (val_storage[:keep], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
             
             k += keep
             rem -= keep
@@ -338,7 +338,24 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     np.not_equal(val_storage[1:], val_storage[:-1], out=flag[:-1])
     #flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
     ind_storage = get_ind_storage(offset=k, size=rem)
-    (out[ind_storage], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
+    (val_storage[:keep], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
+    
+    
+    # output array
+    out = np.empty(size, dtype=np.double)
+    
+    k = 0
+    rem = size
+    if chunk_size is not None:
+        while rem > 0:
+            l = np.minimum(rem, chunk_size)
+            val_storage = get_val_storage(offset=k, size=l)
+            ind_storage = get_ind_storage(offset=k, size=l)
+            
+            out[ind_storage] = val_storage
+            
+            k += l
+            rem -= l
     
     find.close()
     fval.close()
@@ -360,7 +377,6 @@ def iapply_func_chunk(out, filename, fun, chunk_size=None):
     k = 0
     rem = size
     if chunk_size is not None:
-        chunk_size = int(chunk_size)
         while rem > chunk_size:
             storage = get_storage(offset=k, size=chunk_size)
             
