@@ -205,17 +205,13 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(np.ceil(n*(n-1)//8)))
+            de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(2**31-1))
             #de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
                                       self._profile.kmerSigs,
                                       self._profile.contigLengths, 
                                       silent=silent)
-        #rank_norms = DistanceStatEngine(de, mode="triangular").makeStat(self._profile.covProfiles,
-                                                                             #self._profile.kmerSigs,
-                                                                             #self._profile.contigLengths,
-                                                                             #silent=silent)
         if not silent:
             print "Reticulating splines"
             
@@ -252,65 +248,6 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
         bins = fce.makeClusters(Z)
         return bins
-
-        
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################        
-   
-class DistanceStatEngine:
-    def __init__(self, de, mode="radial"):
-        self._de = de
-        if mode=="radial":
-            self._n = 2
-            self._area = _iradial_area
-        elif mode=="triangular":
-            self._n = 1
-            self._area = _itriangular_area
-        else:
-            raise ValueError("Parameter value for argument 'mode' must be one of: 'radial', 'triangular'.")
-        
-    def makeStat(self, covProfiles, kmerSigs, contigLengths, silent=False):
-            
-        norms = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
-        self._area(out=norms)
-        
-        def weight_fun(i, j):
-            return contigLengths[i]*contigLengths[j]
-        weight_sum = 0
-        for i in range(n-1):
-            weight_sum += np.sum(contigLengths[i]*contigLengths[i+1:])
-        norms *= weight_sum
-        
-        # normalise to actual count
-        norms /= distance.iargrank(norms.copy(), weight_fun=weight_fun, axis=None)
-        
-        return norms
-    
-    
-def _iradial_area(out):
-    l = out<=1; nl = np.logical_not(l)
-    
-    # 2-norm to radial area in 1x1 square
-    out **= 2
-    out /= 2 #angular area
-    out[l] *= np.pi / 2
-    o = np.sqrt(2*out[nl] - 1)
-    al = np.pi / 2 - 2*out.arctan(o)
-    out[nl] *= al
-    out[nl] += o
-        
-def _itriangular_area(out):
-    l = out<=1; nl = np.logical_not(l)
-    
-    # 1-norm to lower-triangular area in 1x1 square
-    out[l] **= 2
-    out[l] /= 2
-    out[nl] = 2 - out[nl]
-    out[nl] **= 2
-    out[nl] = 2 - out[nl]
-    out[nl] /= 2
     
         
 ###############################################################################
@@ -415,6 +352,7 @@ class StreamingProfileDistanceEngine:
         kmer_rank_file = self._cacher.getWorkingFile()
         self._cacher.getKmerDists().tofile(kmer_rank_file)
         rank_norms = self._cacher.getCovDists()
+        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.mul, chunk_size=self._size//2)
         stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._size)
         self._cacher.cleanupWorkingFiles()
         return rank_norms
@@ -1131,6 +1069,63 @@ class ClusterQualityEngine:
         
         
 class MarkerCheckCQE(ClusterQualityEngine):
+    """Cluster quality scores using taxonomy and marker completeness.
+    
+    We use extended BCubed metrics where precision and recall metrics are
+    defined for each observation in a cluster.
+    
+    Traditional BCubed metrics assume that extrinsic categories are known 
+    for the clustered items. In our case we have two sources of information - 
+    mapping taxonomies and mapping markers. Mapping taxonomies can be used to
+    group items that are 'similar enough'. Single copy markers can be used to
+    distinguish when items should be in different bins.
+    
+    With these factors in mind, we have used the following adjusted BCubed 
+    metrics:
+        - Precision represents for an item how many of the item's cluster 
+          are taxonomically similar items with different markers. Analogous to
+          an inverted genome 'contamination' measure.
+        - Recall represents for an item how many of taxonomically similar items with
+          different markers are found in the item's cluster. Analogous to genome
+          'completeness' measure.
+          
+    These metrics are combined in a naive linear manner using a mixing fraction
+    alpha which can be combined additively when assessing multiple clusters.
+    """
+    
+    def __init__(self, profile):
+        self._d = 1
+        self._alpha = 0.5
+        self._mapping = profile.mapping
+        
+        # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
+        # taxonomically 'similar enough', otherwise 0.
+        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        
+        # Compute the compatible marker group sizes
+        gsizes = np.array([np.count_nonzero(row) for row in self._mdists])
+        markerNames = self._mapping.markerNames
+        gweights = np.array([np.unique(markerNames[row], return_counts=True)[1].max() for row in self._mdists])
+        self._gscalefactors = gweights * 1. / gsizes
+        
+    def getLeafData(self):
+        """Leaf data is a list of indices of mappings."""
+        return dict([(i, data) for (i, data) in self._mapping.iterindices()])
+        
+    def getScore(self, indices):
+        """Compute modified BCubed completeness and precision scores."""
+        indices = np.asarray(indices)
+        markerNames = self._mapping.markerNames[indices]
+        weights = 1. / np.array([np.count_nonzero(markerNames[index] == markerNames[row]) for row in (self._mdists[index, indices] for index in indices)])
+        # weighted item precision
+        prec = (weights.sum() ** 2) * 1. / len(indices)
+        # weighted item completeness / recall
+        recall = weights.dot(weights * self._gscalefactors[indices]) - (weights**2 * self_gscalefactors[indices]).sum()
+        f = self._alpha * recall + (1 - self._alpha) * prec
+        return f
+              
+              
+class MarkerCheckCQE_(ClusterQualityEngine):
     """Cluster quality scores using taxonomy and marker completeness.
     
     We use extended BCubed metrics where precision and recall metrics are
