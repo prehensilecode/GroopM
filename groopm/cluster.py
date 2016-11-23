@@ -1098,14 +1098,18 @@ class MarkerCheckCQE(ClusterQualityEngine):
         self._alpha = 0.5
         self._mapping = profile.mapping
         
-        # Connectivity matrix: M[i,j] = 1 where mapping i and j are 
+        # Taxonomic connectivity matrix: L[i,j] = 1 where mapping i and j are 
         # taxonomically 'similar enough', otherwise 0.
-        self._mdists = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        self._L = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        
+        # Marker connectivity matrix: M[i, j] = 1 where mapping i and j are
+        # from the same marker, otherwise 0.
+        markerNames = self._mapping.markerNames
+        self._M = markerNames[:, None] == markerNames[None, :]
         
         # Compute the compatible marker group sizes
-        gsizes = np.array([np.count_nonzero(row) for row in self._mdists])
-        markerNames = self._mapping.markerNames
-        gweights = np.array([np.unique(markerNames[row], return_counts=True)[1].max() for row in self._mdists])
+        gsizes = np.array([np.count_nonzero(row) for row in self._L])
+        gweights = np.array([np.unique(markerNames[row], return_counts=True)[1].max() for row in self._L])
         self._gscalefactors = gweights * 1. / gsizes
         
     def getLeafData(self):
@@ -1115,12 +1119,19 @@ class MarkerCheckCQE(ClusterQualityEngine):
     def getScore(self, indices):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
-        markerNames = self._mapping.markerNames[indices]
-        weights = 1. / np.array([np.count_nonzero(markerNames[index] == markerNames[row]) for row in (self._mdists[index, indices] for index in indices)])
+        #markerNames = self._mapping.markerNames[indices]
+        weights = 1. / np.array([np.count_nonzero(np.logical_and(self._M[index, indices], self._L[index, indices])) for index in indices])
         # weighted item precision
-        prec = (weights.sum() ** 2) * 1. / len(indices)
+        prec = np.sum([weights[i] * weights[self._L[index, indices]].sum() * 1. / len(indices) for (i, index) in enumerate(indices)])
+        
+        #gsizes_ = np.array([len(np.unique(markerNames[row])) for row in (self._mdists[index, indices] for index in indices)])
+        # item precision is the average number of compatible unique markers in
+        # cluster
+        #prec_ = (gsizes_ * 1. / len(indices)).sum()
+        #assert prec == prec_
+        
         # weighted item completeness / recall
-        recall = weights.dot(weights * self._gscalefactors[indices]) - (weights**2 * self_gscalefactors[indices]).sum()
+        recall = np.sum([weights[i] * (weights[self._L[index, indices]].sum() - weights[i]) * self._gscalefactors[index] for (i, index) in enumerate(indices)])
         f = self._alpha * recall + (1 - self._alpha) * prec
         return f
               
