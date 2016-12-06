@@ -50,6 +50,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 import scipy.stats as sp_stats
+import scipy.misc as sp_misc
 
 # local imports
 
@@ -388,13 +389,46 @@ def validate_y(Y, weights=None, name="Y"):
 ###############################################################################
 ###############################################################################
 
-def rank_product_bounds(prod, n, k, bound):
+def rank_product_test(rankprod, n, k):
+    """
+    Gamma distribution approximation for rank product statistic. See Koziol. 
+    FEBS Letters 584 (2010) 941-944: "Comments on the rank product method for
+    analysing replicated experiments".
+    """
+    return sp_stats.gamma.sf(-np.log(rankprod) + k * np.log(n+1), k)
+    
+def rank_norm_test(norm, n, k):
+    """
+    See Koizol. Ann Hum Genet. (2004) 68, 376-380: "A Note on the Genome Scan
+    Meta-Analysis Statistic"
+    """
+    pass
+    
+def rank_sum_test(ranksum, n, k):
+    """
+    Edgeworth series approximation to the rank sum statistic. See Koizol. Ann
+    Hum Genet. (2004) 68, 376-380: "A Note on the Genome Scan Meta-Analysis
+    Statistic"
+    """
+    ranksum = np.asarray(ranksum)
+    n = np.double(n)
+    pr = np.array([n**(-k)*np.sum([(-1)**t*sp_misc.comb(k, t)*sp_misc.comb(r-n*t, k) for t in range(k+2)]) for r in ranksum])
+    return pr
+    z = (ranksum - ranksum.mean()) / ranksum.std()
+    n2 = n**2
+    c4 = ((6 + 15*k + 6*n2 - 15*k*n2) / (5*k*(1-n2)) - 3) / 24
+    return sp_stats.norm.cdf(z) - c4 * (z**3 - 3 * z) * sp_stats.norm.pdf(z)
+    
+    
+
+def rank_product_bounds(rankprod, n, k, bound):
     """
     Algorithm implemented following Heskes et al. BMC Bioinformatics 2014,
     15:367 "A fast algorithm for determining bounds and accurate approximate
     p-values of the rank product statistic for replicate experiments".
     """
-    j = -np.log(prod)/np.log(n) + k
+    rankprod = np.asarray(rankprod)
+    j = -np.log(rankprod)/np.log(n) + k
     alpha = dict()
     beta = dict()
     gamma = dict()
@@ -433,5 +467,5 @@ def rank_product_bounds(prod, n, k, bound):
                 alpha[ik, ij] = alpha[ik, ij][idx]
                 beta[ik, ij] = beta[ik, ij][idx]
     
-    Gtilde = np.array([epsilon[k, j[i]] + delta[k, j[i]]*prod[i] + gamma[k, j[i]].dot(prod[i]*(log(prod[i]/(n**(k-j[i]+beta[k, j[i]]))**alpha[k, j[i]]))) for i in len(prod)])
+    Gtilde = np.array([epsilon[k, j[i]] + delta[k, j[i]]*rankprod[i] + gamma[k, j[i]].dot(rankprod[i]*(log(rankprod[i]/(n**(k-j[i]+beta[k, j[i]]))**alpha[k, j[i]]))) for i in len(rankprod)])
     return Gtilde / n**k
