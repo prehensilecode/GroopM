@@ -39,28 +39,33 @@ from groopm.stream_ext import (merge,)
     
    
 def test_merge():
-    left = np_random.rand(np_random.random_integers(5, 10))
-    left.sort()
-    right = np_random.rand(np_random.random_integers(5, 10))
-    right.sort()
-    values = np.concatenate((left, right))
-    indices = values.argsort()
-    sorted_values = values[indices]
     
-    n = np_random.random_integers(5, values.size)
-    merged = np.zeros(n, dtype=values.dtype)
-    merged_indices = np.zeros(n, dtype=indices.dtype)
-    merge(left,
-          np.arange(left.size),
-          right,
-          np.arange(left.size, values.size),
-          merged,
-          merged_indices,
-          )
-    assert_true(equal_arrays(sorted_values[:n], merged),
-                "sorts values in output array")
-    assert_true(equal_arrays(indices[:n], merged_indices),
-                "writes sorting indices into output indices array")
+    def _test_one():
+        left = np_random.rand(np_random.random_integers(80, 1000))
+        left.sort()
+        right = np_random.rand(np_random.random_integers(80, 1000))
+        right.sort()
+        values = np.concatenate((left, right))
+        indices = values.argsort()
+        sorted_values = values[indices]
+        
+        n = np_random.random_integers(80, values.size)
+        merged = np.zeros(n, dtype=values.dtype)
+        merged_indices = np.zeros(n, dtype=indices.dtype)
+        merge(left,
+              np.arange(left.size),
+              right,
+              np.arange(left.size, values.size),
+              merged,
+              merged_indices,
+              )
+        assert_true(equal_arrays(sorted_values[:n], merged),
+                    "sorts values in output array")
+        assert_true(equal_arrays(indices[:n], merged_indices),
+                    "writes sorting indices into output indices array")
+    
+    for _ in range(50):
+        _test_one()
                         
 ###############################################################################
 ###############################################################################

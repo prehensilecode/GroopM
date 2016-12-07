@@ -10,12 +10,12 @@ def merge(np.ndarray[np.double_t] x,
           np.ndarray[np.int_t] y_inds,
           np.ndarray[np.double_t] out,
           np.ndarray[np.int_t] out_inds):
-    cdef np.int_t i = 0
-    cdef np.int_t j = 0
-    cdef np.int_t x_len = x.size
-    cdef np.int_t y_len = y.size
-    cdef np.int_t out_len = out.size
-    cdef np.int_t k
+    cdef np.npy_intp i = 0
+    cdef np.npy_intp j = 0
+    cdef np.npy_intp x_len = x.size
+    cdef np.npy_intp y_len = y.size
+    cdef np.npy_intp out_len = out.size
+    cdef np.npy_intp k
     for k in range(out_len):
         if j < y_len  and (i==x_len or y[j] < x[i]):
             out[k] = y[j]
