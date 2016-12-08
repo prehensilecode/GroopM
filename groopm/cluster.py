@@ -205,7 +205,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         if self._cacher is None:
             de = ProfileDistanceEngine
         else:
-            de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(np.ceil(n*(n-1)/8)))
+            de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(2**31-1))
             #de = CachingProfileDistanceEngine(cacher=self._cacher)
             #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
         rank_norms = de.makeRankNorms(self._profile.covProfiles,
@@ -252,65 +252,6 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         fce = MarkerCheckFCE(self._profile, minPts=self._minPts, minSize=self._minSize)
         bins = fce.makeClusters(Z)
         return bins
-
-        
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################        
-   
-class DistanceStatEngine:
-    def __init__(self, de, mode="radial"):
-        self._de = de
-        if mode=="radial":
-            self._n = 2
-            self._area = _iradial_area
-        elif mode=="triangular":
-            self._n = 1
-            self._area = _itriangular_area
-        else:
-            raise ValueError("Parameter value for argument 'mode' must be one of: 'radial', 'triangular'.")
-        
-    def makeStat(self, covProfiles, kmerSigs, contigLengths, silent=False):
-            
-        norms = self._de.makeRankNorms(covProfiles, kmerSigs, contigLengths, silent=silent, n=self._n)
-        self._area(out=norms)
-        
-        def weight_fun(i, j):
-            return contigLengths[i]*contigLengths[j]
-        weight_sum = 0
-        for i in range(n-1):
-            weight_sum += np.sum(contigLengths[i]*contigLengths[i+1:])
-        norms *= weight_sum
-        
-        # normalise to actual count
-        norms /= distance.iargrank(norms.copy(), weight_fun=weight_fun, axis=None)
-        
-        return norms
-    
-    
-def _iradial_area(out):
-    l = out<=1; nl = np.logical_not(l)
-    
-    # 2-norm to radial area in 1x1 square
-    out **= 2
-    out /= 2 #angular area
-    out[l] *= np.pi / 2
-    o = np.sqrt(2*out[nl] - 1)
-    al = np.pi / 2 - 2*out.arctan(o)
-    out[nl] *= al
-    out[nl] += o
-        
-def _itriangular_area(out):
-    l = out<=1; nl = np.logical_not(l)
-    
-    # 1-norm to lower-triangular area in 1x1 square
-    out[l] **= 2
-    out[l] /= 2
-    out[nl] = 2 - out[nl]
-    out[nl] **= 2
-    out[nl] = 2 - out[nl]
-    out[nl] /= 2
     
         
 ###############################################################################
