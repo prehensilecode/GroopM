@@ -209,8 +209,8 @@ class core_command_configure:
         parser.add_argument('-P', '--points', type=readable_int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
         parser.add_argument('-f', '--force', action="store_true", help="overwrite existing DB file without prompting")
         group = parser.add_mutually_exclusive_group()
-        group.add_argument('--save_dists', default="", help="prefix to use for save distance files")
-        group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files to reuse")
+        group.add_argument('--save_dists', action="store_true", help="save distance files")
+        group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
         parser.set_defaults(run=self)
     
     def __call__(self, options):
@@ -226,8 +226,8 @@ class core_command_configure:
                minLength=options.cutoff,
                minSize=options.size,
                minPts=options.points,
-               savedDistsPrefix=options.use_saved_dists if options.use_saved_dists!="" else options.save_dists,
-               keepDists=options.use_saved_dists!="" or options.save_dists!="",
+               savedDistsPrefix=options.use_saved_dists,
+               keepDists=options.use_saved_dists!="" or options.save_dists,
                force=options.force)
         
         

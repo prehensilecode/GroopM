@@ -56,6 +56,7 @@ import operator
 import os
 import tables
 import sys
+import tempfile
 
 # local imports
 import distance
@@ -212,10 +213,6 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                       self._profile.kmerSigs,
                                       self._profile.contigLengths, 
                                       silent=silent)
-        #rank_norms = DistanceStatEngine(de, mode="triangular").makeStat(self._profile.covProfiles,
-                                                                             #self._profile.kmerSigs,
-                                                                             #self._profile.contigLengths,
-                                                                             #silent=silent)
         if not silent:
             print "Reticulating splines"
             
@@ -290,6 +287,7 @@ class StreamingProfileDistanceEngine:
     def __init__(self, cacher, size):
         self._cacher = cacher
         self._size = size
+        self._store = TempFileStore()
             
     def _getWeightFun(self, contigLengths):
         n = len(contigLengths)
@@ -316,14 +314,14 @@ class StreamingProfileDistanceEngine:
             if not silent:
                 print "Calculating coverage distance ranks"
             
-            cov_filename = self._cacher.getWorkingFile()
-            covind_filename = self._cacher.getWorkingFile()
+            cov_filename = self._store.getWorkingFile()
+            covind_filename = self._store.getWorkingFile()
             stream.pdist_chunk(covProfiles, cov_filename, chunk_size=2*self._size, metric="euclidean")
             stream.argsort_chunk_mergesort(cov_filename, covind_filename, chunk_size=self._size)
             (cov_ranks, scale_factor) = stream.argrank_chunk(covind_filename, cov_filename, weight_fun=weight_fun, chunk_size=self._size)
 
-            cov_ranks *= scale_factor
-            self._cacher.cleanupWorkingFiles()
+            #cov_ranks *= scale_factor
+            self._store.cleanupWorkingFiles()
             self._cacher.storeCovDists(cov_ranks)
         del cov_ranks
         try:
@@ -334,13 +332,13 @@ class StreamingProfileDistanceEngine:
                 weight_fun = self._getWeightFun(contigLengths)
             if not silent:
                 print "Calculating tetramer distance ranks"
-            kmer_filename = self._cacher.getWorkingFile()
-            kmerind_filename = self._cacher.getWorkingFile()
+            kmer_filename = self._store.getWorkingFile()
+            kmerind_filename = self._store.getWorkingFile()
             stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=2*self._size, metric="euclidean")
             stream.argsort_chunk_mergesort(kmer_filename, kmerind_filename, chunk_size=self._size)
             (kmer_ranks, scale_factor) = stream.argrank_chunk(kmerind_filename, kmer_filename, weight_fun=weight_fun, chunk_size=self._size)
-            kmer_ranks *= scale_factor
-            self._cacher.cleanupWorkingFiles()
+            #kmer_ranks *= scale_factor
+            self._store.cleanupWorkingFiles()
             self._cacher.storeKmerDists(kmer_ranks)
         del kmer_ranks
     
@@ -353,11 +351,13 @@ class StreamingProfileDistanceEngine:
         """
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
-        kmer_rank_file = self._cacher.getWorkingFile()
+        kmer_rank_file = self._store.getWorkingFile()
         self._cacher.getKmerDists().tofile(kmer_rank_file)
         rank_norms = self._cacher.getCovDists()
-        stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._size)
-        self._cacher.cleanupWorkingFiles()
+        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.mul, chunk_size=self._size//2)
+        stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.add, chunk_size=self._size//2)
+        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._size)
+        self._store.cleanupWorkingFiles()
         return rank_norms
         
         
@@ -487,22 +487,17 @@ class Cacher:
     def storeKmerDists(kmer_dists):
         pass
         
-        
-class FileCacher(Cacher):
-    """Cache using numpy to/fromfile"""
+class TempFileStore:
+    """Create and clean up temp files"""
     
-    def __init__(self, distStorePrefix):
-        self._prefix = distStorePrefix
-        self._weightsStore = self._prefix+".weights"
-        self._covDistStore = self._prefix+".cov"
-        self._kmerDistStore = self._prefix+".kmer"
+    def __init__(self):
         self._workingFiles = []
         
     def getWorkingFile(self):
-        filename = self._prefix+".working%d" % (len(self._workingFiles)+1)
+        (_f, filename) = tempfile.mkstemp(prefix="groopm.working", dir=os.getcwd())
         self._workingFiles.append(filename)
         return filename
-        
+    
     def _cleanupOne(self, filename):
         try:
             os.remove(filename)
@@ -515,6 +510,21 @@ class FileCacher(Cacher):
                 f = self._workingFiles.pop()
                 self._cleanupOne(f)
         except IndexError:
+            pass
+        
+class FileCacher(Cacher):
+    """Cache using numpy to/fromfile"""
+    
+    def __init__(self, distStorePrefix):
+        self._prefix = distStorePrefix
+        self._weightsStore = self._prefix+".weights"
+        self._covDistStore = self._prefix+".cov"
+        self._kmerDistStore = self._prefix+".kmer"
+
+    def _cleanupOne(self, filename):
+        try:
+            os.remove(filename)
+        except OSError:
             pass
         
     def cleanup(self):
@@ -1072,6 +1082,70 @@ class ClusterQualityEngine:
         
         
 class MarkerCheckCQE(ClusterQualityEngine):
+    """Cluster quality scores using taxonomy and marker completeness.
+    
+    We use extended BCubed metrics where precision and recall metrics are
+    defined for each observation in a cluster.
+    
+    Traditional BCubed metrics assume that extrinsic categories are known 
+    for the clustered items. In our case we have two sources of information - 
+    mapping taxonomies and mapping markers. Mapping taxonomies can be used to
+    group items that are 'similar enough'. Single copy markers can be used to
+    distinguish when items should be in different bins.
+    
+    With these factors in mind, we have used the following adjusted BCubed 
+    metrics:
+        - Precision represents for an item how many of the item's cluster 
+          are taxonomically similar items with different markers. Analogous to
+          an inverted genome 'contamination' measure.
+        - Recall represents for an item how many of taxonomically similar items with
+          different markers are found in the item's cluster. Analogous to genome
+          'completeness' measure.
+          
+    These metrics are combined in a naive linear manner using a mixing fraction
+    alpha which can be combined additively when assessing multiple clusters.
+    """
+    
+    def __init__(self, profile):
+        self._d = 1
+        self._alpha = 0.5
+        self._mapping = profile.mapping
+        
+        # Taxonomic connectivity matrix: L[i,j] = 1 where mapping i and j are 
+        # taxonomically 'similar enough', otherwise 0.
+        self._L = sp_distance.squareform(self._mapping.classification.makeDistances()) < self._d
+        
+        # Marker connectivity matrix: M[i, j] = 1 where mapping i and j are
+        # from the same marker, otherwise 0.
+        markerNames = self._mapping.markerNames
+        self._M = markerNames[:, None] == markerNames[None, :]
+        
+        # Compute the compatible marker group sizes
+        gsizes = np.array([np.count_nonzero(row) for row in self._L])
+        gweights = np.array([np.unique(markerNames[row], return_counts=True)[1].max() for row in self._L])
+        self._gscalefactors = gweights * 1. / gsizes
+        
+    def getLeafData(self):
+        """Leaf data is a list of indices of mappings."""
+        return dict([(i, data) for (i, data) in self._mapping.iterindices()])
+        
+    def getScore(self, indices):
+        """Compute modified BCubed completeness and precision scores."""
+        indices = np.asarray(indices)
+        #markerNames = self._mapping.markerNames[indices]
+        weights = 1. / np.logical_and(self._M[np.ix_(indices, indices)], self._L[np.ix_(indices, indices)]).sum(axis=0)
+        
+        # weighted item precision
+        prec = np.sum([weights[i] * (weights[self._L[index, indices]].sum() + 1 - weights[i]) * 1. / len(indices) for (i, index) in enumerate(indices)])
+        
+        # weighted item completeness / recall
+        recall = np.sum([weights[i] * (weights[self._L[index, indices]].sum() + 1 - weights[i]) * self._gscalefactors[index] for (i, index) in enumerate(indices)])
+        
+        f = self._alpha * recall + (1 - self._alpha) * prec
+        return f
+              
+              
+class MarkerCheckCQE_(ClusterQualityEngine):
     """Cluster quality scores using taxonomy and marker completeness.
     
     We use extended BCubed metrics where precision and recall metrics are

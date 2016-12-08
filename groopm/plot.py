@@ -67,7 +67,7 @@ from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, CachingProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
+from cluster import ClassificationClusterEngine, CachingProfileDistanceEngine as ProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
 from classification import BinClassifier
 import hierarchy
 
@@ -402,7 +402,7 @@ class ProfileReachabilityPlotter:
              highlight="bins",
              fileName=""):
                  
-        #de = CachingProfileDistanceEngine(distStore="xx.dists")
+        #de = ProfileDistanceEngine(distStore="xx.dists")
         #(Y, w) = de.makeNormRanks(self._profile.covProfiles,
         #                          self._profile.kmerSigs,
         #                          self._profile.contigLengths)
@@ -416,8 +416,10 @@ class ProfileReachabilityPlotter:
         #fY = Y * w.sum() / distance.iargrank(Y.copy(), weights=w, axis=None)
         #h = np.array([1]+[fY[distance.condensed_index(n, i, j)] for (i, j) in zip(o[:-1], o[1:])])
             
-        
-        h = self._profile.reachDists
+        n = 0
+        for i in range(self._profile.numContigs):
+            n += self._profile.contigLengths[i]*self._profile.contigLengths[i+1:].sum()
+        h = distance.rank_product_test(self._profile.reachDists, n, 2)
         o = self._profile.reachOrder
         if label=="count":
             iloc = dict(zip(o, range(len(o))))

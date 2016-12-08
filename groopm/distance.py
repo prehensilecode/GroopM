@@ -50,6 +50,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 import scipy.spatial.distance as sp_distance
 import scipy.stats as sp_stats
+import scipy.misc as sp_misc
 
 # local imports
 
@@ -266,22 +267,6 @@ def squareform_coords(n, k):
     j = np.asarray(j, dtype=np.int)*1
     return (i, j)
     
-def _binom_test(x, n, p):
-    return sp_stats.binom.sf(x-1, n, p)
-    
-binom_test = np.vectorize(_binom_test, otypes=[float])
-
-def _g_test(x, n, p):
-    # o = [x, n-x], e = [np, n(1-p)]
-    stat = 0.
-    if x!=0:
-        stat += 2. * x * np.log(x / (n * p))
-    if x!=n:
-        stat += 2. * (n-x) * np.log((n-x) / n*(1-p))
-    return sp_stats.chi2.sf(stat, 1)
-    
-g_test = np.vectorize(_g_test, otypes=[float])
-    
     
 def pairs(n):
     return np.triu_indices(n, k=1)
@@ -403,3 +388,84 @@ def validate_y(Y, weights=None, name="Y"):
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
+def rank_product_test(rankprod, n, k):
+    """
+    Gamma distribution approximation for rank product statistic. See Koziol. 
+    FEBS Letters 584 (2010) 941-944: "Comments on the rank product method for
+    analysing replicated experiments".
+    """
+    return sp_stats.gamma.sf(-np.log(rankprod) + k * np.log(n+1), k)
+    
+def rank_norm_test(norm, n, k):
+    """
+    See Koizol. Ann Hum Genet. (2004) 68, 376-380: "A Note on the Genome Scan
+    Meta-Analysis Statistic"
+    """
+    pass
+    
+def rank_sum_test(ranksum, n, k):
+    """
+    Edgeworth series approximation to the rank sum statistic. See Koizol. Ann
+    Hum Genet. (2004) 68, 376-380: "A Note on the Genome Scan Meta-Analysis
+    Statistic"
+    """
+    ranksum = np.asarray(ranksum)
+    n = np.double(n)
+    pr = np.array([n**(-k)*np.sum([(-1)**t*sp_misc.comb(k, t)*sp_misc.comb(r-n*t, k) for t in range(k+2)]) for r in ranksum])
+    return pr
+    z = (ranksum - ranksum.mean()) / ranksum.std()
+    n2 = n**2
+    c4 = ((6 + 15*k + 6*n2 - 15*k*n2) / (5*k*(1-n2)) - 3) / 24
+    return sp_stats.norm.cdf(z) - c4 * (z**3 - 3 * z) * sp_stats.norm.pdf(z)
+    
+    
+
+def rank_product_bounds(rankprod, n, k, bound):
+    """
+    Algorithm implemented following Heskes et al. BMC Bioinformatics 2014,
+    15:367 "A fast algorithm for determining bounds and accurate approximate
+    p-values of the rank product statistic for replicate experiments".
+    """
+    rankprod = np.asarray(rankprod)
+    j = -np.log(rankprod)/np.log(n) + k
+    alpha = dict()
+    beta = dict()
+    gamma = dict()
+    delta = dict()
+    for ik in range(k):
+        for ij in range(max(ik-k+min(j),0), min(ik, max(j))):
+            if ij==0:
+                alpha[ik, ij] = 0
+                beta[ik, ij] = 0
+                gamma[ik, ij] = 0
+                delta[ik, ij] = 0
+                epsilon[ik, ij] = n**ik
+            else:
+                if ij < ik:
+                    phi1 = gamma[ik-1, ij-1]/(alpha[ik-1, ij-1]+1)
+                    phi2 = gamma[ik-1, ij]/(alpha[ik-1, ij]+1)
+                    alpha[ik, ij] = np.concatenate((1, 1, alpha[ik-1, ij-1], alpha[ik-1, ij], alpha[ik-1, ij-1]+1, alpha[ik-1, ij]+1))
+                    beta[ik, ij] = np.concatenate((0, 1, beta[ik-1, ij-1], beta[ik-1, ij], beta[ik-1, ij-1], beta[ik-1, ij]))
+                    gamma[ik, ij] = np.concatenate((delta[ik-1, ij-1], -delta[ik-1, ij], bound*gamma[ik-1, ij-1], (1-bound)*gamma[ik-1, ij]/n, phi1, -phi2))
+                    delta[ik, ij] = bound*delta[ik, ij]+(1-bound)*delta[ik-1,j]/n+(epsilon[ik-1, ij-1]-epsilon[ik-1, ij])/(n**(ik-ij))-phi1.dot((-beta[ik-1, ij-1]*log(n))**(alpha[ik-1,ij-1]+1))+phi2.dot(((1-beta[ik-1, ij])*log(n))**(alpha[ik-1, ij]+1))
+                    epsilon[ik, ij] = (1-bound)*(epsilon[ik-1, ij]-epsilon[ik-1, ij-1]) + n*epsilon[ik-1, ij]
+                else:
+                    phi = gamma[ik-1, ik-1]/(alpha[ik-1, ik-1]+1)
+                    alpha[ik, ik] = np.concatenate((1, alpha[ik-1, ik-1], alpha[ik-1, ik-1]+1))
+                    beta[ik, ik] = np.concatenate((0, beta[ik-1, ik-1], beta[ik-1, ik-1]))
+                    gamma[ik, ik] = np.concatenate((delta[ik-1, ik-1], bound*gamma[ik-1, ik-1], phi))
+                    delta[ik, ik] = bound*delta[ik-1, ik-1] + epsilon[k-1, k-1]
+                    epsilon[ik, ik] = (1-bound)*(1-epsilon[k-1, k-1])
+                    
+                # duplicate combinations of alpha and beta can be combined by adding corresponding gamma scores
+                # this will keep alpha, beta and gamma vectors to at most 2k size (see paper)
+                b = np.vstack((alpha[ik, ij], beta[ik, ij]))
+                b = b.view(np.dtype((np.void, b.dtype.itemsize*b.shape[1])))
+                (_, idx, bins) = np.unique(b, return_index=True, return_inverse=True)
+                gamma[ik, ij] = numpy.bincount(bins, gamma[ik, ij])
+                alpha[ik, ij] = alpha[ik, ij][idx]
+                beta[ik, ij] = beta[ik, ij][idx]
+    
+    Gtilde = np.array([epsilon[k, j[i]] + delta[k, j[i]]*rankprod[i] + gamma[k, j[i]].dot(rankprod[i]*(log(rankprod[i]/(n**(k-j[i]+beta[k, j[i]]))**alpha[k, j[i]]))) for i in len(rankprod)])
+    return Gtilde / n**k

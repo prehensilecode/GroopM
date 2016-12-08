@@ -337,7 +337,7 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     np.not_equal(val_storage[1:], val_storage[:-1], out=flag[:-1])
     #flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
     ind_storage = get_ind_storage(offset=k, size=rem)
-    (val_storage[:keep], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
+    (val_storage[:], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
     
     
     # output array
