@@ -95,7 +95,7 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
                 rem -= pos_storage
         storage = np.memmap(f, dtype=np.double, mode="r+", offset=k*_dbytes, shape=(rem,))
         storage[:] = sp_distance.pdist(X[row:], metric=metric)
-        storage.flush()
+        del storage # flush and destroy object
 
         
 def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
@@ -136,8 +136,8 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
         ind_i_storage = get_ind_storage(offset=k, size=l)
         ind_i_storage[:] = indices+k
         val_i_storage[:] = val_i_storage[indices]
-        ind_i_storage.flush()
-        val_i_storage.flush()
+        del ind_i_storage
+        del val_i_storage # flush and destroy
         
         k += l
         rem -= l
@@ -187,8 +187,8 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
                     ind_buff = get_ind_buff(offset=offset_i, size=il)
                     val_buff[:] = val_i_storage
                     ind_buff[:] = ind_i_storage
-                    val_buff.flush()
-                    ind_buff.flush()
+                    del val_buff
+                    del ind_buff
                     
                     #buff = get_val_buff(offset=0, size=offset_i+il)
                     #assert np.all(buff[1:]>=buff[:-1])
@@ -202,51 +202,23 @@ def argsort_chunk_mergesort(infilename, outfilename, chunk_size=None):
                 jl = np.minimum(chunk_size, l - offset_j)
                 val_j_storage = get_val_storage(offset=k+offset_j, size=jl)
                 ind_j_storage = get_ind_storage(offset=k+offset_j, size=jl)
-                
-                # extension loop
-                #x = val_buff.copy()
-                #x_ind = ind_buff.copy()
-                #y = val_j_storage.copy()
-                #y_ind = ind_j_storage.copy()
-                #out = np.zeros(il, dtype=np.double)
-                #out_ind = np.zeros(il, dtype=np.int)
-                #(i, j) = merge(x,
-                               #x_ind,
-                               #y,
-                               #y_ind,
-                               #out,
-                               #out_ind)
-                               
+                                               
                 (pos_buff, pos_j) = merge(val_buff,
                                           ind_buff,
                                           val_j_storage,
                                           ind_j_storage,
                                           val_i_storage,
                                           ind_i_storage)
-                               
-                # numpy sort
-                #orig_indices = np.concatenate((ind_buff, ind_j_storage))
-                #orig_values = np.concatenate((val_buff, val_j_storage))
-                #low = orig_values.argpartition(il-1)[:il]
-                #orig_indices = orig_indices[low]
-                #orig_values = orig_values[low]
-                #indices = orig_values.argsort(kind="mergesort")
-                #orig_indices = orig_indices[indices]
-                #orig_values = orig_values[indices]
-                #low = low[indices]
-                #pos_buff = np.count_nonzero(low < buffl)
-                #pos_j = np.count_nonzero(low >= buffl)
-                #val_i_storage[:] = orig_values
-                #ind_i_storage[:] = orig_indices
-                
-                #assert np.all(val_i_storage == out)
                 
                 
-                #assert pos_buff==i and pos_j==j
                 #assert pos_buff + pos_j == il
                 #assert np.all(val_i_storage[1:] >= val_i_storage[:-1])
-                val_i_storage.flush()
-                ind_i_storage.flush()
+                del val_i_storage # flush and destroy
+                del ind_i_storage
+                del val_buff
+                del ind_buff
+                del val_j_storage
+                del ind_j_storage
                 
                 offset_i += il
                 offset_j += pos_j
@@ -329,6 +301,8 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             flag = flag[:keep]
             
             (val_storage[:keep], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
+            del val_storage # flush and release resource
+            del ind_storage
             
             k += keep
             rem -= keep
@@ -339,7 +313,8 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     #flag = np.concatenate((val_storage[1:] != val_storage[:-1], [True]))
     ind_storage = get_ind_storage(offset=k, size=rem)
     (val_storage[:], current_rank) = calc_fractional_ranks(ind_storage, flag, begin=current_rank)
-    
+    del val_storage # flush and release
+    del ind_storage
     
     # output array
     out = np.empty(size, dtype=np.double)
@@ -353,6 +328,8 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
             ind_storage = get_ind_storage(offset=k, size=l)
             
             out[ind_storage] = val_storage
+            del val_storage
+            del ind_storage
             
             k += l
             rem -= l
@@ -379,14 +356,15 @@ def iapply_func_chunk(out, filename, fun, chunk_size=None):
     if chunk_size is not None:
         while rem > chunk_size:
             storage = get_storage(offset=k, size=chunk_size)
-            
             out[k:k+chunk_size] = fun(out[k:k+chunk_size], storage)
+            del storage
             
             k += chunk_size
             rem -= chunk_size
     
     storage = get_storage(offset=k, size=rem)
     out[k:] = fun(out[k:], storage)
+    del storage
     
     f.close()
     
