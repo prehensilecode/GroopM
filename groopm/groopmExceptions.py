@@ -54,6 +54,7 @@ __status__ = "Released"
 class GMClusterException(BaseException): pass
 class StopClusterException(GMClusterException): pass
 class SavedDistancesInvalidNumberException(GMClusterException): pass
+class CacheUnavailableException(GMClusterException): pass
 
 #------------------------------------------------------------------------------
 # BIN MANAGER

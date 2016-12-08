@@ -1,0 +1,1 @@
+/srv/home/uqtlambe/code/groopm/contig_sample.sh /srv/projects/paperpalooza/assemblies/5_all_in_after3nextseq19/5_all_in_after3nextseq19.fa <(cat /srv/projects/abisko/tim/lineages/T6_paperpalooza_assembly_5_singlem/lineages.txt /srv/projects/abisko/tim/lineages/T1_paperpalooza_assembly_5_universal_37/lineages.txt)

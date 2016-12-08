@@ -61,6 +61,7 @@ from binManager import BinManager
 from classification import BinClassifier
 from data3 import ContigParser, MappingParser
 from utils import makeSurePathExists
+from cluster import MarkerCheckTreePrinter
 import distance
 import hierarchy
 
@@ -198,7 +199,7 @@ class BinExtractor:
 
         bam_parser.extract(threads=threads,
                            verbose=verbose)
-                           
+
                            
 class MarkerExtractor:
     def __init__(self,
@@ -217,12 +218,56 @@ class MarkerExtractor:
                                  loadBins=True,
                                  loadMarkers=True,
                                  loadTaxstrings=True,
+                                 loadReachability=True,
                                  minLength=cutoff,
                                  bids=[0] if removeBins else bids,
                                  removeBins=removeBins,
                                 )
         
     def extractMappingInfo(self,
+                           timer,
+                           bids=[],
+                           prefix='',
+                           separator='\t',
+                           cutoff=0
+                           ):
+        """Extract markers from bins and write to file"""
+        if prefix is None or prefix == '':
+            prefix=os.path.basename(self.dbFileName) \
+                            .replace(".gm", "") \
+                            .replace(".sm", "")
+        
+        profile = self.loadProfile(timer, bids, cutoff)
+        bm = BinManager(profile)
+        mt = MarkerCheckTreePrinter(profile)
+        
+        # now print out the marker info
+        print "Writing files"
+        for bid in bm.getBids():
+            file_name = os.path.join(self._outDir, "%s_bin_%d.txt" % (prefix, bid))
+            
+            bin_indices = bm.getBinIndices([bid])
+            idx = np.flatnonzero(np.in1d(profile.mapping.rowIndices, bin_indices))
+            
+            labels = profile.mapping.markerNames[idx]
+            cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
+            taxstrings = profile.mapping.taxstrings[idx]
+            
+            try:
+                with open(file_name, 'w') as f:
+                    #labels and lineages
+                    f.write('#info table\n%s\n' % separator.join(['label', 'taxonomy', 'contig_name']))
+                    for (label, taxstring, cname) in zip(labels, taxstrings, cnames):
+                        f.write('%s\n' % separator.join([label, '\'%s\'' % taxstring, cname]))
+                    
+                    #distance table
+                    f.write('\n#marker tree\n')
+                    f.write(mt.printTree(profile.mapping.rowIndices[idx], leaves_list=bin_indices))
+            except:
+                print "Could not open file for writing:",file_name,sys.exc_info()[0]
+                raise
+                
+    def extractMappingInfo_(self,
                            timer,
                            bids=[],
                            prefix='',
@@ -266,7 +311,6 @@ class MarkerExtractor:
             except:
                 print "Could not open file for writing:",file_name,sys.exc_info()[0]
                 raise
-    
     
                            
 class BinStatsDumper:

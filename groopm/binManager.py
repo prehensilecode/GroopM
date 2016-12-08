@@ -114,7 +114,7 @@ class BinManager:
         if binIds is None:
             binIds = self.profile.binIds
         return sorted(set(binIds).difference([0]))
-        
+    
     def getBinStats(self, binIds=None):
         if binIds is None:
             binIds = self.profile.binIds
@@ -154,7 +154,7 @@ class BinManager:
             if len(row_indices) > 1:
                 cov_stds.append(covs.std(axis=1, ddof=1))
             else:
-                covs_stds.append(np.full(covs.shape[0], np.nan))
+                cov_stds.append(np.full(covs.shape[0], np.nan))
             
             # taxonomic tag
             mapping_indices = np.flatnonzero(np.in1d(self.profile.mapping.rowIndices, row_indices))

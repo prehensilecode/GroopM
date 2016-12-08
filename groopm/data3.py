@@ -1101,11 +1101,22 @@ class DataManager:
             h5file.rename_node(meta_group, "meta", "tmp_meta", overwrite=True)
             
             # remove old tables
-            h5file.remove_node(profile_group, "kpca")
-            h5file.remove_node(profile_group, "transCoverage")
-            
-            h5file.remove_node(meta_group, "kpca_variance")
-            h5file.remove_node(meta_group, "transCoverageCorners")
+            try:
+                h5file.remove_node(profile_group, "kpca")
+            except:
+                pass
+            try:
+                h5file.remove_node(profile_group, "transCoverage")
+            except:
+                pass
+            try:
+                h5file.remove_node(meta_group, "kpca_variance")
+            except:
+                pass
+            try:
+                h5file.remove_node(meta_group, "transCoverageCorners")
+            except:
+                pass
             
         # update the formatVersion field and we're done
         
