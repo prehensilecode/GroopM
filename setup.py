@@ -1,4 +1,6 @@
 from distutils.core import setup
+from Cython.Build import cythonize
+import numpy as np
 
 setup(
     name='GroopM',
@@ -17,4 +19,6 @@ setup(
         "matplotlib >= 1.3.0",
         "tables >= 3.2.0"
     ],
+    include_dirs = [np.get_include()],
+    ext_modules = cythonize("groopm/stream_ext.pyx"), 
 )

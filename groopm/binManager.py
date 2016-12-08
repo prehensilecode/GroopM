@@ -49,6 +49,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import numpy as np
 
 # GroopM imports
+from classification import BinClassifier
 from groopmExceptions import BinNotFoundException
 
 np.seterr(all='raise')
@@ -78,6 +79,12 @@ class BinStats:
         `GCMeans[i]` is the mean GC % in `i`th bin.
     GCStdDevs: ndarray
         `GCStdDevs[i]` is the standard deviation in GC % in `i`th bin.
+    covMeans: ndarray
+        `covMeans[i, j]` is the mean contig coverage of bin `i` in stoit `j`.
+    covStdDevs: ndarray
+        `covStdDevs[i, j]` is the standard devisation of coverage for bin `i` in stoit `j`.
+    tags: ndarray
+        `tags[i]` is a string summarising the taxonomic information of marker genes in bin `i`.
     """
     pass
     
@@ -107,7 +114,7 @@ class BinManager:
         if binIds is None:
             binIds = self.profile.binIds
         return sorted(set(binIds).difference([0]))
-        
+    
     def getBinStats(self, binIds=None):
         if binIds is None:
             binIds = self.profile.binIds
@@ -118,6 +125,11 @@ class BinManager:
         length_ranges = []
         gc_means = []
         gc_stds = []
+        cov_means = []
+        cov_stds = []
+        tags = []
+        
+        bc = BinClassifier(self.profile.mapping)
         for bid in bids:
             row_indices = np.flatnonzero(binIds == bid)
             num_contigs.append(len(row_indices))
@@ -136,6 +148,19 @@ class BinManager:
             else:
                 gc_stds.append(np.nan)
             
+            # coverages
+            covs = self.profile.covProfiles[row_indices]
+            cov_means.append(covs.mean(axis=1))
+            if len(row_indices) > 1:
+                cov_stds.append(covs.std(axis=1, ddof=1))
+            else:
+                cov_stds.append(np.full(covs.shape[0], np.nan))
+            
+            # taxonomic tag
+            mapping_indices = np.flatnonzero(np.in1d(self.profile.mapping.rowIndices, row_indices))
+            tag = bc.consensusTag(mapping_indices)
+            tags.append(tag)
+            
         out = BinStats()
         out.bids = np.array(bids)
         out.sizes = np.array(sizes)
@@ -144,6 +169,9 @@ class BinManager:
         out.lengthRanges = np.array(length_ranges)
         out.GCMeans = np.array(gc_means)
         out.GCStdDevs = np.array(gc_stds)
+        out.covMeans = np.array(cov_means)
+        out.covStdDevs = np.array(cov_stds)
+        out.tags = np.array(tags)
         
         return out
         

@@ -51,6 +51,7 @@ __status__ = "Development"
 import argparse
 import sys
 import os
+import re
 
 import groopm
 from groopm.groopmExceptions import ExtractModeNotAppropriateException
@@ -185,6 +186,15 @@ class parse_command_configure:
             threads=options.threads)
         if not success:
             print dbFileName,"not updated"
+
+def readable_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        for (i, suffix) in enumerate("KMGTPEZY"):
+            if s.endswith(suffix):
+                return int(s[:-len(suffix)])*1000**(i+1)
+        raise        
             
 class core_command_configure:
     description = "Load saved data and make bin cores"
@@ -195,12 +205,12 @@ class core_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
-        parser.add_argument('-s', '--size', type=int, help="cumulative size of contigs which define a core, regardless of number of contigs (default if --points unspecified: %d)" % self.DEFAULT_SIZE)
-        parser.add_argument('-P', '--points', type=int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
+        parser.add_argument('-s', '--size', type=readable_int, help="cumulative size of contigs which define a core, regardless of number of contigs (default if --points unspecified: %d)" % self.DEFAULT_SIZE)
+        parser.add_argument('-P', '--points', type=readable_int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
         parser.add_argument('-f', '--force', action="store_true", help="overwrite existing DB file without prompting")
-        #group = parser.add_mutually_exclusive_group()
-        #group.add_argument('--save_dists', default="", help="prefix to use for save distance files")
-        #group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files to reuse")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--save_dists', action="store_true", help="save distance files")
+        group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
         parser.set_defaults(run=self)
     
     def __call__(self, options):
@@ -216,8 +226,8 @@ class core_command_configure:
                minLength=options.cutoff,
                minSize=options.size,
                minPts=options.points,
-               #savedDistsPrefix=options.use_saved_dists if options.use_saved_dists!="" else options.save_dists,
-               #keepDists=options.use_saved_dists!="" or options.save_dists!="",
+               savedDistsPrefix=options.use_saved_dists,
+               keepDists=options.use_saved_dists!="" or options.save_dists,
                force=options.force)
         
         
@@ -327,7 +337,7 @@ class dump_command_configure:
     
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
+        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [%s] (or [%s] with --markers) or just use 'all'" % (", ".join(self.DUMP_FIELDS), ", ".join(self.DUMP_MARKER_FIELDS)))
         parser.add_argument('-o', '--outfile', default="GMdump.csv", help="write data to this file")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
@@ -350,7 +360,7 @@ class dump_command_configure:
             for field in fields:
                 if field not in allowable_fields:
                     print "ERROR: field '%s' not recognised. Allowable fields are:" % field
-                    print '\t',",".join(allowable_fields)
+                    print '\t',", ".join(allowable_fields)
                     return
         if options.separator == '\\t':
             separator = '\t'
@@ -375,19 +385,34 @@ class dump_command_configure:
 class binstat_command_configure:
     description="Write bin stats to text file"
     
+    DUMP_FIELDS = ['bins', 'points', 'sizes', 'lengths', 'gc', 'coverage', 'tags']
+    
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-f', '--fields', default="bins,points,sizes,tags", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
         parser.add_argument('-o', '--outfile', default="binstat.csv", help="write data to this file")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
         parser.set_defaults(run=self)
 
-    def __call__(_self, options):
+    def __call__(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in bin stats dumping mode..." % __version__
         print "*******************************************************************************"
 
+        # prep fields. Do this first cause users are mot likely to
+        # mess this part up!
+        allowable_fields = self.DUMP_FIELDS
+        fields = options.fields.split(',')
+        if fields == ['all']:
+            fields = allowable_fields
+        else:
+            for field in fields:
+                if field not in allowable_fields:
+                    print "ERROR: field '%s' not recognised. Allowable fields are:" % field
+                    print '\t',",".join(allowable_fields)
+                    return
         if options.separator == '\\t':
             separator = '\t'
         else:
@@ -395,6 +420,7 @@ class binstat_command_configure:
 
         bm = groopm.BinStatsDumper(options.dbname)
         bm.dumpBinStats(timer,
+                        fields,
                         options.outfile,
                         separator,
                         not options.no_headers)
@@ -405,7 +431,7 @@ class import_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
-        parser.add_argument('infile', help="file with data to import")
+        parser.add_argument('infile', help="file with contig id and bin label columns to import")
         parser.add_argument('-s', '--separator', default=",", help="data separator")
         parser.set_defaults(run=self)
 
