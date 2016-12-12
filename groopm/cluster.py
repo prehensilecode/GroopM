@@ -90,8 +90,8 @@ class CoreCreator:
             minLength,
             minSize,
             minPts,
-            #savedDistsPrefix="",
-            #keepDists=False,
+            savedDistsPrefix="",
+            keepDists=False,
             force=False):
         # check that the user is OK with nuking stuff...
         if not force and not self._pm.promptOnOverwrite():
@@ -354,8 +354,8 @@ class StreamingProfileDistanceEngine:
         kmer_rank_file = self._store.getWorkingFile()
         self._cacher.getKmerDists().tofile(kmer_rank_file)
         rank_norms = self._cacher.getCovDists()
-        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.mul, chunk_size=self._size//2)
-        stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.add, chunk_size=self._size//2)
+        stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.mul, chunk_size=self._size//2)
+        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.add, chunk_size=self._size//2)
         #stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._size)
         self._store.cleanupWorkingFiles()
         return rank_norms
