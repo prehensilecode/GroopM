@@ -463,6 +463,9 @@ class plot_command_configure:
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--save_dists', action="store_true", help="save distance files")
+        group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
         parser.set_defaults(run=self)
 
     def __call__(_self, options):
@@ -478,7 +481,9 @@ class plot_command_configure:
                 bids=options.bids,
                 origin=options.origin,
                 colorMap=options.colormap,
-                prefix=options.prefix)
+                prefix=options.prefix,
+                savedDistsPrefix=options.use_saved_dists,
+                keepDists=options.use_saved_dists!="" or options.save_dists)
                    
                            
 class reach_command_configure:

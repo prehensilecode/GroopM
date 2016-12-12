@@ -66,7 +66,6 @@ np.seterr(all='raise')
 _dbytes = np.dtype(np.double).itemsize
 _ibytes = np.dtype(np.int).itemsize
 
-
 def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
     X = np.asarray(X)
     n = X.shape[0]
@@ -78,7 +77,7 @@ def pdist_chunk(X, filename, chunk_size=None, metric="euclidean"):
         f.seek(bytes-1,0)
         f.write(np.compat.asbytes("\0"))
         f.flush()
-    
+        
         row = 0
         k = 0
         rem = size
@@ -336,37 +335,49 @@ def argrank_chunk(indices_filename, values_filename, weight_fun=None, chunk_size
     
     find.close()
     fval.close()
-    return (out, current_rank)
+    return out
     
     
-def iapply_func_chunk(out, filename, fun, chunk_size=None):
-    size = out.shape[0]
-    bytes = size*_dbytes
+def iapply_func_chunk(outfilename, infilename, fun, chunk_size=None):
+    fin = open(infilename, 'rb')
+    fin.seek(0,2)
+    bytes = fin.tell()
+    if (bytes % _dbytes):
+        raise ValueError("Size of available data is not multiple of data-type size.")
+    size = bytes // _dbytes
     
-    f = open(filename, 'rb')
-    f.seek(0,2)
-    if f.tell() != bytes:
+    fout = open(outfilename, 'r+b')
+    fout.seek(0,2)
+    if fout.tell() != bytes:
         raise ValueError("The size of input file must be equal to output array store.")
     
-    def get_storage(offset, size):
-        return np.memmap(f, dtype=np.double, mode="r", offset=offset*_dbytes, shape=(size,))
+    def get_input_storage(offset, size):
+        return np.memmap(fin, dtype=np.double, mode="r", offset=offset*_dbytes, shape=(size,))
+        
+    def get_output_storage(offset, size):
+        return np.memmap(fout, dtype=np.double, mode="r+", offset=offset*_dbytes, shape=(size,))
         
     k = 0
     rem = size
     if chunk_size is not None:
         while rem > chunk_size:
-            storage = get_storage(offset=k, size=chunk_size)
-            out[k:k+chunk_size] = fun(out[k:k+chunk_size], storage)
-            del storage
+            input_storage = get_input_storage(offset=k, size=chunk_size)
+            output_storage = get_output_storage(offset=k, size=chunk_size)
+            output_storage[:] = fun(output_storage, input_storage)
+            del input_storage
+            del output_storage
             
             k += chunk_size
             rem -= chunk_size
     
-    storage = get_storage(offset=k, size=rem)
-    out[k:] = fun(out[k:], storage)
-    del storage
+    input_storage = get_input_storage(offset=k, size=rem)
+    output_storage = get_output_storage(offset=k, size=rem)
+    output_storage[:] = fun(output_storage, input_storage)
+    del input_storage
+    del output_storage
     
-    f.close()
+    fin.close()
+    fout.close()
     
         
     

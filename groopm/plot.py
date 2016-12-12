@@ -67,8 +67,9 @@ from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, CachingProfileDistanceEngine as ProfileDistanceEngine, MarkerCheckCQE, MarkerCheckFCE
+from cluster import ClassificationClusterEngine, ProfileDistanceEngine, StreamingProfileDistanceEngine, FileCacher, MarkerCheckCQE, MarkerCheckFCE
 from classification import BinClassifier
+from data3 import KmerSigEngine
 import hierarchy
 
 np.seterr(all='raise')
@@ -92,8 +93,7 @@ class BinPlotManager:
         return self._pm.loadData(timer,
                                  loadMarkers=False,
                                  loadBins=True,
-                                 removeBins=True,
-                                 bids=[0])
+                                 loadReachability=True)
 
     def plot(self,
              timer,
@@ -101,6 +101,8 @@ class BinPlotManager:
              origin="mediod",
              colorMap="HSV",
              prefix="BIN",
+             savedDistsPrefix="",
+             keepDists=False
             ):
             
         profile = self.loadProfile(timer)
@@ -111,9 +113,14 @@ class BinPlotManager:
         else:
             bm.checkBids(bids)
 
+        if savedDistsPrefix=="":
+            savedDistsPrefix = self._dbFileName+".dists"
+        cacher = FileCacher(savedDistsPrefix)
+
         print "    Initialising plotter"
-        fplot = BinDistancePlotter(profile, colourmap=colorMap)
+        fplot = BinDistancePlotter(profile, colourmap=colorMap, cacher=cacher)
         print "    %s" % timer.getTimeStamp()
+        
         
         for bid in bids:
             fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
@@ -124,7 +131,14 @@ class BinPlotManager:
                        
             if fileName=="":
                 break
-        print "    %s" % timer.getTimeStamp()
+        if self._outDir is not None:
+            print "    %s" % timer.getTimeStamp()
+        
+        if not keepDists:
+            try:
+                cacher.cleanup()
+            except:
+                raise
 
         
 class ReachabilityPlotManager:
@@ -699,15 +713,28 @@ class TreePlotter:
   
 # Bin plotters
 class BinDistancePlotter:
-    def __init__(self, profile, colourmap='HSV'):
+    def __init__(self, profile, colourmap='HSV', cacher=None):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
-        de = ProfileDistanceEngine()
-        (self._x, self._y, self._w) = de.makeScaledRanks(self._profile.covProfiles,
-                                                         self._profile.kmerSigs,
-                                                         self._profile.contigLengths
-                                                        )
-
+        if cacher is None:
+            de = ProfileDistanceEngine()
+        else:
+            de = StreamingProfileDistanceEngine(cacher=cacher, size=int(2**31-1))
+        vec = np.array(KmerSigEngine().calculateGCVector())
+        projs = np.outer(self._profile.kmerSigs.dot(vec) / vec.dot(vec), vec)
+        kmerSigs = self._profile.kmerSigs - projs
+        (self._x, self._y, self._z, self._c) = de.makeScaledRanks(self._profile.covProfiles,
+                                                                  kmerSigs,
+                                                                  self._profile.contigLengths,
+                                                                  self._profile.normCoverages[:, 0],
+                                                                  self._profile.contigGCs,
+                                                                 )
+        scale_factor = 2. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
+        self._x *= scale_factor
+        self._y *= scale_factor
+        self._z *= scale_factor
+        self._c *= scale_factor
+        
     def plot(self,
              bid,
              origin,
@@ -720,8 +747,10 @@ class BinDistancePlotter:
             bin_condensed_indices = distance.condensed_index(n, bin_indices[i], bin_indices[j])
             x = self._x[bin_condensed_indices]
             y = self._y[bin_condensed_indices]
-            w = self._w[bin_condensed_indices]
-            origin = distance.mediod(np_linalg.norm((x, y), axis=0) * w)
+            z = self._z[bin_condensed_indices]
+            c = self._c[bin_condensed_indices]
+            w = self._profile.contigLengths[bin_indices[i]]*self._profile.contigLengths[bin_indices[j]]
+            origin = distance.mediod((x**2 + y**2 + z**2 + c**2)**(1./2) * w)
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
         elif origin=="max_length":
@@ -736,15 +765,21 @@ class BinDistancePlotter:
         x[not_bi] = self._x[condensed_indices]
         y = np.zeros(n, dtype=float)
         y[not_bi] = self._y[condensed_indices]
-        c = sp_distance.cdist(self._profile.contigGCs[[bi], None], self._profile.contigGCs[:, None], lambda a, b: (a+b)/2)[0]
-        h = sp_distance.cdist(self._profile.binIds[[bi], None], self._profile.binIds[:, None], lambda a, b: a!=0 and a==b)[0].astype(bool)
-        fplot = FeaturePlotter(x,
+        z = np.zeros(n, dtype=float)
+        z[not_bi] = self._z[condensed_indices]
+        c = np.zeros(n, dtype=float)
+        c[not_bi] = self._c[condensed_indices]
+        #c = self._profile.contigGCs
+        h = np.logical_and(self._profile.binIds == self._profile.binIds[bi], self._profile.binIds[bi] != 0)
+        #h = np.logical_and(h, False)
+        fplot = SurfacePlotter(x,
                                y,
+                               z=z,
                                colours=c,
                                sizes=20,
                                edgecolours=np.where(h, 'r', 'k'),
                                colourmap=self._colourmap,
-                               xlabel="cov", ylabel="kmer")
+                               xlabel="cov_angle", ylabel="kmer/gc", zlabel="cov_norm")
         fplot.plot(fileName)
         
 
