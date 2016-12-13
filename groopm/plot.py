@@ -67,7 +67,15 @@ from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import ClassificationClusterEngine, ProfileDistanceEngine, StreamingProfileDistanceEngine, FileCacher, MarkerCheckCQE, MarkerCheckFCE
+from cluster import (ClassificationClusterEngine,
+                     ProfileDistanceEngine, 
+                     ProfileDistanceEngine4D,
+                     StreamingProfileDistanceEngine,
+                     StreamingProfileDistanceEngine4D,
+                     FileCacher,
+                     MarkerCheckCQE,
+                     MarkerCheckFCE
+                    )
 from classification import BinClassifier
 from data3 import KmerSigEngine
 import hierarchy
@@ -102,7 +110,8 @@ class BinPlotManager:
              colorMap="HSV",
              prefix="BIN",
              savedDistsPrefix="",
-             keepDists=False
+             keepDists=False,
+             use_dims=True
             ):
             
         profile = self.loadProfile(timer)
@@ -118,7 +127,10 @@ class BinPlotManager:
         cacher = FileCacher(savedDistsPrefix)
 
         print "    Initialising plotter"
-        fplot = BinDistancePlotter(profile, colourmap=colorMap, cacher=cacher)
+        if use_dims:
+            fplot = BinDistancePlotter4D(profile, colourmap=colorMap, cacher=cacher)
+        else:
+            fplot = BinDistancePlotter(profile, colourmap=colorMap, cacher=cacher)
         print "    %s" % timer.getTimeStamp()
         
         
@@ -720,11 +732,62 @@ class BinDistancePlotter:
             de = ProfileDistanceEngine()
         else:
             de = StreamingProfileDistanceEngine(cacher=cacher, size=int(2**31-1))
-        vec = np.array(KmerSigEngine().calculateGCVector())
-        projs = np.outer(self._profile.kmerSigs.dot(vec) / vec.dot(vec), vec)
-        kmerSigs = self._profile.kmerSigs - projs
+        (self._x, self._y) = de.makeScaledRanks(self._profile.covProfiles,
+                                                                  self._profile.kmerSigs,
+                                                                  self._profile.contigLengths
+                                                                 )
+        scale_factor = 2. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
+        self._x *= scale_factor
+        self._y *= scale_factor
+        
+    def plot(self,
+             bid,
+             origin,
+             fileName=""):
+        
+        n = self._profile.numContigs
+        bin_indices = BinManager(self._profile).getBinIndices(bid)
+        if origin=="mediod":
+            (i, j) = distance.pairs(len(bin_indices))
+            bin_condensed_indices = distance.condensed_index(n, bin_indices[i], bin_indices[j])
+            x = self._x[bin_condensed_indices]
+            y = self._y[bin_condensed_indices]
+            origin = distance.mediod((x**2 + y**2)**(1./2))
+        elif origin=="max_coverage":
+            origin = np.argmax(self._profile.normCoverages[bin_indices])
+        elif origin=="max_length":
+            origin = np.argmax(self._profile.contigLengths[bin_indices])
+        else:
+            raise ValueError("Invalid `origin` argument parameter value: `%s`" % origin)
+        
+        bi = bin_indices[origin]
+        not_bi = np.array([i for i in range(n) if i!=bi])
+        condensed_indices = distance.condensed_index(n, bi, not_bi)
+        x = np.zeros(n, dtype=float)
+        x[not_bi] = self._x[condensed_indices]
+        y = np.zeros(n, dtype=float)
+        y[not_bi] = self._y[condensed_indices]
+        c = self._profile.contigGCs
+        h = np.logical_and(self._profile.binIds == self._profile.binIds[bi], self._profile.binIds[bi] != 0)
+        fplot = FeaturePlotter(x,
+                               y,
+                               colours=c,
+                               sizes=20,
+                               edgecolours=np.where(h, 'r', 'k'),
+                               colourmap=self._colourmap,
+                               xlabel="cov", ylabel="kmer")
+        fplot.plot(fileName)
+        
+class BinDistancePlotter4D:
+    def __init__(self, profile, colourmap='HSV', cacher=None):
+        self._profile = profile
+        self._colourmap = getColorMap(colourmap)
+        if cacher is None:
+            de = ProfileDistanceEngine4D()
+        else:
+            de = StreamingProfileDistanceEngine4D(cacher=cacher, size=int(2**31-1))
         (self._x, self._y, self._z, self._c) = de.makeScaledRanks(self._profile.covProfiles,
-                                                                  kmerSigs,
+                                                                  self._profile.kmerSigs,
                                                                   self._profile.contigLengths,
                                                                   self._profile.normCoverages[:, 0],
                                                                   self._profile.contigGCs,
@@ -749,7 +812,6 @@ class BinDistancePlotter:
             y = self._y[bin_condensed_indices]
             z = self._z[bin_condensed_indices]
             c = self._c[bin_condensed_indices]
-            #w = self._profile.contigLengths[bin_indices[i]]*self._profile.contigLengths[bin_indices[j]]
             origin = distance.mediod((x**2 + y**2 + z**2 + c**2)**(1./2))
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
@@ -769,9 +831,7 @@ class BinDistancePlotter:
         z[not_bi] = self._z[condensed_indices]
         c = np.zeros(n, dtype=float)
         c[not_bi] = self._c[condensed_indices]
-        #c = self._profile.contigGCs
         h = np.logical_and(self._profile.binIds == self._profile.binIds[bi], self._profile.binIds[bi] != 0)
-        #h = np.logical_and(h, False)
         fplot = SurfacePlotter(x,
                                y,
                                z=z,
