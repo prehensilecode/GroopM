@@ -749,8 +749,8 @@ class BinDistancePlotter:
             y = self._y[bin_condensed_indices]
             z = self._z[bin_condensed_indices]
             c = self._c[bin_condensed_indices]
-            w = self._profile.contigLengths[bin_indices[i]]*self._profile.contigLengths[bin_indices[j]]
-            origin = distance.mediod((x**2 + y**2 + z**2 + c**2)**(1./2) * w)
+            #w = self._profile.contigLengths[bin_indices[i]]*self._profile.contigLengths[bin_indices[j]]
+            origin = distance.mediod((x**2 + y**2 + z**2 + c**2)**(1./2))
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
         elif origin=="max_length":
