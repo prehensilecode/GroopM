@@ -243,7 +243,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             minWt = None
         core_dists = distance.core_distance(hybrid_ranks, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
     
-        return (rank_norms, core_dists)
+        return (hybrid_ranks, core_dists)
     
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
@@ -511,11 +511,11 @@ class StreamingProfileDistanceEngine4D:
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
         return (self._cacher.getCovAngleDists(), self._cacher.getKmerProjDists(), self._cacher.getCovNormDists(), self._cacher.getGCDists())
     
-    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, n=2):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, mode="norm"):
         """Compute norms in {coverage rank space x kmer rank space}
         """
         if mode=="norm":
-            fun = lambda a, b: (a**n+b**n)**(1./n)
+            fun = lambda a, b: (a**2+b**2)**(1./2)
         elif mode=="prod":
             fun = operator.mul
         elif mode=="sum":
