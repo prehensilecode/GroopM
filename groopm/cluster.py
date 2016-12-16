@@ -60,7 +60,6 @@ import tempfile
 
 # local imports
 import distance
-import recruit
 import hierarchy
 import stream
 from profileManager import ProfileManager
