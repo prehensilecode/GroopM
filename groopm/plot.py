@@ -189,7 +189,8 @@ class ReachabilityPlotManager:
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
         fplot.plot(fileName=fileName, bids=bids)
                    
-        print "    %s" % timer.getTimeStamp()
+        if self._outDir is not None:
+            print "    %s" % timer.getTimeStamp()
         
         
 class TreePlotManager:
@@ -428,24 +429,10 @@ class ProfileReachabilityPlotter:
              highlight="bins",
              fileName=""):
                  
-        #de = ProfileDistanceEngine(distStore="xx.dists")
-        #(Y, w) = de.makeNormRanks(self._profile.covProfiles,
-        #                          self._profile.kmerSigs,
-        #                          self._profile.contigLengths)
-        #n = self._profile.numContigs
-        #v = np.full(n, self._profile.contigLengths.min())
-        #minWt = np.maximum(1e6 - v, 0)*v
-        #yy = distance.core_distance(Y, w, minWt=minWt, minPts=None)
-        #(o, _h) = distance.reachability_order(Y, yy)
-        #Y **= 2
-        #Y *= np.pi / 4
-        #fY = Y * w.sum() / distance.iargrank(Y.copy(), weights=w, axis=None)
-        #h = np.array([1]+[fY[distance.condensed_index(n, i, j)] for (i, j) in zip(o[:-1], o[1:])])
-            
         n = 0
         for i in range(self._profile.numContigs):
             n += self._profile.contigLengths[i]*self._profile.contigLengths[i+1:].sum()
-        h = distance.rank_product_test(self._profile.reachDists, n, 2)
+        h = self._profile.reachDists
         o = self._profile.reachOrder
         if label=="count":
             iloc = dict(zip(o, range(len(o))))

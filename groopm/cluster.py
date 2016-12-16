@@ -242,7 +242,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         else:
             minWt = None
         core_dists = distance.core_distance(hybrid_ranks, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
-    
+        
         return (hybrid_ranks, core_dists)
     
     def fcluster(self, o, d):
@@ -515,11 +515,11 @@ class StreamingProfileDistanceEngine4D:
         """Compute norms in {coverage rank space x kmer rank space}
         """
         if mode=="norm":
-            fun = lambda a, b: (a**2+b**2)**(1./2)
+            fold = lambda a, b: (a**2+b**2)**(1./2)
         elif mode=="prod":
-            fun = operator.mul
+            fold = operator.mul
         elif mode=="sum":
-            fun = operator.add
+            fold = operator.add
         else:
             raise ValueError("Input parameter `mode` value must be one of 'norm', 'prod' or 'sum'. Found '%s'." % mode)
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
@@ -527,11 +527,11 @@ class StreamingProfileDistanceEngine4D:
         self._cacher.getCovAngleDists().tofile(norm_file)
         tmp_file = self._store.getWorkingFile()
         self._cacher.getKmerProjDists().tofile(tmp_file)
-        stream.iapply_func_chunk(norm_file, tmp_file, fun, chunk_size=self._size)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
         self._cacher.getCovNormDists().tofile(tmp_file)
-        stream.iapply_func_chunk(norm_file, tmp_file, fun, chunk_size=self._size)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
         self._cacher.getGCDists().tofile(tmp_file)
-        stream.iapply_func_chunk(norm_file, tmp_file, fun, chunk_size=self._size)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
         rank_norms = np.fromfile(norm_file)
         self._store.cleanupWorkingFiles()
         return rank_norms
