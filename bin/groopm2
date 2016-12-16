@@ -1,0 +1,676 @@
+#!/usr/bin/env python
+###############################################################################
+#                                                                             #
+#    groopm                                                                   #
+#                                                                             #
+#    Entry point. See groopm/groopm.py for internals                          #
+#                                                                             #
+#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
+#                                                                             #
+###############################################################################
+#                                                                             #
+#          .d8888b.                                    888b     d888          #
+#         d88P  Y88b                                   8888b   d8888          #
+#         888    888                                   88888b.d88888          #
+#         888        888d888 .d88b.   .d88b.  88888b.  888Y88888P888          #
+#         888  88888 888P"  d88""88b d88""88b 888 "88b 888 Y888P 888          #
+#         888    888 888    888  888 888  888 888  888 888  Y8P  888          #
+#         Y88b  d88P 888    Y88..88P Y88..88P 888 d88P 888   "   888          #
+#          "Y8888P88 888     "Y88P"   "Y88P"  88888P"  888       888          #
+#                                             888                             #
+#                                             888                             #
+#                                             888                             #
+#                                                                             #
+###############################################################################
+#                                                                             #
+#    This program is free software: you can redistribute it and/or modify     #
+#    it under the terms of the GNU General Public License as published by     #
+#    the Free Software Foundation, either version 3 of the License, or        #
+#    (at your option) any later version.                                      #
+#                                                                             #
+#    This program is distributed in the hope that it will be useful,          #
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#    GNU General Public License for more details.                             #
+#                                                                             #
+#    You should have received a copy of the GNU General Public License        #
+#    along with this program. If not, see <http://www.gnu.org/licenses/>.     #
+#                                                                             #
+###############################################################################
+
+__author__ = "Michael Imelfort, Tim Lamberton"
+__copyright__ = "Copyright 2012-2015"
+__credits__ = ["Michael Imelfort", "Tim Lamberton"]
+__license__ = "GPL3"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
+__status__ = "Development"
+
+###############################################################################
+
+import argparse
+import sys
+import os
+import re
+
+import groopm
+from groopm.groopmExceptions import ExtractModeNotAppropriateException
+from groopm import __version__
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+
+#------------------------------------------------------------------------------
+#Helpers
+
+class CustomHelpFormatter(argparse.HelpFormatter):
+    def _split_lines(self, text, width):
+        return text.splitlines()
+
+    def _get_help_string(self, action):
+        h = action.help
+        if '%(default)' not in action.help:
+            if action.default != '' and \
+               action.default != [] and \
+               action.default != None \
+               and action.default != False:
+                if action.default is not argparse.SUPPRESS:
+                    defaulting_nargs = [argparse.OPTIONAL,
+                                        argparse.ZERO_OR_MORE]
+
+                    if action.option_strings or action.nargs in defaulting_nargs:
+
+                        if '\n' in h:
+                            lines = h.splitlines()
+                            lines[0] += ' (default: %(default)s)'
+                            h = '\n'.join(lines)
+                        else:
+                            h += ' (default: %(default)s)'
+        return h
+
+    def _fill_text(self, text, width, indent):
+        return ''.join([indent + line for line in text.splitlines(True)])
+
+        
+class PrintHelpAction(argparse.Action):
+    def __init__(self, nargs=0, *args, **kwargs):
+        argparse.Action.__init__(self, *args, nargs=nargs, **kwargs)
+        
+    def __call__(self, parser, *_args):
+        self.print_help()
+        parser.exit(1)
+       
+    def print_help(_self):
+        print '''\
+
+                             ...::: GroopM :::...
+
+                     Automagical metagenomic binning FTW!
+
+   -------------------------------------------------------------------------
+                                  version: {version}
+   -------------------------------------------------------------------------
+   
+    Typical workflow:
+    
+    groopm parse        -> {parse}
+    groopm core         -> {core}
+    groopm extract      -> {extract}
+    
+    Extra features:
+        
+        Import / Export
+        
+    groopm dump         -> {dump}
+    groopm markers      -> {markers}
+    groopm import       -> {import_}
+    
+        Plotting
+        
+    groopm plot         -> {plot}
+    groopm reach        -> {reach}
+    groopm tree         -> {tree}
+    
+    USE: groopm OPTION -h to see detailed options
+'''.format(
+            version=__version__,
+            parse=parse_command_configure.description,
+            core=core_command_configure.description,
+            extract=extract_command_configure.description,
+            dump=dump_command_configure.description,
+            markers=markers_command_configure.description,
+            import_=import_command_configure.description,
+            plot=plot_command_configure.description,
+            reach=reach_command_configure.description,
+            tree=tree_command_configure.description,
+        )
+
+#------------------------------------------------------------------------------
+#Subcommands
+  
+class parse_command_configure:
+    description="Parse raw data and save to disk"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database being created")
+        parser.add_argument('reference', help="fasta file containing bam reference sequences")
+        parser.add_argument('bamfiles', nargs='+', help="bam files to parse")
+        parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
+        parser.add_argument('--singlem', action="store_true", help="use SingleM to find marker genes in reference contigs")
+        parser.add_argument('--graftm', action="store_true", help="use GraftM to find marker genes in reference contigs")
+        parser.add_argument('--graftm_package_single_copy', default=[], nargs='+', help="use these GraftM packages to find single-copy marker genes")
+        parser.add_argument('-t', '--threads', type=int, default=1, help="number of threads to use during BAM parsing")
+        parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
+        parser.add_argument('-c', '--cutoff', type=int, default=500, help="cutoff contig size during parsing")
+        parser.set_defaults(run=self)
+        
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data parsing mode..." % __version__
+        print "*******************************************************************************"
+        dm = groopm.DataManager()
+                
+        success = dm.createDB(
+            timer,
+            options.bamfiles,
+            options.reference,
+            options.dbname,
+            options.cutoff,
+            #markerFile=options.markerfile,
+            #workingDirectory=working_directory,
+            graftmPackageList=options.graftm_package_single_copy if options.graftm else None,
+            force=options.force,
+            threads=options.threads)
+        if not success:
+            print dbFileName,"not updated"
+
+def readable_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        for (i, suffix) in enumerate("KMGTPEZY"):
+            if s.endswith(suffix):
+                return int(s[:-len(suffix)])*1000**(i+1)
+        raise        
+            
+class core_command_configure:
+    description = "Load saved data and make bin cores"
+    
+    DEFAULT_SIZE = 1000000
+    DEFAULT_POINTS = 20
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
+        parser.add_argument('-s', '--size', type=readable_int, help="cumulative size of contigs which define a core, regardless of number of contigs (default if --points unspecified: %d)" % self.DEFAULT_SIZE)
+        parser.add_argument('-P', '--points', type=readable_int, help="minimum number of contigs which define a core (default if --size unspecified : %d)" % self.DEFAULT_POINTS)
+        parser.add_argument('-f', '--force', action="store_true", help="overwrite existing DB file without prompting")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--save_dists', action="store_true", help="save distance files")
+        group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
+        parser.set_defaults(run=self)
+    
+    def __call__(self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in core creation mode..." % __version__
+        print "*******************************************************************************"
+        cc = groopm.CoreCreator(options.dbname)
+        if options.size is None and options.points is None:
+            options.size = self.DEFAULT_SIZE
+            options.points = self.DEFAULT_POINTS
+        cc.run(timer,
+               minLength=options.cutoff,
+               minSize=options.size,
+               minPts=options.points,
+               savedDistsPrefix=options.use_saved_dists,
+               keepDists=options.use_saved_dists!="" or options.save_dists,
+               force=options.force)
+        
+        
+class extract_command_configure:
+    description = "Extract contigs or reads based on bin affiliations"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('data', nargs='+', help="data file(s) to extract from, bam or fasta")
+        parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
+        parser.add_argument('-m', '--mode', default="contigs", help="what to extract", choices=('contigs','reads'))
+        parser.add_argument('-o', '--out_folder', default="", help="write to this folder (None for current dir)")
+        parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
+        parser.set_defaults(run=self)
+
+        contig_extraction_options=parser.add_argument_group('Contigs mode extraction options')
+        contig_extraction_options.add_argument('-c', '--cutoff', type=int, default=0, help="cutoff contig size (0 for no cutoff)")
+
+        read_extraction_options=parser.add_argument_group('Reads mode extraction options')
+        read_extraction_options.add_argument('--mix_bams', action="store_true", default=False, help="use the same file for multiple bam files")
+        read_extraction_options.add_argument('--mix_groups', action="store_true", default=False, help="use the same files for multiple group groups")
+        read_extraction_options.add_argument('--mix_reads', action="store_true", default=False, help="use the same files for paired/unpaired reads")
+        read_extraction_options.add_argument('--interleave', action="store_true", default=False, help="interleave paired reads in ouput files")
+        read_extraction_options.add_argument('--headers_only', action="store_true", default=False, help="extract only (unique) headers")
+        read_extraction_options.add_argument('--no_gzip', action="store_true", default=False, help="do not gzip output files")
+
+        read_extraction_options.add_argument('--mapping_quality', type=int, default=0, help="mapping quality threshold")
+        read_extraction_options.add_argument('--use_secondary', action="store_true", default=False, help="use reads marked with the secondary flag")
+        read_extraction_options.add_argument('--use_supplementary', action="store_true", default=False, help="use reads marked with the supplementary flag")
+        read_extraction_options.add_argument('--max_distance', type=int, default=1000, help="maximum allowable edit distance from query to reference")
+
+        read_extraction_options.add_argument('-v', '--verbose', action="store_true", default=False, help="be verbose")
+        read_extraction_options.add_argument('-t', '--threads', type=int, default=1, help="maximum number of threads to use")
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in '%s' extraction mode..." % (__version__, options.mode)
+        print "*******************************************************************************"
+        bids = []
+        if options.bids is not None:
+            bids = options.bids
+        bx = groopm.BinExtractor(options.dbname,
+                                 folder=options.out_folder
+                                )
+        if(options.mode=='contigs'):
+            bx.extractContigs(timer,
+                              bids=bids,
+                              fasta=options.data,
+                              prefix=options.prefix,
+                              cutoff=options.cutoff)
+
+        elif(options.mode=='reads'):
+            bx.extractReads(timer,
+                            bids=bids,
+                            bams=options.data,
+                            prefix=options.prefix,
+                            mixBams=options.mix_bams,
+                            mixGroups=options.mix_groups,
+                            mixReads=options.mix_reads,
+                            interleaved=options.interleave,
+                            bigFile=options.no_gzip,
+                            headersOnly=options.headers_only,
+                            minMapQual=options.mapping_quality,
+                            maxMisMatches=options.max_distance,
+                            useSuppAlignments=options.use_supplementary,
+                            useSecondaryAlignments=options.use_secondary,
+                            verbose=options.verbose,
+                            threads=options.threads)
+
+        else:
+            raise ExtractModeNotAppropriateException("mode: "+ options.mode + " is unknown")
+
+                        
+class markers_command_configure:
+    description="Print summary of binned contig marker information to text file"
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
+        parser.add_argument('-o', '--out_folder', default="", help="write to this folder (None for current dir)")
+        parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
+        parser.set_defaults(run=self)
+
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in marker summary mode..." % __version__
+        print "*******************************************************************************"
+        bids = []
+        if options.bids is not None:
+            bids = options.bids
+        mx = groopm.MarkerExtractor(options.dbname,
+                                    folder=options.out_folder
+                                    )
+        mx.extractMappingInfo(timer,
+                              bids=bids,
+                              prefix=options.prefix)
+            
+
+class dump_command_configure:
+    description="Write database to text file"
+    
+    DUMP_FIELDS = ['names', 'sizes', 'gc', 'bins', 'coverage', 'ncoverage', 'mers']
+    DUMP_MARKER_FIELDS = ['contigs', 'markers', 'taxstrings']
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [%s] (or [%s] with --markers) or just use 'all'" % (", ".join(self.DUMP_FIELDS), ", ".join(self.DUMP_MARKER_FIELDS)))
+        parser.add_argument('-o', '--outfile', default="GMdump.csv", help="write data to this file")
+        parser.add_argument('-s', '--separator', default=",", help="data separator")
+        parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
+        parser.add_argument('--markers', action="store_true", help="dump marker hits")
+        parser.set_defaults(run=self)
+
+    def __call__(self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data dumping mode..." % __version__
+        print "*******************************************************************************"
+
+        # prep fields. Do this first cause users are mot likely to
+        # mess this part up!
+        allowable_fields = self.DUMP_MARKER_FIELDS if options.markers else self.DUMP_FIELDS
+        fields = options.fields.split(',')
+        if fields == ['all']:
+            fields = allowable_fields
+        else:
+            for field in fields:
+                if field not in allowable_fields:
+                    print "ERROR: field '%s' not recognised. Allowable fields are:" % field
+                    print '\t',", ".join(allowable_fields)
+                    return
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        dm = groopm.DataManager()
+        if options.markers:
+            dm.dumpMarkers(options.dbname,
+                           fields,
+                           options.outfile,
+                           separator,
+                           not options.no_headers)
+        else:
+            dm.dumpData(options.dbname,
+                        fields,
+                        options.outfile,
+                        separator,
+                        not options.no_headers)
+                    
+
+class binstat_command_configure:
+    description="Write bin stats to text file"
+    
+    DUMP_FIELDS = ['bins', 'points', 'sizes', 'lengths', 'gc', 'coverage', 'tags']
+    
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('-f', '--fields', default="bins,points,sizes,tags", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
+        parser.add_argument('-o', '--outfile', default="binstat.csv", help="write data to this file")
+        parser.add_argument('-s', '--separator', default=",", help="data separator")
+        parser.add_argument('--no_headers', action="store_true", default=False, help="don't add headers")
+        parser.set_defaults(run=self)
+
+    def __call__(self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in bin stats dumping mode..." % __version__
+        print "*******************************************************************************"
+
+        # prep fields. Do this first cause users are mot likely to
+        # mess this part up!
+        allowable_fields = self.DUMP_FIELDS
+        fields = options.fields.split(',')
+        if fields == ['all']:
+            fields = allowable_fields
+        else:
+            for field in fields:
+                if field not in allowable_fields:
+                    print "ERROR: field '%s' not recognised. Allowable fields are:" % field
+                    print '\t',",".join(allowable_fields)
+                    return
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        bm = groopm.BinStatsDumper(options.dbname)
+        bm.dumpBinStats(timer,
+                        fields,
+                        options.outfile,
+                        separator,
+                        not options.no_headers)
+
+
+class import_command_configure:
+    description="Import information from text file"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of the database to open")
+        parser.add_argument('infile', help="file with contig id and bin label columns to import")
+        parser.add_argument('-s', '--separator', default=",", help="data separator")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in data import mode..." % __version__
+        print "*******************************************************************************"
+
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+
+        bi = groopm.BinImporter(options.dbname)
+        bi.importBinAssignments(timer,
+                                options.infile,
+                                separator)
+
+class plot_command_configure:
+    description="Plot contigs in coverage vs kmer distance space"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
+        #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
+        parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
+        parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--save_dists', action="store_true", help="save distance files")
+        group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        pm = groopm.BinPlotManager(options.dbname,
+                                      folder=None if options.interactive else options.out_folder)
+        pm.plot(timer,
+                bids=options.bids,
+                origin=options.origin,
+                colorMap=options.colormap,
+                prefix=options.prefix,
+                savedDistsPrefix=options.use_saved_dists,
+                keepDists=options.use_saved_dists!="" or options.save_dists)
+                   
+                           
+class reach_command_configure:
+    description="Make cluster reachability plot"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
+        parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in reach plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        pm = groopm.ReachabilityPlotManager(options.dbname,
+                                               folder=None if options.interactive else options.out_folder)
+        pm.plot(timer,
+                bids=options.bids,
+                prefix=options.prefix)
+                   
+                   
+class tree_command_configure:
+    description="Plot cluster hierarchy tree"
+
+    def __init__(self, parser):
+        parser.add_argument('dbname', help="name of database to open")
+        parser.add_argument('-p', '--prefix', default="TREE", help="prefix to apply to output files")
+        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.set_defaults(run=self)
+
+    def __call__(_self, options):
+        timer = groopm.TimeKeeper()
+        print "*******************************************************************************"
+        print " [[GroopM %s]] Running in tree plotting mode..." % __version__
+        print "*******************************************************************************"
+
+
+        pm = groopm.TreePlotManager(options.dbname,
+                                    folder=None if options.interactive else options.out_folder)
+        pm.plot(timer,
+                prefix=options.prefix)
+                   
+
+#------------------------------------------------------------------------------
+#GroopM command
+
+def groopm_command_configure(parser):
+    parser.add_argument('-h', '--help', action=PrintHelpAction)
+    parser.add_argument('-v', '--version', action="version",
+        version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
+        
+    ##################################################
+    # workflow subcommands
+    ##################################################
+    
+    subparsers = parser.add_subparsers()
+    parse_subparser = subparsers.add_parser(
+        "parse",
+        description=parse_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parse_command_configure(parse_subparser)
+
+    core_subparser = subparsers.add_parser(
+        "core",
+        description=core_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    core_command_configure(core_subparser)
+    
+    extract_subparser = subparsers.add_parser(
+        "extract",
+        description=extract_command_configure.description,
+        formatter_class=CustomHelpFormatter,
+        epilog='''Example usage:
+
+ Extract contigs from bin 33:
+
+  $ groopm extract my_db.gm my_contigs.fasta --bids 33
+
+ Extract reads mapping to contigs in bin 35:
+
+  $ groopm extract my_db.gm my.bam -bids 35 --mode reads
+
+''')
+    extract_command_configure(extract_subparser)
+
+    ##################################################
+    # import/export subcommands
+    ##################################################
+
+    dump_subparser = subparsers.add_parser(
+        "dump",
+        description=dump_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    dump_command_configure(dump_subparser)
+    
+    binstat_subparser = subparsers.add_parser(
+        "binstat",
+        description=binstat_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    binstat_command_configure(binstat_subparser)
+    
+    markers_subparser = subparsers.add_parser(
+        "markers",
+        description=markers_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    markers_command_configure(markers_subparser)
+    
+    import_subparser = subparsers.add_parser(
+        "import",
+        description=import_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    import_command_configure(import_subparser)
+
+
+    ##################################################
+    # plotting subcommands
+    ##################################################
+
+    plot_subparser = subparsers.add_parser(
+        "plot",
+        description=plot_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    plot_command_configure(plot_subparser)
+    
+    tree_subparser = subparsers.add_parser(
+        "tree",
+        description=tree_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    tree_command_configure(tree_subparser)
+    
+    reach_subparser = subparsers.add_parser(
+        "reach",
+        description=reach_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    reach_command_configure(reach_subparser)
+    
+            
+if __name__ == '__main__':
+
+    ##################################################
+    # intialise the options parser
+    ##################################################
+
+    parser = argparse.ArgumentParser(add_help=False)
+    groopm_command_configure(parser)
+    
+    args = parser.parse_args()
+
+    #-------------------------------------------------
+    # do what we came here to do
+    try:
+        if(False):
+            import cProfile
+            cProfile.run('args.run(args)', 'prof')
+            ##########################################
+            ##########################################
+            # Use this in python console!
+            #import pstats
+            #p = pstats.Stats('prof')
+            #p.sort_stats('cumulative').print_stats(10)
+            #p.sort_stats('time').print_stats(10)
+            ##########################################
+            ##########################################
+        else:
+            args.run(args)
+    except:
+        print "Unexpected error:", sys.exc_info()[0]
+        raise
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+

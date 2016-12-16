@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 ###############################################################################
 #                                                                             #
-#    groopmExceptions.py                                                      #
+#    import_.py                                                               #
 #                                                                             #
-#    Like it says on the box                                                  #
+#    Data import                                                              #
 #                                                                             #
-#    Copyright (C) Michael Imelfort                                           #
+#    Copyright (C) Tim Lamberton                                              #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -38,61 +38,83 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort"
-__copyright__ = "Copyright 2012/2013"
-__credits__ = ["Michael Imelfort"]
+__author__ = "Tim Lamberton"
+__copyright__ = "Copyright 2016"
+__credits__ = ["Tim Lamberton"]
 __license__ = "GPL3"
-__version__ = "0.2.1"
-__maintainer__ = "Michael Imelfort"
-__email__ = "mike@mikeimelfort.com"
-__status__ = "Released"
+__maintainer__ = "Tim Lamberton"
+__email__ = "t.lamberton@uq.edu.au"
+__status__ = "Development"
 
 ###############################################################################
+import sys
+import numpy as np
 
-#------------------------------------------------------------------------------
-# CLUSTER ENGINE
-class GMClusterException(BaseException): pass
-class StopClusterException(GMClusterException): pass
-class SavedDistancesInvalidNumberException(GMClusterException): pass
-class CacheUnavailableException(GMClusterException): pass
-
-#------------------------------------------------------------------------------
-# BIN MANAGER
-class GMBinException(BaseException): pass
-class BinNotFoundException(GMBinException): pass
-class ModeNotAppropriateException(GMBinException): pass
-
-#------------------------------------------------------------------------------
-# PROFILE MANAGER
-class GMProfileException(BaseException): pass
-class DistanceStoreContigNotFoundException(GMProfileException): pass
-
-#------------------------------------------------------------------------------
-# ARG PARSER
-class GMARGException(BaseException): pass
-class ExtractModeNotAppropriateException(GMARGException): pass
+from utils import CSVReader
+from profileManager import ProfileManager
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 ###############################################################################
+class BinImporter:
+    """Used for importing bin assignments"""
+    def __init__(self,
+                 dbFileName):
+        self._pm = ProfileManager(dbFileName)
+        
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer)
+        
+    def importBinAssignments(self,
+                             timer,
+                             infile,
+                             separator):
+        """Parse assignment file for bin contigs"""
+        
+        profile = self.loadProfile(timer)
+        br = BinReader()
+        # looks like cid->bid
+        contig_bins = {}
+        try:
+            with open(infile, "r") as f:
+                try:
+                    (con_names, con_bins) = br.parse(f, separator)
+                    (_, con_bid) = np.unique(con_bins, return_inverse=True)
+                    con_bid += 1 # bid zero is unbinned
+                    contig_bins = dict(zip(con_names, con_bid))
+                except:
+                    print "Error parsing bin assignments"
+                    raise
+        except:
+            print "Could not parse bin assignment file:",infile,sys.exc_info()[0]
+            raise
 
-import traceback
-class Tracer:
-    def __init__(self, oldstream):
-        self.oldstream = oldstream
-        self.count = 0
-        self.lastStack = None
+        # now get the internal indices for contigs
+        for (i, cid) in enumerate(profile.contigNames):
+            try:
+                profile.binIds[i] = contig_bins[cid]
+            except KeyError:
+                pass
+        
+        # Now save all the stuff to disk!
+        print "Saving bins"
+        self._pm.setBinAssignments(profile, nuke=True)
+        print "    %s" % timer.getTimeStamp()
 
-    def write(self, s):
-        newStack = traceback.format_stack()
-        if newStack != self.lastStack:
-            self.oldstream.write("".join(newStack))
-            self.lastStack = newStack
-        self.oldstream.write(s)
-
-    def flush(self):
-        self.oldstream.flush()
+        
+class BinReader:   
+    """Read a file of tab separated contig name and bin groupings."""
+    def parse(self, fp, separator):
+        con_names = []
+        con_bins = []
+        
+        reader = CSVReader()
+        for (cid, bid) in reader.readCSV(fp, separator):
+            con_names.append(cid)
+            con_bins.append(bid)
+        
+        return (con_names, con_bins)    
 
 ###############################################################################
 ###############################################################################
