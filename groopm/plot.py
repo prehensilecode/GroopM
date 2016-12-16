@@ -111,7 +111,7 @@ class BinPlotManager:
              prefix="BIN",
              savedDistsPrefix="",
              keepDists=False,
-             use_dims=True
+             use_dims=False
             ):
             
         profile = self.loadProfile(timer)
@@ -720,9 +720,9 @@ class BinDistancePlotter:
         else:
             de = StreamingProfileDistanceEngine(cacher=cacher, size=int(2**31-1))
         (self._x, self._y) = de.makeScaledRanks(self._profile.covProfiles,
-                                                                  self._profile.kmerSigs,
-                                                                  self._profile.contigLengths
-                                                                 )
+                                                self._profile.kmerSigs,
+                                                self._profile.contigLengths
+                                               )
         scale_factor = 2. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
         self._x *= scale_factor
         self._y *= scale_factor

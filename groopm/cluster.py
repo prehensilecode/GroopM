@@ -200,7 +200,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         self._minSize = minSize
         self._cacher = cacher
     
-    def distances(self, silent=False, use_dims=True, mode="norm"):
+    def distances(self, silent=False, use_dims=True, fun=lambda a: a):
         if(not silent):
             n = len(self._profile.contigLengths)
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
@@ -215,7 +215,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                              self._profile.normCoverages[:, 0],
                                              self._profile.contigGCs,
                                              silent=silent,
-                                             mode=mode)
+                                             fun=fun)
         else:
             if self._cacher is None:
                 de = ProfileDistanceEngine()
@@ -225,7 +225,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                              self._profile.kmerSigs,
                                              self._profile.contigLengths,
                                              silent=silent,
-                                             mode=mode)
+                                             fun=fun)
         if not silent:
             print "Reticulating splines"
             
@@ -276,19 +276,11 @@ class ProfileDistanceEngine:
         kmer_ranks = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weight_fun=weight_fun)*scale_factor
         return (cov_ranks, kmer_ranks)
     
-    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, silent=False, mode="norm"):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        if mode not in ["norm", "prod", "sum"]:
-            raise ValueError("Input parameter `mode` value must be one of 'norm', 'prod' or 'sum'. Found '%s'." % mode)
-
         (cov_ranks, kmer_ranks) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
-        if mode=="norm":
-            dists = np.sqrt(cov_ranks**2 + kmer_ranks**2)
-        elif mode=="prod":
-            dists = cov_ranks * kmer_ranks
-        elif mode=="sum":
-            dists = cov_ranks + kmer_ranks
+        dists = fun(cov_ranks) + fun(kmer_ranks)
         return dists
         
         
@@ -315,19 +307,11 @@ class ProfileDistanceEngine4D:
         gc_ranks = distance.argrank(sp_distance.pdist(contigGCs[None, :], metric="cityblock"), weight_fun=weight_fun)*scale_factor
         return (cov_angle_ranks, kmer_ranks, cov_norm_ranks, gc_ranks)
     
-    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, mode="norm"):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        if mode not in ["norm", "prod", "sum"]:
-            raise ValueError("Input parameter `mode` value must be one of 'norm', 'prod' or 'sum'. Found '%s'." % mode)
-
         (cov_angle_ranks, kmer_ranks, cov_norm_ranks, gc_ranks) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
-        if mode=="norm":
-            dists = np.sqrt(cov_angle_ranks**2 + kmer_ranks**2 + cov_norm_ranks**2 + gc_ranks**2)
-        elif mode=="prod":
-            dists = cov_angle_ranks * kmer_ranks * cov_norm_ranks * gc_ranks
-        elif mode=="sum":
-            dists = cov_angle_ranks + kmer_proj_ranks + cov_norm_ranks + gc_ranks
+        dists = fun(cov_angle_ranks) + fun(kmer_ranks) + fun(cov_norm_ranks) + fun(gc_ranks)
         return dists
 
 
@@ -393,23 +377,16 @@ class StreamingProfileDistanceEngine:
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         return (self._cacher.getCovDists(), self._cacher.getKmerDists())
     
-    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, silent=False, mode="norm"):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        if mode=="norm":
-            fun = lambda a, b: (a**n+b**n)**(1./n)
-        elif mode=="prod":
-            fun = operator.mul
-        elif mode=="sum":
-            fun = operator.add
-        else:
-            raise ValueError("Input parameter `mode` value must be one of 'norm', 'prod' or 'sum'. Found '%s'." % mode)
+        fold = lambda a, b: a+fun(b)
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         norm_file = self._store.getWorkingFile()
         self._cacher.getCovDists().tofile(norm_file)
         tmp_file = self._store.getWorkingFile()
         self._cacher.getKmerDists().tofile(tmp_file)
-        stream.iapply_func_chunk(norm_file, tmp_file, fun, chunk_size=self._size)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
         rank_norms = np.fromfile(norm_file)
         self._store.cleanupWorkingFiles()
         return rank_norms
@@ -511,17 +488,10 @@ class StreamingProfileDistanceEngine4D:
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
         return (self._cacher.getCovAngleDists(), self._cacher.getKmerProjDists(), self._cacher.getCovNormDists(), self._cacher.getGCDists())
     
-    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, mode="norm"):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        if mode=="norm":
-            fold = lambda a, b: (a**2+b**2)**(1./2)
-        elif mode=="prod":
-            fold = operator.mul
-        elif mode=="sum":
-            fold = operator.add
-        else:
-            raise ValueError("Input parameter `mode` value must be one of 'norm', 'prod' or 'sum'. Found '%s'." % mode)
+        fold = lambda a, b: a++fun(b)
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
         norm_file = self._store.getWorkingFile()
         self._cacher.getCovAngleDists().tofile(norm_file)
