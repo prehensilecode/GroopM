@@ -200,7 +200,7 @@ class core_command_configure:
     description = "Load saved data and make bin cores"
     
     DEFAULT_SIZE = 1000000
-    DEFAULT_POINTS = 20
+    DEFAULT_POINTS = None
     
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
