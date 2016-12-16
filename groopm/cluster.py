@@ -66,6 +66,7 @@ import stream
 from profileManager import ProfileManager
 from groopmExceptions import SavedDistancesInvalidNumberException, CacheUnavailableException
 from utils import group_iterator
+from data3 import KmerSigEngine
 
 ###############################################################################
 ###############################################################################
@@ -102,8 +103,8 @@ class CoreCreator:
                                    )
         
         if savedDistsPrefix=="":
-            savedDistsPrefix = self._dbFileName
-        cacher = FileCacher(savedDistsPrefix+".dists")
+            savedDistsPrefix = self._dbFileName+".dists"
+        cacher = FileCacher(savedDistsPrefix)
         
         ce = ClassificationClusterEngine(profile,
                                          minPts=minPts,
@@ -199,20 +200,32 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
         self._minSize = minSize
         self._cacher = cacher
     
-    def distances(self, silent=False):
+    def distances(self, silent=False, use_dims=False, fun=lambda a: a):
         if(not silent):
             n = len(self._profile.contigLengths)
             print "Computing pairwise contig distances for 2^%.2f pairs" % np.log2(n*(n-1)//2)
-        if self._cacher is None:
-            de = ProfileDistanceEngine
+        if use_dims:
+            if self._cacher is None and use_dims:
+                de = ProfileDistanceEngine4D()
+            else:
+                de = StreamingProfileDistanceEngine4D(cacher=self._cacher, size=int(2**31-1))
+            hybrid_ranks = de.makeHybridRank(self._profile.covProfiles,
+                                             self._profile.kmerSigs,
+                                             self._profile.contigLengths,
+                                             self._profile.normCoverages[:, 0],
+                                             self._profile.contigGCs,
+                                             silent=silent,
+                                             fun=fun)
         else:
-            de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(2**31-1))
-            #de = CachingProfileDistanceEngine(cacher=self._cacher)
-            #de = CachingWeightlessProfileDistanceEngine(cacher=self._cacher)
-        rank_norms = de.makeRankNorms(self._profile.covProfiles,
-                                      self._profile.kmerSigs,
-                                      self._profile.contigLengths, 
-                                      silent=silent)
+            if self._cacher is None:
+                de = ProfileDistanceEngine()
+            else:
+                de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(2**31-1))
+            hybrid_ranks = de.makeHybridRank(self._profile.covProfiles,
+                                             self._profile.kmerSigs,
+                                             self._profile.contigLengths,
+                                             silent=silent,
+                                             fun=fun)
         if not silent:
             print "Reticulating splines"
             
@@ -228,21 +241,9 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             minWt = np.maximum(self._minSize - v, 0) * v
         else:
             minWt = None
-        #core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: w[distance.condensed_index(n, i, j)], minWt=minWt, minPts=self._minPts)
-        core_dists = distance.core_distance(rank_norms, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
+        core_dists = distance.core_distance(hybrid_ranks, weight_fun=lambda i,j: self._profile.contigLengths[i]*self._profile.contigLengths[j], minWt=minWt, minPts=self._minPts)
         
-        #if minWt is not None:
-        #    x = distance.core_distance_weighted_(rank_norms, w, minWt)
-            
-        #if self._minPts is not None:
-        #    p = distance.core_distance_(rank_norms, self._minPts)
-        #    if minWt is not None:
-        #        x = np.minimum(x, p)
-        #    else:
-        #        x = p
-        #assert np.all(core_dists==x)
-        
-        return (rank_norms, core_dists)
+        return (hybrid_ranks, core_dists)
     
     def fcluster(self, o, d):
         Z = hierarchy.linkage_from_reachability(o, d)
@@ -265,19 +266,52 @@ class ProfileDistanceEngine:
         """
         n = len(contigLengths)
         weights = np.empty( n * (n-1) // 2, dtype=np.double)
+        weight_fun = lambda i: weights[i]
         k = 0
         for i in range(n-1):
             weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
             k = k+n-1-i
         scale_factor = 1. / weights.sum()
-        (cov_ranks, kmer_ranks) = tuple(distance.argrank(sp_distance.pdist(feature, metric="euclidean"), weight_fun=lambda i: weights[i], axis=None) * scale_factor for feature in (covProfiles, kmerSigs))
+        cov_ranks = distance.argrank(sp_distance.pdist(covProfiles, metric="euclidean"), weight_fun=weight_fun)*scale_factor
+        kmer_ranks = distance.argrank(sp_distance.pdist(kmerSigs, metric="euclidean"), weight_fun=weight_fun)*scale_factor
         return (cov_ranks, kmer_ranks)
     
-    def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        (cov_ranks, kmer_ranks) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, silent=silent)
-        dists = np.sqrt(cov_ranks**2 + kmer_ranks**2)
+        (cov_ranks, kmer_ranks) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
+        dists = fun(cov_ranks) + fun(kmer_ranks)
+        return dists
+        
+        
+class ProfileDistanceEngine4D:
+    """Simple class for computing profile feature distances"""
+    
+    def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False):
+        """Compute pairwise rank distances separately for coverage profiles and
+        kmer signatures, and give rank distances as a fraction of the largest rank.
+        """
+        n = len(contigLengths)
+        weights = np.empty( n * (n-1) // 2, dtype=np.double)
+        weight_fun = lambda i: weights[i]
+        k = 0
+        for i in range(n-1):
+            weights[k:(k+n-1-i)] = contigLengths[i]*contigLengths[(i+1):n]
+            k = k+n-1-i
+        scale_factor = 1. / weights.sum()
+        vec = np.array(KmerSigEngine().calculateGCVector())
+        projs = np.outer(kmerSigs.dot(vec) / vec.dot(vec), vec)
+        cov_angle_ranks = distance.argrank(sp_distance.pdist(covProfiles, metric="cosine"), weight_fun=weight_fun)*scale_factor
+        kmer_proj_ranks = distance.argrank(sp_distance.pdist(kmerSigs - proj, metric="euclidean"), weight_fun=weight_fun)*scale_factor
+        cov_norm_ranks = distance.argrank(sp_distance.pdist(normCoverages[None, :], metric="cityblock"), weight_fun=weight_fun)*scale_factor
+        gc_ranks = distance.argrank(sp_distance.pdist(contigGCs[None, :], metric="cityblock"), weight_fun=weight_fun)*scale_factor
+        return (cov_angle_ranks, kmer_ranks, cov_norm_ranks, gc_ranks)
+    
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, fun=lambda a: a):
+        """Compute norms in {coverage rank space x kmer rank space}
+        """
+        (cov_angle_ranks, kmer_ranks, cov_norm_ranks, gc_ranks) = self.makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
+        dists = fun(cov_angle_ranks) + fun(kmer_ranks) + fun(cov_norm_ranks) + fun(gc_ranks)
         return dists
 
 
@@ -318,9 +352,7 @@ class StreamingProfileDistanceEngine:
             covind_filename = self._store.getWorkingFile()
             stream.pdist_chunk(covProfiles, cov_filename, chunk_size=2*self._size, metric="euclidean")
             stream.argsort_chunk_mergesort(cov_filename, covind_filename, chunk_size=self._size)
-            (cov_ranks, scale_factor) = stream.argrank_chunk(covind_filename, cov_filename, weight_fun=weight_fun, chunk_size=self._size)
-
-            #cov_ranks *= scale_factor
+            cov_ranks = stream.argrank_chunk(covind_filename, cov_filename, weight_fun=weight_fun, chunk_size=self._size)
             self._store.cleanupWorkingFiles()
             self._cacher.storeCovDists(cov_ranks)
         del cov_ranks
@@ -336,8 +368,7 @@ class StreamingProfileDistanceEngine:
             kmerind_filename = self._store.getWorkingFile()
             stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=2*self._size, metric="euclidean")
             stream.argsort_chunk_mergesort(kmer_filename, kmerind_filename, chunk_size=self._size)
-            (kmer_ranks, scale_factor) = stream.argrank_chunk(kmerind_filename, kmer_filename, weight_fun=weight_fun, chunk_size=self._size)
-            #kmer_ranks *= scale_factor
+            kmer_ranks = stream.argrank_chunk(kmerind_filename, kmer_filename, weight_fun=weight_fun, chunk_size=self._size)
             self._store.cleanupWorkingFiles()
             self._cacher.storeKmerDists(kmer_ranks)
         del kmer_ranks
@@ -346,17 +377,132 @@ class StreamingProfileDistanceEngine:
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
         return (self._cacher.getCovDists(), self._cacher.getKmerDists())
     
-    def makeRankNorms(self, covProfiles, kmerSigs, contigLengths, silent=False, n=2):
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
+        fold = lambda a, b: a+fun(b)
         self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
-        #x = cov_ranks * kmer_ranks / (cov_ranks + kmer_ranks)
-        kmer_rank_file = self._store.getWorkingFile()
-        self._cacher.getKmerDists().tofile(kmer_rank_file)
-        rank_norms = self._cacher.getCovDists()
-        stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.mul, chunk_size=self._size//2)
-        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, operator.add, chunk_size=self._size//2)
-        #stream.iapply_func_chunk(rank_norms, kmer_rank_file, lambda a, b: (a**n+b**n)**(1./n), chunk_size=self._size)
+        norm_file = self._store.getWorkingFile()
+        self._cacher.getCovDists().tofile(norm_file)
+        tmp_file = self._store.getWorkingFile()
+        self._cacher.getKmerDists().tofile(tmp_file)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
+        rank_norms = np.fromfile(norm_file)
+        self._store.cleanupWorkingFiles()
+        return rank_norms
+        
+
+class StreamingProfileDistanceEngine4D:
+    """Class for computing profile feature distances. Does caching to disk to keep memory usage down."""
+
+    def __init__(self, cacher, size):
+        self._cacher = cacher
+        self._size = size
+        self._store = TempFileStore()
+            
+    def _getWeightFun(self, contigLengths):
+        n = len(contigLengths)
+        def weight_fun(k):
+            (i, j) = distance.squareform_coords(n, k)
+            weights = i
+            weights[:] = contigLengths[i]
+            weights[:] *= contigLengths[j]
+            return weights
+        return weight_fun
+            
+    def _calculateScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False):
+        """Compute pairwise rank distances separately for coverage profiles and
+        kmer signatures, and give rank distances as a fraction of the largest rank.
+        """
+        n = len(contigLengths)
+        weight_fun = None
+        scale_factor = None
+        try:
+            cov_angle_ranks = self._cacher.getCovAngleDists()
+            assert_num_obs(n, cov_angle_ranks)
+        except CacheUnavailableException:
+            weight_fun = self._getWeightFun(contigLengths)
+            if not silent:
+                print "Calculating coverage distance ranks"
+            
+            cov_angle_filename = self._store.getWorkingFile()
+            cov_angleind_filename = self._store.getWorkingFile()
+            stream.pdist_chunk(covProfiles, cov_angle_filename, chunk_size=2*self._size, metric="cosine")
+            stream.argsort_chunk_mergesort(cov_angle_filename, cov_angleind_filename, chunk_size=self._size)
+            cov_angle_ranks = stream.argrank_chunk(cov_angleind_filename, cov_angle_filename, weight_fun=weight_fun, chunk_size=self._size)
+            self._store.cleanupWorkingFiles()
+            self._cacher.storeCovAngleDists(cov_angle_ranks)
+        del cov_angle_ranks
+        try:
+            kmer_proj_ranks = self._cacher.getKmerProjDists()
+            assert_num_obs(n, kmer_proj_ranks)
+        except CacheUnavailableException:
+            if weight_fun is None:
+                weight_fun = self._getWeightFun(contigLengths)
+            if not silent:
+                print "Calculating tetramer distance ranks"
+            kmer_proj_filename = self._store.getWorkingFile()
+            kmer_projind_filename = self._store.getWorkingFile()
+            vec = np.array(KmerSigEngine().calculateGCVector())
+            projs = np.outer(kmerSigs.dot(vec) / vec.dot(vec), vec)
+            stream.pdist_chunk(kmerSigs - projs, kmer_proj_filename, chunk_size=2*self._size, metric="euclidean")
+            stream.argsort_chunk_mergesort(kmer_proj_filename, kmer_projind_filename, chunk_size=self._size)
+            kmer_proj_ranks = stream.argrank_chunk(kmer_projind_filename, kmer_proj_filename, weight_fun=weight_fun, chunk_size=self._size)
+            self._store.cleanupWorkingFiles()
+            self._cacher.storeKmerProjDists(kmer_proj_ranks)
+        del kmer_proj_ranks
+        try:
+            cov_norm_ranks = self._cacher.getCovNormDists()
+            assert_num_obs(n, cov_norm_ranks)
+        except CacheUnavailableException:
+            if weight_fun is None:
+                weight_fun = self._getWeightFun(contigLengths)
+            if not silent:
+                print "Calculating coverage norm distance ranks"
+            cov_norm_filename = self._store.getWorkingFile()
+            cov_normind_filename = self._store.getWorkingFile()
+            stream.pdist_chunk(normCoverages[:,None], cov_norm_filename, chunk_size=2*self._size, metric="cityblock")
+            stream.argsort_chunk_mergesort(cov_norm_filename, cov_normind_filename, chunk_size=self._size)
+            cov_norm_ranks = stream.argrank_chunk(cov_normind_filename, cov_norm_filename, weight_fun=weight_fun, chunk_size=self._size)
+            self._store.cleanupWorkingFiles()
+            self._cacher.storeCovNormDists(cov_norm_ranks)
+        del cov_norm_ranks
+        try:
+            gc_ranks = self._cacher.getGCDists()
+            assert_num_obs(n, gc_ranks)
+        except CacheUnavailableException:
+            if weight_fun is None:
+                weight_fun = self._getWeightFun(contigLengths)
+            if not silent:
+                print "Calculating contig GC distance ranks"
+            gc_filename = self._store.getWorkingFile()
+            gcind_filename = self._store.getWorkingFile()
+            stream.pdist_chunk(contigGCs[:,None], gc_filename, chunk_size=2*self._size, metric="cityblock")
+            stream.argsort_chunk_mergesort(gc_filename, gcind_filename, chunk_size=self._size)
+            gc_ranks = stream.argrank_chunk(gcind_filename, gc_filename, weight_fun=weight_fun, chunk_size=self._size)
+            self._store.cleanupWorkingFiles()
+            self._cacher.storeGCDists(gc_ranks)
+        del gc_ranks
+    
+    def makeScaledRanks(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False):
+        self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
+        return (self._cacher.getCovAngleDists(), self._cacher.getKmerProjDists(), self._cacher.getCovNormDists(), self._cacher.getGCDists())
+    
+    def makeHybridRank(self, covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=False, fun=lambda a: a):
+        """Compute norms in {coverage rank space x kmer rank space}
+        """
+        fold = lambda a, b: a++fun(b)
+        self._calculateScaledRanks(covProfiles, kmerSigs, contigLengths, normCoverages, contigGCs, silent=silent)
+        norm_file = self._store.getWorkingFile()
+        self._cacher.getCovAngleDists().tofile(norm_file)
+        tmp_file = self._store.getWorkingFile()
+        self._cacher.getKmerProjDists().tofile(tmp_file)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
+        self._cacher.getCovNormDists().tofile(tmp_file)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
+        self._cacher.getGCDists().tofile(tmp_file)
+        stream.iapply_func_chunk(norm_file, tmp_file, fold, chunk_size=self._size)
+        rank_norms = np.fromfile(norm_file)
         self._store.cleanupWorkingFiles()
         return rank_norms
         
@@ -466,27 +612,52 @@ class CachingProfileDistanceEngine:
 class Cacher:
     """Class for caching profile feature distances"""
     
-    def cleanup():
+    def cleanup(self):
         pass
     
-    def getWeights():
+    def getWeights(self):
         pass
         
-    def storeWeights(weights):
+    def storeWeights(self, weights):
         pass
         
-    def getCovDists():
+    def getCovDists(self):
         pass
         
-    def storeCovDists(cov_dists):
+    def storeCovDists(self, dists):
         pass
         
-    def getKmerDists():
+    def getKmerDists(self):
         pass
         
-    def storeKmerDists(kmer_dists):
+    def storeKmerDists(self, dists):
         pass
         
+    def getCovAngleDists(self):
+        pass
+        
+    def storeCovAngleDists(self, dists):
+        pass
+        
+    def getCovNormDists(self):
+        pass
+        
+    def storeCovNormDists(self, dists):
+        pass
+        
+    def getKmerProjDists(self):
+        pass
+        
+    def storeKmerProjDists(self, dists):
+        pass
+        
+    def getGCDists(self):
+        pass
+        
+    def storeGCDists(self, dists):
+        pass
+     
+     
 class TempFileStore:
     """Create and clean up temp files"""
     
@@ -512,6 +683,7 @@ class TempFileStore:
         except IndexError:
             pass
         
+        
 class FileCacher(Cacher):
     """Cache using numpy to/fromfile"""
     
@@ -520,12 +692,26 @@ class FileCacher(Cacher):
         self._weightsStore = self._prefix+".weights"
         self._covDistStore = self._prefix+".cov"
         self._kmerDistStore = self._prefix+".kmer"
+        self._covAngleDistStore = self._prefix+".cov.angle"
+        self._covNormDistStore = self._prefix+".cov.norm"
+        self._kmerProjDistStore = self._prefix+".kmer.proj"
+        self._GCDistStore = self._prefix+".gc"
 
     def _cleanupOne(self, filename):
         try:
             os.remove(filename)
         except OSError:
             pass
+            
+    def _readOne(self, filename):
+        try:
+            vals = np.fromfile(filename, dtype=np.double)
+        except IOError:
+            raise CacheUnavailableException()
+        return vals
+        
+    def _storeOne(self, filename, values):
+        np.asanyarray(values, dtype=np.double).tofile(filename)
         
     def cleanup(self):
         self._cleanupOne(self._weightsStore)
@@ -533,34 +719,46 @@ class FileCacher(Cacher):
         self._cleanupOne(self._kmerDistStore)
         
     def getWeights(self):
-        try:
-            weights = np.fromfile(self._weightsStore, dtype=np.double)
-        except IOError:
-            raise CacheUnavailableException()
-        return weights
+        return self._readOne(self._weightsStore)
         
     def storeWeights(self, weights):
-        np.asanyarray(weights, dtype=np.double).tofile(self._weightsStore)
+        self._storeOne(self._weightsStore, weights)
         
     def getCovDists(self):
-        try:
-            cov_dists = np.fromfile(self._covDistStore, dtype=np.double)
-        except IOError:
-            raise CacheUnavailableException()
-        return cov_dists
+        return self._readOne(self._covDistStore)
         
     def storeCovDists(self, cov_dists):
-        np.asanyarray(cov_dists, dtype=np.double).tofile(self._covDistStore)
+        self._storeOne(self._covDistStore, cov_dists)
         
     def getKmerDists(self):
-        try:
-            kmer_dists = np.fromfile(self._kmerDistStore, dtype=np.double)
-        except IOError:
-            raise CacheUnavailableException()
-        return kmer_dists
+        return self._readOne(self._kmerDistStore)
         
     def storeKmerDists(self, kmer_dists):
-        np.asanyarray(kmer_dists, dtype=np.double).tofile(self._kmerDistStore)
+        self._storeOne(self._kmerDistStore, kmer_dists)
+        
+    def getCovAngleDists(self):
+        return self._readOne(self._covAngleDistStore)
+        
+    def storeCovAngleDists(self, cov_angle_dists):
+        self._storeOne(self._covAngleDistStore, cov_angle_dists)
+        
+    def getKmerProjDists(self):
+        return self._readOne(self._kmerProjDistStore)
+        
+    def storeKmerProjDists(self, kmer_proj_dists):
+        self._storeOne(self._kmerProjDistStore, kmer_proj_dists)
+        
+    def getCovNormDists(self):
+        return self._readOne(self._covNormDistStore)
+        
+    def storeCovNormDists(self, cov_norm_dists):
+        self._storeOne(self._covNormDistStore, cov_norm_dists)
+    
+    def getGCDists(self):
+        return self._readOne(self._GCDistStore)
+        
+    def storeGCDists(self, gc_dists):
+        self._storeOne(self._GCDistStore, gc_dists)
         
         
 class TablesCacher(Cacher):
