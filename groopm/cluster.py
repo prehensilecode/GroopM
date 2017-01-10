@@ -220,7 +220,10 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                 de = ProfileDistanceEngine()
             else:
                 de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(2**31-1))
-            hybrid_ranks = de.makeHybridRank(self._profile.covProfiles,
+            covProfiles = np.asarray(self._profile.covProfiles) + 100. / self._profile.contigLengths[:, None]
+            covProfiles = covProfiles / covProfiles.sum(axis=1)[:, None]
+            #kmerSigs = distance.clr(self._profile.kmerSigs * (self._profile.contigLengths[:, None]-3))
+            hybrid_ranks = de.makeHybridRank(covProfiles,
                                              self._profile.kmerSigs,
                                              self._profile.contigLengths,
                                              silent=silent,
@@ -836,7 +839,7 @@ def assert_num_obs(n, y):
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class FlatClusterEngine_:
+class FlatClusterEngine:
     """Flat clustering pipeline.
     
     Subclass should provide `getScores` and `isLowQuality` methods with the
@@ -848,6 +851,7 @@ class FlatClusterEngine_:
         out_bins[unbin] = 0
         (_, new_bids) = np.unique(out_bins[out_bins != 0], return_inverse=True)
         out_bins[out_bins != 0] = new_bids+1
+    
     
     def makeClusters(self,
                      Z,
@@ -905,7 +909,7 @@ class FlatClusterEngine_:
         # values indicate that the best clusters below should be prefered.
         support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
         support = support[flat_ids] # map values from parents to descendents of equal height
-        node_support = np.concatenate((scores[:n], support))
+        #node_support = np.concatenate((scores[:n], support))
         
         is_low_quality_cluster = np.asarray(self.isLowQualityCluster(Z))
         is_low_quality_cluster[n:] = is_low_quality_cluster[n+flat_ids]
@@ -917,8 +921,23 @@ class FlatClusterEngine_:
         conservative_bins += 1 # bin ids start at 1
         self.unbinClusters(is_low_quality_cluster[conservative_leaders], out_bins=conservative_bins)
         
-        (bins, leaders) = hierarchy.fcluster_merge(Z, support>=0, return_nodes=True)
+        # NOTE: A seed cluster is any putative cluster that meets the minimum
+        # standard. 
+        is_seed_cluster = np.logical_not(is_low_quality_cluster)
+        #is_seed_cluster[Z[support<-self.support_tol, :2].astype(int)] = True
+        is_seed_cluster[hierarchy.descendents(Z, conservative_leaders)] = False
+        is_seed_cluster[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = False # always propagate descendent scores to equal height parents
+        # NOTE: mergable is true for nodes that have at most 1 seed cluster
+        # below them. Nodes with close to zero support are merged greedily to obtain the
+        # largest possible clusters, but without merging any two seed clusters. 
+        is_mergable = hierarchy.maxscoresbelow(Z, is_seed_cluster.astype(int), fun=operator.add)<=1
+        to_merge = np.logical_or(support > 0,
+                                 np.logical_and(support > -self.support_tol, is_mergable))
+        to_merge = to_merge[flat_ids]
+        (bins, leaders) = hierarchy.fcluster_merge(Z, to_merge, return_nodes=True)
         bins += 1 # bin ids start at 1
+        # NOTE: any new clusters that are below minimum standard are dissolved
+        # here. 
         self.unbinClusters(is_low_quality_cluster[leaders], out_bins=bins)
                      
         if not (return_leaders or return_low_quality or return_support or return_coeffs or
@@ -982,7 +1001,7 @@ class FlatClusterEngine_:
         pass #subclass to overrride
         
         
-class FlatClusterEngine:
+class FlatClusterEngine_:
     """Flat clustering pipeline.
     
     Subclass should provide `getScores` and `isLowQuality` methods with the

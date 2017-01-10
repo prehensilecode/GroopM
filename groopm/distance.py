@@ -389,6 +389,15 @@ def validate_y(Y, weights=None, name="Y"):
 ###############################################################################
 ###############################################################################
 
+def clr(X):
+    """Centered log-ratio"""
+    X = np.asarray(X) + 1.
+    Xnorm = X / X.sum(axis=1)[:, None]
+    n = X.shape[1]
+    Xnormprod = (Xnorm**(1./n)).prod(axis=1)
+    return np.log(Xnorm / Xnormprod[:, None])
+    
+
 def rank_product_test(rankprod, n, k):
     """
     Gamma distribution approximation for rank product statistic. See Koziol. 
