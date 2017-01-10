@@ -66,6 +66,8 @@ from groopm import __version__
 #Helpers
 
 class CustomHelpFormatter(argparse.HelpFormatter):
+    #Some hack by Mike meaning we need to be careful if we ever update argparse.
+    
     def _split_lines(self, text, width):
         return text.splitlines()
 
@@ -93,8 +95,10 @@ class CustomHelpFormatter(argparse.HelpFormatter):
     def _fill_text(self, text, width, indent):
         return ''.join([indent + line for line in text.splitlines(True)])
 
-        
+
 class PrintHelpAction(argparse.Action):
+    '''Custom argparse action to print the spectacular GroopM help message
+    '''
     def __init__(self, nargs=0, *args, **kwargs):
         argparse.Action.__init__(self, *args, nargs=nargs, **kwargs)
         
@@ -149,7 +153,7 @@ class PrintHelpAction(argparse.Action):
 
 #------------------------------------------------------------------------------
 #Subcommands
-  
+
 class parse_command_configure:
     description="Parse raw data and save to disk"
     

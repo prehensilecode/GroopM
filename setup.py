@@ -4,7 +4,7 @@ import numpy as np
 
 setup(
     name='GroopM',
-    version='0.0.1',
+    version='2.0.0',
     author='Tim Lamberton',
     author_email='t.lamberton@uq.edu.au',
     packages=['groopm'],

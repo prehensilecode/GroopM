@@ -50,19 +50,16 @@ __current_GMDB_version__ = 6
 ###############################################################################
 
 import sys
-import operator
 from os.path import splitext as op_splitext, basename as op_basename
 from string import maketrans as s_maketrans
 
 import tables
 import numpy as np
 import numpy.linalg as np_linalg
-import scipy.spatial.distance as sp_distance
 import tempdir
 
 # GroopM imports
 from utils import CSVReader, FastaReader
-import distance
 from map import SingleMMapper, GraftMMapper
 
 # BamM imports
@@ -118,7 +115,8 @@ class DataManager:
     kms_desc = lambda self, mers: [(mer, float) for mer in mers]
     #
     # **Kmer Vals**
-    #table = 'kpca'                                                             # [DEL in version 6]
+    #[version < 6] 
+    #table = 'kpca'
     #kpca_desc = lambda n: [('pc%d' % i, float) for i in range(n)]
     #
     # **Coverage profile**
@@ -126,7 +124,8 @@ class DataManager:
     coverage_desc = lambda self, cols: [(col, float) for col in cols]
     #
     # **Transformed coverage profile**
-    #table = 'transCoverage'                                                    # [DEL in version 6]
+    #[version < 6]
+    #table = 'transCoverage'
     #transCoverage_desc = [('x', float), ('y', float), ('z', float)]
     #
     # **Coverage profile norms**
@@ -148,7 +147,8 @@ class DataManager:
     #               
     #------------------------
     # MAPPINGS
-    #group = '/mappings'                                                        # [NEW in verson 6]
+    #[version >= 6]
+    #group = '/mappings'
     #------------------------
     # **Mappings***
     #table = 'mappings'
@@ -181,14 +181,15 @@ class DataManager:
                  ('numMers', int),
                  ('numCons', int),
                  ('numBins', int),
-                 ('numMarkers', int),           # [NEW in version 6]
+                 ('numMarkers', int),           #[version >= 6]
                  ('clustered', bool),           # set to true after clustering is complete
                  ('complete', bool),            # set to true after clustering finishing is complete
                  ('formatVersion', int)         # groopm file version
                  ]
     #
     # **PC variance**
-    #table = 'kpca_variance'                                                    # [DEL in version 6]
+    #[version < 6]
+    #table = 'kpca_variance'
     #kpca_variance = lambda n: [("pc%d_var" % i, float) for i in range(n)]
     #
     # ** Contigs **
@@ -200,7 +201,8 @@ class DataManager:
                     ]
     #
     # ** Reachability **
-    #table = 'reachability'                                                     # [NEW in version 6]
+    #[version >= 6]
+    #table = 'reachability'
     reachability_desc = [('contig', int),       # reference to index in meta/contigs
                          ('distance', float)
                          ]
@@ -212,19 +214,22 @@ class DataManager:
                  ('isLikelyChimeric', bool)
                  ]
     #
-    # ** Markers **                                                             # [NEW in version 6]
+    # ** Markers **  
+    #[version >= 6]
     #table = 'markers'
     markers_desc = [('markerid', '|S512'),
                     ('numMappings', int)
                     ]
     #
-    # ** Taxons **                                                              # [NEW in version 6]
+    # ** Taxons **
+    #[version >= 6]
     #table = 'taxons'
     taxons_desc = [('taxonid', '|S512')
                    ]
     #
     # **Transformed coverage corners**
-    #table = 'transCoverageCorners'                                             # [DEL in version 6]
+    #[version < 6]
+    #table = 'transCoverageCorners'
     #transCoverageCorners_desc = [('x', float), ('y', float), ('z', float)]
                              
 
@@ -248,7 +253,7 @@ class DataManager:
         except IOError as e:
             print "Creating new database", dbFileName
 
-        # load all the passed vars
+        # helper instances
         kse = KmerSigEngine(kmerSize)
         cfe = ClassificationEngine()
         conParser = ContigParser()
@@ -269,12 +274,10 @@ class DataManager:
                 #------------------------
                 # parse contigs
                 #
-                # Contig IDs are key. Any keys existing in other files but not in this file will be
-                # ignored. Any missing keys in other files will be given the default profile value
-                # (typically 0). Ironically, we don't store the CIDs here, these are saved one time
-                # only in the bin table
+                # Contig IDs in the database are used to link coverage and mapping
+                # information from other input files.
                 #
-                # Before writing to the database we need to make sure that none of them have
+                # Before writing to the database we will remove any of them having
                 # 0 coverage @ all stoits.
                 #------------------------
                 import mimetypes
@@ -364,7 +367,7 @@ class DataManager:
                                     expectedrows=num_cons
                                     )
 
-                # normalised coverages
+                # coverage norms
                 norm_coverages = np.linalg.norm(cov_profiles, axis=1)
                 normCoverages_data = np.array(norm_coverages, dtype=self.normCoverage_desc)
                 h5file.create_table(profile_group,
@@ -410,7 +413,7 @@ class DataManager:
                                     )
 
                 #------------------------
-                # Add a table for the contigs
+                # Add a table for the contig metadata
                 #------------------------
                 contigs_data = np.array(zip(con_names, [0]*num_cons, con_lengths, con_gcs),
                                         dtype=self.contigs_desc)
@@ -444,7 +447,7 @@ class DataManager:
                                     )
                                     
                 #------------------------
-                # Table for markers
+                # Add a table for markers
                 #------------------------    
                 markers_data = np.array(zip(marker_names, marker_counts), dtype=self.markers_desc)
                 h5file.create_table(meta_group,
@@ -455,7 +458,7 @@ class DataManager:
                                     )
                 
                 #------------------------
-                # Table for taxons
+                # Add a table for taxons
                 #------------------------
                 taxons_data = np.array([(i,) for i in taxon_names], dtype=self.taxons_desc)
                 h5file.create_table(meta_group,
@@ -1586,7 +1589,8 @@ class DataManager:
 
       
 #------------------------------------------------------------------------------
-# Helpers          
+# Helpers
+
 def _get_bam_descriptor(fullPath, index_num):
     """AUX: Reduce a full path to just the file name minus extension"""
     return str(index_num) + '_' + op_splitext(op_basename(fullPath))[0]
@@ -1626,6 +1630,7 @@ class _DB4_CoverageTransformer:
 
 class ContigParser:
     """Main class for reading in and parsing contigs"""
+    
     def parse(self, contigFile, cutoff, kse):
         """Do the heavy lifting of parsing"""
         print "Parsing contigs"
@@ -1816,7 +1821,7 @@ class BamParser:
 ###############################################################################
 
 class Mapper:
-    """Calculate mappings using external mapper."""
+    """Calculate gene mappings using external mapper."""
     
     def __init__(self, working_directory=None, graftm_package_list=None, marker_file=None):
         self._working_directory = working_directory

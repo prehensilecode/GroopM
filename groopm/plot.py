@@ -68,10 +68,8 @@ from profileManager import ProfileManager
 from binManager import BinManager
 import distance
 from cluster import (ClassificationClusterEngine,
-                     ProfileDistanceEngine, 
-                     ProfileDistanceEngine4D,
+                     ProfileDistanceEngine,
                      StreamingProfileDistanceEngine,
-                     StreamingProfileDistanceEngine4D,
                      FileCacher,
                      MarkerCheckCQE,
                      MarkerCheckFCE
@@ -110,8 +108,7 @@ class BinPlotManager:
              colorMap="HSV",
              prefix="BIN",
              savedDistsPrefix="",
-             keepDists=False,
-             use_dims=False
+             keepDists=False
             ):
             
         profile = self.loadProfile(timer)
@@ -127,10 +124,7 @@ class BinPlotManager:
         cacher = FileCacher(savedDistsPrefix)
 
         print "    Initialising plotter"
-        if use_dims:
-            fplot = BinDistancePlotter4D(profile, colourmap=colorMap, cacher=cacher)
-        else:
-            fplot = BinDistancePlotter(profile, colourmap=colorMap, cacher=cacher)
+        fplot = BinDistancePlotter(profile, colourmap=colorMap, cacher=cacher)
         print "    %s" % timer.getTimeStamp()
         
         
@@ -770,20 +764,13 @@ class BinDistancePlotter4D:
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
         if cacher is None:
-            de = ProfileDistanceEngine4D()
+            de = ProfileDistanceEngine()
         else:
-            de = StreamingProfileDistanceEngine4D(cacher=cacher, size=int(2**31-1))
-        (self._x, self._y, self._z, self._c) = de.makeScaledRanks(self._profile.covProfiles,
-                                                                  self._profile.kmerSigs,
-                                                                  self._profile.contigLengths,
-                                                                  self._profile.normCoverages[:, 0],
-                                                                  self._profile.contigGCs,
-                                                                 )
-        scale_factor = 2. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
-        self._x *= scale_factor
-        self._y *= scale_factor
-        self._z *= scale_factor
-        self._c *= scale_factor
+            de = StreamingProfileDistanceEngine(cacher=cacher, size=int(2**31-1))
+        (self._x, self._y) = de.makeScaledRanks(self._profile.covProfiles,
+                                                self._profile.kmerSigs,
+                                                self._profile.contigLengths
+                                                )
         
     def plot(self,
              bid,
@@ -797,9 +784,7 @@ class BinDistancePlotter4D:
             bin_condensed_indices = distance.condensed_index(n, bin_indices[i], bin_indices[j])
             x = self._x[bin_condensed_indices]
             y = self._y[bin_condensed_indices]
-            z = self._z[bin_condensed_indices]
-            c = self._c[bin_condensed_indices]
-            origin = distance.mediod((x**2 + y**2 + z**2 + c**2)**(1./2))
+            origin = distance.mediod((x**2 + y**2)**(1./2))
         elif origin=="max_coverage":
             origin = np.argmax(self._profile.normCoverages[bin_indices])
         elif origin=="max_length":
@@ -814,10 +799,8 @@ class BinDistancePlotter4D:
         x[not_bi] = self._x[condensed_indices]
         y = np.zeros(n, dtype=float)
         y[not_bi] = self._y[condensed_indices]
-        z = np.zeros(n, dtype=float)
-        z[not_bi] = self._z[condensed_indices]
-        c = np.zeros(n, dtype=float)
-        c[not_bi] = self._c[condensed_indices]
+        z = self._profile.normCoverages.flatten()
+        c = self._profile.contigGCs
         h = np.logical_and(self._profile.binIds == self._profile.binIds[bi], self._profile.binIds[bi] != 0)
         fplot = SurfacePlotter(x,
                                y,
@@ -826,7 +809,7 @@ class BinDistancePlotter4D:
                                sizes=20,
                                edgecolours=np.where(h, 'r', 'k'),
                                colourmap=self._colourmap,
-                               xlabel="cov_angle", ylabel="kmer/gc", zlabel="cov_norm")
+                               xlabel="cov", ylabel="kmer", zlabel="cov_norm")
         fplot.plot(fileName)
         
 
