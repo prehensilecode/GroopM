@@ -220,10 +220,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                 de = ProfileDistanceEngine()
             else:
                 de = StreamingProfileDistanceEngine(cacher=self._cacher, size=int(2**31-1))
-            covProfiles = np.asarray(self._profile.covProfiles) + 100. / self._profile.contigLengths[:, None]
-            covProfiles = covProfiles / covProfiles.sum(axis=1)[:, None]
-            #kmerSigs = distance.clr(self._profile.kmerSigs * (self._profile.contigLengths[:, None]-3))
-            hybrid_ranks = de.makeHybridRank(covProfiles,
+            hybrid_ranks = de.makeHybridRank(self._profile.covProfiles,
                                              self._profile.kmerSigs,
                                              self._profile.contigLengths,
                                              silent=silent,
