@@ -46,6 +46,7 @@ __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
 
 ###############################################################################
+import sys
 import numpy as np
 
 # GroopM imports
@@ -58,7 +59,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class BinStats:
+class _BinStats:
     """Class for carrying bin summary statistics, constructed using BinManager
     class.
     
@@ -86,7 +87,6 @@ class BinStats:
     tags: ndarray
         `tags[i]` is a string summarising the taxonomic information of marker genes in bin `i`.
     """
-    pass
     
 
 class BinManager:

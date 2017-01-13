@@ -58,7 +58,6 @@ from bamm.bamExtractor import BamExtractor as BMBE
 # local imports
 from profileManager import ProfileManager
 from binManager import BinManager
-from classification import BinClassifier
 from data3 import ContigParser, MappingParser
 from utils import makeSurePathExists
 from cluster import MarkerCheckTreePrinter
@@ -266,53 +265,9 @@ class MarkerExtractor:
             except:
                 print "Could not open file for writing:",file_name,sys.exc_info()[0]
                 raise
+
                 
-    def extractMappingInfo_(self,
-                           timer,
-                           bids=[],
-                           prefix='',
-                           separator='\t',
-                           cutoff=0
-                           ):
-        """Extract markers from bins and write to file"""
-        if prefix is None or prefix == '':
-            prefix=os.path.basename(self.dbFileName) \
-                            .replace(".gm", "") \
-                            .replace(".sm", "")
-        
-        profile = self.loadProfile(timer, bids, cutoff)
-        bm = BinManager(profile)
-        dm = sp_distance.squareform(profile.mapping.classification.makeDistances())
-        
-        # now print out the marker info
-        print "Writing files"
-        for bid in bm.getBids():
-            file_name = os.path.join(self._outDir, "%s_bin_%d.txt" % (prefix, bid))
-            
-            bin_indices = bm.getBinIndices([bid])
-            idx = np.flatnonzero(np.in1d(profile.mapping.rowIndices, bin_indices))
-            
-            labels = profile.mapping.markerNames[idx]
-            cnames = profile.contigNames[profile.mapping.rowIndices[idx]]
-            taxstrings = profile.mapping.taxstrings[idx]
-            dists = dm[np.ix_(idx, idx)]
-            
-            try:
-                with open(file_name, 'w') as f:
-                    #labels and lineages
-                    f.write('#info table\n%s\n' % separator.join(['label', 'taxonomy', 'contig_name']))
-                    for (label, taxstring, cname) in zip(labels, taxstrings, cnames):
-                        f.write('%s\n' % separator.join([label, '\'%s\'' % taxstring, cname]))
-                    
-                    #distance table
-                    f.write('\n#distance table\n')
-                    for row in dists:
-                        f.write('%s\n' % ' '.join(row.astype(int).astype(str)))
-            except:
-                print "Could not open file for writing:",file_name,sys.exc_info()[0]
-                raise
-    
-                           
+                
 class BinStatsDumper:
     def __init__(self,
                  dbFileName):
@@ -339,7 +294,6 @@ class BinStatsDumper:
         # load all the contigs which have been assigned to bins
         profile = self.loadProfile(timer)
         bm = BinManager(profile)
-        bc = BinClassifier(profile.mapping)
         
         stats = bm.getBinStats()
         
