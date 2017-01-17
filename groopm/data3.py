@@ -1969,6 +1969,16 @@ class ClassificationEngine:
             if s==1 or o==1 or s!=o:
                 return d
         return 0
+        
+    def isPrefix(self, a, b):
+        # 0 = untagged at current level (assume coherent with any tag)
+        # 1 = empty tag at current level (assume incoherent with other empty and non-empty tags)
+        for (s, o) in zip(a, b):
+            if s==0 or o==0:
+                break
+            if s==1 or o==1 or s!=0:
+                return False
+        return True
 
     
 ###############################################################################
