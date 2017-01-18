@@ -116,38 +116,27 @@ def core_distance(Y, weight_fun=None, minWt=None, minPts=None):
     """
     (Y, _) = validate_y(Y, name="Y")
     n = sp_distance.num_obs_y(Y)
-    #dm_ = sp_distance.squareform(Y)
     core_dist = np.empty(n, dtype=Y.dtype)
     m = np.empty(n, dtype=Y.dtype) # store row distances
     minPts = n-1 if minPts is None else minPts
     if weight_fun is None or minWt is None:
-        #dm_.sort(axis=1)
-        #x_ = dm_[:, np.minimum(n-1, minPts)]
         for (i, mp) in np.broadcast(np.arange(n), minPts):
             others = np.flatnonzero(np.arange(n)!=i)
             m[others] = Y[condensed_index(n, i, others)]
             m[i] = 0
             m.sort()
-            #assert np.all(dm_[i] == m)
             core_dist[i] = m[np.minimum(n-1, mp)]
-            #assert x_[i] == core_dist[i]
     else:
-        #wm_ = sp_distance.squareform(weights)
         w = np.empty(n, dtype=np.double) # store row weights
         for (i, mp, mw) in np.broadcast(np.arange(n), minPts, minWt):
             others = np.flatnonzero(np.arange(n)!=i)
             m[others] = Y[condensed_index(n, i, others)]
             m[i] = 0
-            #assert np.all(m==dm_[i])
             w[others] = weight_fun(i, others)
             w[i] = 0
-            #assert np.all(w==wm_[i])
             sorting_indices = m.argsort()
             minPts = np.minimum(int(np.sum(w[sorting_indices].cumsum() < mw)), mp)
             core_dist[i] = m[sorting_indices[np.minimum(n-1, minPts)]]
-            #minPts_ = int(np.sum(wm_[i, sorting_indices].cumsum() < minWt[i]))
-            #m_ = m[sorting_indices]
-            #assert core_dist[i] == np.minimum(m_[np.minimum(n-1, mp)], m_[np.minimum(n-1, minPts_)])
     return core_dist
 
     
@@ -175,8 +164,6 @@ def reachability_order(Y, core_dist=None):
         core_dist = np.asarray(core_dist)
         if core_dist.shape != (n,):
             raise ValueError("core_dist is not a 1-D array with compatible size to Y.")
-    #dm_ = sp_distance.squareform(Y)
-    #dm_ = np.maximum(dm_, core_dist[:, None]) if core_dist is not None else dm_
     o = np.empty(n, dtype=np.intp)
     to_visit = np.ones(n, dtype=bool)
     closest = 0
@@ -187,7 +174,6 @@ def reachability_order(Y, core_dist=None):
     d[1:] = Y[condensed_index(n, 0, np.arange(1, n))]
     if core_dist is not None:
         d = np.maximum(d, core_dist[0])
-    #assert np.all(d== dm_[0])
     for i in range(1, n):
         closest = np.flatnonzero(to_visit)[d[to_visit].argmin()]
         o[i] = closest
@@ -195,7 +181,6 @@ def reachability_order(Y, core_dist=None):
         m = Y[condensed_index(n, closest, np.flatnonzero(to_visit))]
         if core_dist is not None:
             m = np.maximum(m, core_dist[closest])
-        #assert np.all(m==dm_[closest, to_visit])
         d[to_visit] = np.minimum(d[to_visit], m)
     return (o, d[o])
     
@@ -254,77 +239,81 @@ def _fractional_rank(ar, weight_fun=None):
     
     Code is loosely based on numpy's unique function:
         https://github.com/numpy/numpy/blob/v1.12.0/numpy/lib/arraysetops.py#L112-L232
-        
     """
     (ar, _) = validate_y(ar, name="ar")
     size = ar.size
     perm = ar.argsort()
     
     aux = ar[perm] # sorted ar
-    # flag starts of streaks of consecutive equal values
-    #flag = np.concatenate(([True], aux[1:] != aux[:-1]))
+    # flag ends of streaks of consecutive equal values (numpy unique tracks
+    # start of streaks)
     flag = np.concatenate((aux[1:] != aux[:-1], [True]))
     
     if weight_fun is None:
-        # index rank at starts of streaks
-        wts = np.flatnonzero(flag).astype(float)+1
-        fwt = size
+        # ranks of indices at ends of streaks
+        rflag = np.flatnonzero(flag).astype(float)+1
     else:
-        # cumulative weights of sorted values at starts streak
-        wts = weight_fun(perm).cumsum().astype(float)
-        fwt = wts[-1]
-        wts = wts[flag]
-    # calculate an average weight for equal value streaks by averaging streak
-    # start and end weigths
-    #wts = np.concatenate((wts[1:] + wts[:-1] - 1, wts[-1:] + fwt)) * 0.5
-    wts = np.concatenate((wts[:1] - 1, wts[1:] + wts[:-1] - 1)) * 0.5
+        # cumulative weights of sorted values at ends of streaks
+        rflag = weight_fun(perm).cumsum().astype(float)
+        rflag = rflag[flag]
+    # calculate an average rank for equal value streaks by averaging streak
+    # start and end ranks
+    rflag = np.concatenate((rflag[:1] - 1, rflag[1:] + rflag[:-1] - 1)) * 0.5
     
-    # streak index / weight corresponding to sorted original values
-    #iflag = np.cumsum(flag)-1
+    # streak index / rank corresponding to sorted original values
     iflag = np.concatenate(([0.], np.cumsum(flag[:-1]))).astype(int)
-    iwts = wts[iflag]
     # put points back in original order
-    rks = np.empty(size, dtype=np.double)
-    rks[perm] = iwts
-    return rks
+    r = np.empty(size, dtype=np.double)
+    r[perm] = rflag[iflag]
+    return r
 
     
-def _ifractional_rank(a, weight_fun=None):
-    """Array value ranks with tied values averaged"""
-    (a, _) = validate_y(a, name="a")
-    size = a.size
-    out = a
+def _ifractional_rank(ar, weight_fun=None):
+    """
+    Array value ranks with tied values averaged
     
-    sorting_index = a.argsort() # <- copy
-    a[:] = a[sorting_index] # sort a
-    flag = np.concatenate((a[1:] != a[:-1], [True]))
-    buff = np.getbuffer(a)
-    del a # a invalid
-    nnz = np.count_nonzero(flag)
+    Optimised rank algortihm that reuses and mutates input array storage
+    """
+    (ar, _) = validate_y(ar, name="ar")
+    size = ar.size
+    out = ar # we will eventually write ranks to input array
+    
+    perm = ar.argsort() # <- copy
+    ar[:] = ar[perm] # sort ar
+    
+    # identity indices of inital values of streaks of consecutive equal values
+    flag = np.concatenate((ar[1:] != ar[:-1], [True]))
+    count = np.count_nonzero(flag) # number of uniques
+    
+    # create a buffer using ar storage
+    buff = np.getbuffer(ar)
+    del ar # ar invalid
     
     if weight_fun is None:
-        # counts up to 
-        r = np.frombuffer(buff, dtype=np.double, count=nnz) # reserve part of buffer for rest of cumulative sorted weights
-        r[:] = np.flatnonzero(flag)+1
+        # ranks of indices at ends of streaks
+        rflag = np.frombuffer(buff, dtype=np.double, count=count) # reserve part of buffer for rest of cumulative sorted weights
+        rflag[:] = np.flatnonzero(flag)+1
     else:
-        cw = np.frombuffer(buff, dtype=np.double)
-        cw[:] = weight_fun(sorting_index)  # write sorted weights into buffer
-        cw[:] = cw.cumsum()
-        r = np.frombuffer(buff, dtype=np.double, count=nnz)
-        r[:] = cw[flag]
-        del cw # cw invalid
+        wts = np.frombuffer(buff, dtype=np.double)
+        wts[:] = weight_fun(perm) # write sorted weights into buffer
+        wts[:] = wts.cumsum() # write cumulative weights into buffer
+        rflag = np.frombuffer(buff, dtype=np.double, count=count)
+        rflag[:] = wts[flag] # ranks of indices at ends of streaks
+        del wts # cw invalid
     
-    # compute average ranks of tied values
-    if len(r) > 1:
-        r[1:] = r[1:] + r[:-1]
-        r[1:] -= 1
-        r[1:] *= 0.5
-    r[0] = (r[0] - 1) * 0.5
+    # calculate an average rank for equal value streaks by averaging streak
+    # start and end ranks
+    if len(rflag) > 1:
+        rflag[1:] = rflag[1:] + rflag[:-1]
+        rflag[1:] -= 1
+        rflag[1:] *= 0.5
+    rflag[0] = (rflag[0] - 1) * 0.5
     
     iflag = np.cumsum(flag[:-1]) # <- copy
     del flag # mem_opt
-    out[sorting_index[1:]] = r[iflag]
-    out[sorting_index[0]] = top
+    top = rflag[0] # get this value first, as r and out share a buffer, and writing to out will overwrite r 
+    out[perm[1:]] = rflag[iflag]
+    out[perm[0]] = top
     
 
 def validate_y(Y, weights=None, name="Y"):
