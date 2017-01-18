@@ -59,7 +59,7 @@ from bamm.bamExtractor import BamExtractor as BMBE
 from profileManager import ProfileManager
 from binManager import BinManager
 from data3 import ContigParser, MappingParser
-from utils import makeSurePathExists
+from utils import makeSurePathExists, CSVReader
 from cluster import MarkerCheckTreePrinter
 import distance
 import hierarchy
@@ -259,7 +259,7 @@ class MarkerExtractor:
                     for (label, taxstring, cname) in zip(labels, taxstrings, cnames):
                         f.write('%s\n' % separator.join([label, '\'%s\'' % taxstring, cname]))
                     
-                    #distance table
+                    #marker tree
                     f.write('\n#marker tree\n')
                     f.write(mt.printTree(profile.mapping.rowIndices[idx], leaves_list=bin_indices))
             except:
@@ -364,6 +364,70 @@ class BinStatsDumper:
             print "Could not open file for writing:",outFile,sys.exc_info()[0]
             raise
     
+
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
+class BinImporter:
+    """Used for importing bin assignments"""
+    def __init__(self,
+                 dbFileName):
+        self._pm = ProfileManager(dbFileName)
+        
+    def loadProfile(self, timer):
+        return self._pm.loadData(timer)
+        
+    def importBinAssignments(self,
+                             timer,
+                             infile,
+                             separator):
+        """Parse assignment file for bin contigs"""
+        
+        profile = self.loadProfile(timer)
+        br = BinReader()
+        # looks like cid->bid
+        contig_bins = {}
+        try:
+            with open(infile, "r") as f:
+                try:
+                    (con_names, con_bins) = br.parse(f, separator)
+                    (_, con_bid) = np.unique(con_bins, return_inverse=True)
+                    con_bid += 1 # bid zero is unbinned
+                    contig_bins = dict(zip(con_names, con_bid))
+                except:
+                    print "Error parsing bin assignments"
+                    raise
+        except:
+            print "Could not parse bin assignment file:",infile,sys.exc_info()[0]
+            raise
+
+        # now get the internal indices for contigs
+        for (i, cid) in enumerate(profile.contigNames):
+            try:
+                profile.binIds[i] = contig_bins[cid]
+            except KeyError:
+                pass
+        
+        # Now save all the stuff to disk!
+        print "Saving bins"
+        self._pm.setBinAssignments(profile, nuke=True)
+        print "    %s" % timer.getTimeStamp()
+
+        
+class BinReader:   
+    """Read a file of tab separated contig name and bin groupings."""
+    def parse(self, fp, separator):
+        con_names = []
+        con_bins = []
+        
+        reader = CSVReader()
+        for (cid, bid) in reader.readCSV(fp, separator):
+            con_names.append(cid)
+            con_bins.append(bid)
+        
+        return (con_names, con_bins)    
+
 ###############################################################################
 ###############################################################################
 ###############################################################################

@@ -199,21 +199,6 @@ def reachability_order(Y, core_dist=None):
         d[to_visit] = np.minimum(d[to_visit], m)
     return (o, d[o])
     
-    
-def _condensed_index(n, i, j):
-    """
-    Calculate the condensed index of element (i, j) in an n x n condensed
-    matrix.
-    Based on scipy Cython function:
-    https://github.com/scipy/scipy/blob/v0.17.0/scipy/cluster/_hierarchy.pyx
-    """
-    if i < j:
-        return n * i - (i * (i + 1) // 2) + (j - i - 1)
-    elif i > j:
-        return n * j - (j * (j + 1) // 2) + (i - j - 1)
-
-condensed_index_ = np.vectorize(_condensed_index, otypes=[np.intp])
-
 
 def condensed_index(n, i, j):
     """
@@ -228,18 +213,6 @@ def condensed_index(n, i, j):
                    )
     
     
-def squareform_coords_(n, k):
-    """
-    Calculate the coordinates (i, j), i < j of condensed index k in full
-    n x n distance matrix.
-    """
-    k = np.asarray(k)
-    n = np.asarray(n)
-    i = np.floor((1. / 2) * (2*n - 1 - np.sqrt((2*n - 1)**2 - 8 * k))).astype(int)
-    j = np.asarray(i + k - (n * i - (i * (i + 1) // 2) - 1), dtype=int) * 1
-    return (i, j)
-    
-    
 def squareform_coords(n, k):
     """
     Calculate the coordinates (i, j), i < j of condensed index k in full
@@ -247,6 +220,7 @@ def squareform_coords(n, k):
     """
     n = np.asarray(n)
     k = np.asarray(k)
+    
     # i = np.floor(0.5*(2*n - 1 - np.sqrt((2*n - 1)**2 - 8*k)))
     i = -8.*k
     i += (2*n - 1)**2
@@ -255,6 +229,7 @@ def squareform_coords(n, k):
     i += 2*n - 1
     i *= 0.5
     i = np.floor(i).astype(np.int)
+    
     # j = k + i - (n * i - (i * (i + 1)) // 2 - 1)
     j = i + 1
     j *= i
@@ -273,42 +248,45 @@ def pairs(n):
     
     
 # helpers
-def _fractional_rank(a, weight_fun=None):
-    """Return sorted of array indices with tied values averaged"""
-    (a, _) = validate_y(a, name="a")
-    size = a.size
-    sorting_index = a.argsort()
-    #a_ = a[sorting_index]
-    sa = a[sorting_index]
-    del a
-    #assert np.all(a_==a)
-    #flag_ = np.concatenate(([True], a_[1:] != a_[:-1], [True]))
-    flag = np.concatenate((sa[1:] != sa[:-1], [True]))
-    if weight_fun is None:
-        # counts up to 
-        sa = np.flatnonzero(flag).astype(float)+1
-        #cw_ = np.flatnonzero(flag_).astype(float)
-        #assert np.all(cw_[1:]==a)
-    else:
-        sa = weight_fun(sorting_index).cumsum().astype(float)
-        sa = sa[flag]
-        #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(float)
-        #cw_ = cw_[flag_]
-        #assert np.all(cw_[1:]==a)
-    sa = np.concatenate((sa[:1] - 1, sa[1:] + sa[:-1] - 1)) * 0.5
-    #sr_ = (cw_[1:] + cw_[:-1] - 1) * 0.5
-    #assert np.all(sr_==a)
-    flag = np.concatenate(([0], np.cumsum(flag[:-1])))
-    #iflag_ = np.cumsum(flag_[:-1]) - 1
-    #assert np.all(iflag_==flag)
-    flag = sa[flag]
-    sa = np.empty(size, dtype=np.double)
-    sa[sorting_index] = flag
+def _fractional_rank(ar, weight_fun=None):
+    """
+    Return sorted of array indices with tied values averaged.
     
-    #r_ = np.empty(size, dtype=np.double)
-    #r_[sorting_index] = sr_[iflag_]
-    #assert np.all(r_==a)
-    return sa
+    Code is loosely based on numpy's unique function:
+        https://github.com/numpy/numpy/blob/v1.12.0/numpy/lib/arraysetops.py#L112-L232
+        
+    """
+    (ar, _) = validate_y(ar, name="ar")
+    size = ar.size
+    perm = ar.argsort()
+    
+    aux = ar[perm] # sorted ar
+    # flag starts of streaks of consecutive equal values
+    #flag = np.concatenate(([True], aux[1:] != aux[:-1]))
+    flag = np.concatenate((aux[1:] != aux[:-1], [True]))
+    
+    if weight_fun is None:
+        # index rank at starts of streaks
+        wts = np.flatnonzero(flag).astype(float)+1
+        fwt = size
+    else:
+        # cumulative weights of sorted values at starts streak
+        wts = weight_fun(perm).cumsum().astype(float)
+        fwt = wts[-1]
+        wts = wts[flag]
+    # calculate an average weight for equal value streaks by averaging streak
+    # start and end weigths
+    #wts = np.concatenate((wts[1:] + wts[:-1] - 1, wts[-1:] + fwt)) * 0.5
+    wts = np.concatenate((wts[:1] - 1, wts[1:] + wts[:-1] - 1)) * 0.5
+    
+    # streak index / weight corresponding to sorted original values
+    #iflag = np.cumsum(flag)-1
+    iflag = np.concatenate(([0.], np.cumsum(flag[:-1]))).astype(int)
+    iwts = wts[iflag]
+    # put points back in original order
+    rks = np.empty(size, dtype=np.double)
+    rks[perm] = iwts
+    return rks
 
     
 def _ifractional_rank(a, weight_fun=None):
@@ -317,16 +295,9 @@ def _ifractional_rank(a, weight_fun=None):
     size = a.size
     out = a
     
-    sorting_index = a.argsort() # copy!
-    #a_ = a[sorting_index]
+    sorting_index = a.argsort() # <- copy
     a[:] = a[sorting_index] # sort a
-    #assert np.all(a_==a)
-    #flag_ = np.concatenate(([True], a_[1:] != a_[:-1], [True]))
     flag = np.concatenate((a[1:] != a[:-1], [True]))
-    #flag__ = np.empty(size, dtype=bool)
-    #flag__[-1] = True
-    #flag__[:-1] = a[1:] != a[:-1]
-    #assert np.all(flag__==flag)
     buff = np.getbuffer(a)
     del a # a invalid
     nnz = np.count_nonzero(flag)
@@ -335,8 +306,6 @@ def _ifractional_rank(a, weight_fun=None):
         # counts up to 
         r = np.frombuffer(buff, dtype=np.double, count=nnz) # reserve part of buffer for rest of cumulative sorted weights
         r[:] = np.flatnonzero(flag)+1
-        #cw_ = np.flatnonzero(flag_).astype(np.double)
-        #assert np.all(cw_[1:]==r)
     else:
         cw = np.frombuffer(buff, dtype=np.double)
         cw[:] = weight_fun(sorting_index)  # write sorted weights into buffer
@@ -344,9 +313,6 @@ def _ifractional_rank(a, weight_fun=None):
         r = np.frombuffer(buff, dtype=np.double, count=nnz)
         r[:] = cw[flag]
         del cw # cw invalid
-        #cw_ = np.concatenate(([0.], weights[sorting_index].cumsum())).astype(np.double)
-        #cw_ = cw_[flag_]
-        #assert np.all(cw_[1:]==r)
     
     # compute average ranks of tied values
     if len(r) > 1:
@@ -355,21 +321,10 @@ def _ifractional_rank(a, weight_fun=None):
         r[1:] *= 0.5
     r[0] = (r[0] - 1) * 0.5
     
-    #sr_ = (cw_[1:] + cw_[:-1] - 1) * 0.5
-    #assert np.all(sr_==r)
-    #iflag = np.empty(size, dtype=np.int)
-    #iflag[0] = 0
-    iflag = np.cumsum(flag[:-1]) # another copy !
+    iflag = np.cumsum(flag[:-1]) # <- copy
     del flag # mem_opt
-    #iflag_ = np.cumsum(flag_[:-1]) - 1
-    #assert np.all(iflag_[1:]==iflag)
-    top = r[0] # get this value first, as r and out share a buffer, and writing to out will overwrite r 
     out[sorting_index[1:]] = r[iflag]
     out[sorting_index[0]] = top
-    
-    #out_ = np.empty(size, dtype=np.double)
-    #out_[sorting_index] = sr_[iflag_]
-    #assert np.all(out_==out)
     
 
 def validate_y(Y, weights=None, name="Y"):
@@ -388,93 +343,3 @@ def validate_y(Y, weights=None, name="Y"):
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
-def clr(X):
-    """Centered log-ratio"""
-    X = np.asarray(X) + 1.
-    Xnorm = X / X.sum(axis=1)[:, None]
-    n = X.shape[1]
-    Xnormprod = (Xnorm**(1./n)).prod(axis=1)
-    return np.log(Xnorm / Xnormprod[:, None])
-    
-
-def rank_product_test(rankprod, n, k):
-    """
-    Gamma distribution approximation for rank product statistic. See Koziol. 
-    FEBS Letters 584 (2010) 941-944: "Comments on the rank product method for
-    analysing replicated experiments".
-    """
-    return sp_stats.gamma.sf(-np.log(rankprod) + k * np.log(n+1), k)
-    
-def rank_norm_test(norm, n, k):
-    """
-    See Koizol. Ann Hum Genet. (2004) 68, 376-380: "A Note on the Genome Scan
-    Meta-Analysis Statistic"
-    """
-    pass
-    
-def rank_sum_test(ranksum, n, k):
-    """
-    Edgeworth series approximation to the rank sum statistic. See Koizol. Ann
-    Hum Genet. (2004) 68, 376-380: "A Note on the Genome Scan Meta-Analysis
-    Statistic"
-    """
-    ranksum = np.asarray(ranksum)
-    n = np.double(n)
-    pr = np.array([n**(-k)*np.sum([(-1)**t*sp_misc.comb(k, t)*sp_misc.comb(r-n*t, k) for t in range(k+2)]) for r in ranksum])
-    return pr
-    z = (ranksum - ranksum.mean()) / ranksum.std()
-    n2 = n**2
-    c4 = ((6 + 15*k + 6*n2 - 15*k*n2) / (5*k*(1-n2)) - 3) / 24
-    return sp_stats.norm.cdf(z) - c4 * (z**3 - 3 * z) * sp_stats.norm.pdf(z)
-    
-    
-
-def rank_product_bounds(rankprod, n, k, bound):
-    """
-    Algorithm implemented following Heskes et al. BMC Bioinformatics 2014,
-    15:367 "A fast algorithm for determining bounds and accurate approximate
-    p-values of the rank product statistic for replicate experiments".
-    """
-    rankprod = np.asarray(rankprod)
-    j = -np.log(rankprod)/np.log(n) + k
-    alpha = dict()
-    beta = dict()
-    gamma = dict()
-    delta = dict()
-    for ik in range(k):
-        for ij in range(max(ik-k+min(j),0), min(ik, max(j))):
-            if ij==0:
-                alpha[ik, ij] = 0
-                beta[ik, ij] = 0
-                gamma[ik, ij] = 0
-                delta[ik, ij] = 0
-                epsilon[ik, ij] = n**ik
-            else:
-                if ij < ik:
-                    phi1 = gamma[ik-1, ij-1]/(alpha[ik-1, ij-1]+1)
-                    phi2 = gamma[ik-1, ij]/(alpha[ik-1, ij]+1)
-                    alpha[ik, ij] = np.concatenate((1, 1, alpha[ik-1, ij-1], alpha[ik-1, ij], alpha[ik-1, ij-1]+1, alpha[ik-1, ij]+1))
-                    beta[ik, ij] = np.concatenate((0, 1, beta[ik-1, ij-1], beta[ik-1, ij], beta[ik-1, ij-1], beta[ik-1, ij]))
-                    gamma[ik, ij] = np.concatenate((delta[ik-1, ij-1], -delta[ik-1, ij], bound*gamma[ik-1, ij-1], (1-bound)*gamma[ik-1, ij]/n, phi1, -phi2))
-                    delta[ik, ij] = bound*delta[ik, ij]+(1-bound)*delta[ik-1,j]/n+(epsilon[ik-1, ij-1]-epsilon[ik-1, ij])/(n**(ik-ij))-phi1.dot((-beta[ik-1, ij-1]*log(n))**(alpha[ik-1,ij-1]+1))+phi2.dot(((1-beta[ik-1, ij])*log(n))**(alpha[ik-1, ij]+1))
-                    epsilon[ik, ij] = (1-bound)*(epsilon[ik-1, ij]-epsilon[ik-1, ij-1]) + n*epsilon[ik-1, ij]
-                else:
-                    phi = gamma[ik-1, ik-1]/(alpha[ik-1, ik-1]+1)
-                    alpha[ik, ik] = np.concatenate((1, alpha[ik-1, ik-1], alpha[ik-1, ik-1]+1))
-                    beta[ik, ik] = np.concatenate((0, beta[ik-1, ik-1], beta[ik-1, ik-1]))
-                    gamma[ik, ik] = np.concatenate((delta[ik-1, ik-1], bound*gamma[ik-1, ik-1], phi))
-                    delta[ik, ik] = bound*delta[ik-1, ik-1] + epsilon[k-1, k-1]
-                    epsilon[ik, ik] = (1-bound)*(1-epsilon[k-1, k-1])
-                    
-                # duplicate combinations of alpha and beta can be combined by adding corresponding gamma scores
-                # this will keep alpha, beta and gamma vectors to at most 2k size (see paper)
-                b = np.vstack((alpha[ik, ij], beta[ik, ij]))
-                b = b.view(np.dtype((np.void, b.dtype.itemsize*b.shape[1])))
-                (_, idx, bins) = np.unique(b, return_index=True, return_inverse=True)
-                gamma[ik, ij] = numpy.bincount(bins, gamma[ik, ij])
-                alpha[ik, ij] = alpha[ik, ij][idx]
-                beta[ik, ij] = beta[ik, ij][idx]
-    
-    Gtilde = np.array([epsilon[k, j[i]] + delta[k, j[i]]*rankprod[i] + gamma[k, j[i]].dot(rankprod[i]*(log(rankprod[i]/(n**(k-j[i]+beta[k, j[i]]))**alpha[k, j[i]]))) for i in len(rankprod)])
-    return Gtilde / n**k
