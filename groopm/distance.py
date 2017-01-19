@@ -82,14 +82,14 @@ def mediod(Y):
     
     
 def argrank(array, weight_fun=None, axis=0):
-    """Return the positions of elements of a when sorted along the specified axis"""
+    """Return fractional ranks of elements of a when sorted along the specified axis"""
     if axis is None:
         return _fractional_rank(array, weight_fun=weight_fun)
     return np.apply_along_axis(_fractional_rank, axis, array, weight_fun=weight_fun)
     
     
 def iargrank(out, weight_fun=None):
-    """Replace elements with the fractional positions when sorted"""
+    """Replace elements with the fractional ranks when sorted"""
     _ifractional_rank(out, weight_fun=weight_fun)
 
     
@@ -281,7 +281,7 @@ def _ifractional_rank(ar, weight_fun=None):
     perm = ar.argsort() # <- copy
     ar[:] = ar[perm] # sort ar
     
-    # identity indices of inital values of streaks of consecutive equal values
+    # identity indices of final values of streaks of consecutive equal values
     flag = np.concatenate((ar[1:] != ar[:-1], [True]))
     count = np.count_nonzero(flag) # number of uniques
     

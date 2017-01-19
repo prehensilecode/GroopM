@@ -59,7 +59,8 @@ class TestStream:
         self.argsortOutfile = os.path.join(self.workingDir, "test_stream.argsort.out.store")
         self.argrankDistsFile = os.path.join(self.workingDir, "test_stream.argrank.dists.store")
         self.argrankIndicesFile = os.path.join(self.workingDir, "test_stream.argrank.indices.store")
-        self.iapplyFuncFile = os.path.join(self.workingDir, "test_stream.iapply_func.store")
+        self.iapplyFuncInfile = os.path.join(self.workingDir, "test_stream.iapply_func.in.store")
+        self.iapplyFuncOutfile = os.path.join(self.workingDir, "test_stream.iapply_func.out.store")
     
     def _remove_one(self, filename):
         try:
@@ -146,16 +147,14 @@ class TestStream:
             i1 = d1.argsort()
             d1[i1].tofile(dist_file)
             i1.tofile(indices_file)
-            (x1, s1) = argrank_chunk(indices_file, dist_file, chunk_size=40)
+            x1 = argrank_chunk(dist_file, indices_file, chunk_size=40)
             assert_true(equal_arrays(x1, argrank(d1, axis=None)),
                         "returns equal ranks to non-chunked function")
-            assert_true(s1==190, "returns number of ranks")
             
             w2 = np_random.rand(190).astype(np.double)
-            (x2, s2) = argrank_chunk(indices_file, dist_file, weight_fun=lambda i: w2[i], chunk_size=40)
+            x2 = argrank_chunk(dist_file, indices_file, weight_fun=lambda i: w2[i], chunk_size=40)
             assert_true(almost_equal_arrays(x2, argrank(d1, weight_fun=lambda i: w2[i], axis=None)),
                         "correctly weights ranks when passed a weight function")
-            assert_true(np.round(s2,6)==np.round(w2.sum(),6), "returns sum of weights")
             os.remove(dist_file)
             os.remove(indices_file)
             
@@ -172,9 +171,8 @@ class TestStream:
             i2[perm] = numbers
             d2.tofile(dist_file)
             i2.tofile(indices_file)
-            (x3, s3) = argrank_chunk(indices_file, dist_file, chunk_size=int(1e5))
+            x3 = argrank_chunk(dist_file, indices_file, chunk_size=int(1e5))
             assert_true(equal_arrays(x3, perm), "computes ranks of a large-ish permutation array")
-            assert_true(s3==len(numbers), "returns rank count for large-ish array")
             os.remove(dist_file)
             os.remove(indices_file)
         
@@ -183,16 +181,18 @@ class TestStream:
     
     def testIapplyFuncChunk(self):
         #
-        filename = self.iapplyFuncFile
+        infilename = self.iapplyFuncInfile
+        outfilename = self.iapplyFuncOutfile
         
         def _test_one_small():
             a = np_random.rand(200)
             b = np_random.rand(200)
-            b.tofile(filename)
-            out = a.copy()
-            iapply_func_chunk(out, filename, operator.add, chunk_size=50)
-            assert_true(equal_arrays(a+b, out), "applies add operation in place using disk-stored array")
-            os.remove(filename)
+            b.tofile(infilename)
+            a.tofile(outfilename)
+            iapply_func_chunk(outfilename, infilename, operator.add, chunk_size=50)
+            assert_true(equal_arrays(a+b, np.fromfile(outfilename, dtype=a.dtype)), "applies add operation in place using disk-stored array")
+            os.remove(infilename)
+            os.remove(outfilename)
             
         for _ in range(50):
             _test_one_small()

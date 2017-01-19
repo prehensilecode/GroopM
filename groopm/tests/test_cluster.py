@@ -98,10 +98,11 @@ def test_ClusterQualityEngine():
 class ClusterEngineTester(FlatClusterEngine):
     def __init__(self, scores, qualities):
         self.getScores = lambda _: scores
-        self.isLowQualityCluster = lambda _: qualities
+        self.isNoiseCluster = lambda _: qualities
     
 def test_ClusterEngineTester(): 
     #
+    
     """Test that the cluster engine with uniform zero scores will merge low
     quality clusters. The tree for this test is represented below.
     

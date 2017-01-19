@@ -64,8 +64,6 @@ import hierarchy
 import stream
 from profileManager import ProfileManager
 from groopmExceptions import SavedDistancesInvalidNumberException, CacheUnavailableException
-from utils import group_iterator
-from data3 import KmerSigEngine
 
 ###############################################################################
 ###############################################################################
@@ -310,7 +308,7 @@ class StreamingProfileDistanceEngine:
             covind_filename = self._store.getWorkingFile()
             stream.pdist_chunk(covProfiles, cov_filename, chunk_size=2*self._size, metric="euclidean")
             stream.argsort_chunk_mergesort(cov_filename, covind_filename, chunk_size=self._size)
-            cov_ranks = stream.argrank_chunk(covind_filename, cov_filename, weight_fun=weight_fun, chunk_size=self._size)
+            cov_ranks = stream.argrank_chunk(cov_filename, covind_filename, weight_fun=weight_fun, chunk_size=self._size)
             self._store.cleanupWorkingFiles()
             self._cacher.store("cov", cov_ranks)
         del cov_ranks
@@ -326,7 +324,7 @@ class StreamingProfileDistanceEngine:
             kmerind_filename = self._store.getWorkingFile()
             stream.pdist_chunk(kmerSigs, kmer_filename, chunk_size=2*self._size, metric="euclidean")
             stream.argsort_chunk_mergesort(kmer_filename, kmerind_filename, chunk_size=self._size)
-            kmer_ranks = stream.argrank_chunk(kmerind_filename, kmer_filename, weight_fun=weight_fun, chunk_size=self._size)
+            kmer_ranks = stream.argrank_chunk(kmer_filename, kmerind_filename, weight_fun=weight_fun, chunk_size=self._size)
             self._store.cleanupWorkingFiles()
             self._cacher.store("kmer", kmer_ranks)
         del kmer_ranks
@@ -544,12 +542,12 @@ class FlatClusterEngine:
         # are equal are ambiguously encoded in hierarchical clusterings. 
         # This is accounted for in the following way:
         #   1. Find nodes that do not have strictly lower height to their parents.
-        #   2. Set the quality scores of these clusters to -inf to ensure the sum
-        #      of descendent scores are propagated.
+        #   2. Set the quality scores of these clusters to a value that will ensure
+        #      the sum of descendent scores are propagated.
         #   3. Merge these clusters only if the highest equal height ancestor is
         #      merged.
         flat_ids = hierarchy.flatten_nodes(Z)
-        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = -np.inf
+        scores[n+np.flatnonzero(flat_ids!=np.arange(n-1))] = np.min(scores)
         
         # NOTE: support is a measure of the degree to which a cluster quality
         # improves on the combined quality of the best clusters below (computed
