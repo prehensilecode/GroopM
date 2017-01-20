@@ -56,47 +56,7 @@ np.seterr(all='raise')
 ###############################################################################
 ###############################################################################
 ###############################################################################
-class ClassificationManager_:
-    """Wraps a connectivity matrix and determines consensus classifications by
-    finding `cliques` (fully-connected subgraphs) in the matrix.
-    """
-    
-    def __init__(self, mapping):
-        self._classification = mapping.classification
-        self._d = 1
-        Y = np.logical_or(mapping.makeDistances(), self._classification.makeDistances() >= self._d)
-        self._mC = np.logical_not(sp_distance.squareform(Y)).astype(float)
-        #self._mC = mapping.makeConnectivity(d=self._d)
-        
-    def BCubed_(self, indices):
-        """Compute BCubed metrics"""
-        correct = self._mC[np.ix_(indices, indices)].sum(axis=1)
-        prec = correct * 1. / len(indices)
-        recall = correct * 1. / self._mC[indices].sum(axis=1)
-        return (prec, recall)
-        
-    def maxClique(self, indices):
-        """Compute a maximal set of indices such that `C[j,k] == True`
-        for all pairs `j`,`k` from set"""
-        if len(indices) == 0:
-            return np.array([], dtype=np.intp)
-        return greedy_clique_by_elimination(self._mC[np.ix_(indices, indices)])
-        
-    def consensusTag(self, indices):
-        indices = np.asarray(indices)
-        q = indices[self.maxClique(indices)]
-        consensus_tag = ""
-        level = 7
-        for i in q:
-            tags = [t for t in zip(range(7-self._d), self._classification.tags(i))]
-            if len(tags) > 0:
-                (o, t) = tags[-1]
-                if level > o:
-                    consensus_tag = t
-                    level = o
-        return consensus_tag
 
-        
 class BinClassifier:
     """Wraps a connectivity matrix and determines consensus classifications by
     finding `cliques` (fully-connected subgraphs) in the matrix.

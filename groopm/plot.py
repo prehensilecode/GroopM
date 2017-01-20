@@ -67,15 +67,13 @@ from utils import makeSurePathExists, split_contiguous
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
-from cluster import (ClassificationClusterEngine,
-                     ProfileDistanceEngine,
+from cluster import (ProfileDistanceEngine,
                      StreamingProfileDistanceEngine,
                      FileCacher,
                      MarkerCheckCQE,
                      MarkerCheckFCE
                     )
 from classification import BinClassifier
-from data3 import KmerSigEngine
 import hierarchy
 
 np.seterr(all='raise')
@@ -410,8 +408,11 @@ class BarPlotter(Plotter2D):
         self.plotOnAx = BarAxisPlotter(*args, **kwargs)
         
 
-# Tree plotters
+# GroopM plotting tools
 class ProfileReachabilityPlotter:
+    """
+    Bar plot of reachability distances between points in traversal order.
+    """
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
         self._bc = BinClassifier(self._profile.mapping)
@@ -419,8 +420,7 @@ class ProfileReachabilityPlotter:
         
     def plot(self,
              bids,
-             label=None,
-             highlight="bins",
+             label="tag",
              fileName=""):
                  
         n = 0
@@ -428,47 +428,41 @@ class ProfileReachabilityPlotter:
             n += self._profile.contigLengths[i]*self._profile.contigLengths[i+1:].sum()
         h = self._profile.reachDists
         o = self._profile.reachOrder
-        if label=="count":
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
-            xlabel = "count"
-            xticklabel_rotation = "horizontal"
-        elif label=="tag":
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
-            xlabel = "lineage"
-            xticklabel_rotation = "vertical"
-        elif label is None:
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
-            xlabel = ""
-            xticklabel_rotation = "horizontal"
-        else:
-            raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
-        if highlight=="bins":
-            binIds = self._profile.binIds[o]
+        # ticks with empty labels for contigs with marker hits
+        iloc = dict(zip(o, range(len(o))))
+        (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
+        xlabel = ""
+        xticklabel_rotation = "horizontal"
             
-            (first_indices, last_indices) = split_contiguous(binIds)
-            is_binned = binIds[first_indices]!=0
-            first_binned_indices = first_indices[is_binned]
-            last_binned_indices = last_indices[is_binned]
-            
-            # alternate red and black stretches for different bins
-            colours = np.full(len(o), 'c', dtype="|S1")
-            for (i, (s, e)) in enumerate(zip(first_binned_indices, last_binned_indices)):
-                colours[s:e] = 'r' if i%2 else 'k'
-            
-            # label stretches with bin ids
-            group_centers = (first_binned_indices+last_binned_indices)*0.5
-            group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
+        # colour contigs by bin
+        binIds = self._profile.binIds[o]
+        flag_first = np.concatentate(([True], binIds[1:] != binIds[:-1])) # first of equal value run
+        first_indices = np.flatnonzero(flag_first)
+        last_indices = np.concatentate((first_indices[1:], [len(o)]))
+        #(first_indices, last_indices) = split_contiguous(binIds)
+        is_binned = binIds[flag_first]!=0
+        first_binned_indices = first_indices[is_binned]
+        last_binned_indices = last_indices[is_binned]
+        
+        # alternate red and black stretches for different bins
+        colours = np.full(len(o), 'c', dtype="|S1")
+        for (i, (s, e)) in enumerate(zip(first_binned_indices, last_binned_indices)):
+            colours[s:e] = 'r' if i%2 else 'k'
+        
+        # label stretches with bin ids
+        group_centers = (first_binned_indices+last_binned_indices)*0.5
+        group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
+        if label=="bids":
             group_labels = binIds[first_binned_indices].astype(str)
-            k = np.in1d(binIds[first_binned_indices], bids)
-            text = zip(group_centers[k], group_heights[k], group_labels[k])
-            smap = None
+        elif label=="tag":
+            group_labels = np.array([self._bc.consensusTag(indices) for (_, indices) in group_iterator(binIds[self._profile.mapping.rowIndices])])
         else:
-            raise ValueError("Parameter value for 'highlight' argument must be one of: 'bins'. Got: '%s'." % highlight)
-        
+            raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
+    
+        k = np.in1d(binIds[first_binned_indices], bids)
+        text = zip(group_centers[k], group_heights[k], group_labels[k])
+            
         hplot = BarPlotter(
             height=h,
             colours=colours,
@@ -478,12 +472,11 @@ class ProfileReachabilityPlotter:
             xticklabels=xticklabels,
             xticklabel_rotation=xticklabel_rotation,
             text=text,
-            colourbar=smap,
             )
         hplot.plot(fileName)
         
         
-class ProfileReachabilityPlotter_:
+class ProfileReachabilityPlotter:
     def __init__(self, profile, colourmap="Sequential"):
         self._profile = profile
         self._bc = BinClassifier(self._profile.mapping)
@@ -492,113 +485,43 @@ class ProfileReachabilityPlotter_:
     def plot(self,
              bids,
              label=None,
-             highlight="bins",
              fileName=""):
         
         h = self._profile.reachDists
         o = self._profile.reachOrder
-        if label=="count":
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, len(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
-            xlabel = "count"
-            xticklabel_rotation = "horizontal"
-        elif label=="tag":
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, self._bc.consensusTag(indices)) for (i, indices) in self._profile.mapping.iterindices() if i in iloc])
-            xlabel = "lineage"
-            xticklabel_rotation = "vertical"
-        elif label is None:
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
-            xlabel = ""
-            xticklabel_rotation = "horizontal"
-        else:
-            raise ValueError("Parameter value for 'label' argument must be one of 'count', 'tag'. Got '%s'." % label)
         
-        if highlight in ["bins", "conservative_bins", "recruited_bins"]:
-            if highlight=="bins":
-                binIds = self._profile.binIds[o]
-            elif highlight in ["conservative_bins", "recruited_bins"]:
-                Z = hierarchy.linkage_from_reachability(o, h)
-                fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
-                (recruited_bins, conservative_bins) = fce.makeClusters(Z,
-                                                                                    return_conservative_bins=True)
-                if highlight=="conservative_bins":
-                    binIds = conservative_bins[o]
-                elif highlight=="recruited_bins":
-                    binIds = recruited_bins[o]
-                bids = np.unique(binIds)
-            
-            (first_indices, last_indices) = split_contiguous(binIds)
-            is_binned = binIds[first_indices]!=0
-            first_binned_indices = first_indices[is_binned]
-            last_binned_indices = last_indices[is_binned]
-            
-            # alternate red and black stretches for different bins
-            colours = np.full(len(o), 'c', dtype="|S1")
-            for (i, (s, e)) in enumerate(zip(first_binned_indices, last_binned_indices)):
-                colours[s:e] = 'r' if i%2 else 'k'
-            
-            # label stretches with bin ids
-            group_centers = (first_binned_indices+last_binned_indices)*0.5
-            group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
-            group_labels = binIds[first_binned_indices].astype(str)
-            k = np.in1d(binIds[first_binned_indices], bids)
-            text = zip(group_centers[k], group_heights[k], group_labels[k])
-            smap = None
-        elif highlight in ["support", "coeffs", "nzcoeffs", "engine", "leaders", "conservative_leaders"]:
-            # color leaves by maximum ancestor coherence score
-            Z = hierarchy.linkage_from_reachability(o, h)
-            n = Z.shape[0]+1
-            fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
-            (bins,
-             leaders,
-             is_low_quality,
-             support,
-             flat_coeffs,
-             is_seed_cluster,
-             conservative_bins,
-             conservative_leaders
-             ) = fce.makeClusters(Z,
-                                  return_leaders=True,
-                                  return_low_quality=True,
-                                  return_support=True,
-                                  return_coeffs=True,
-                                  return_seeds=True,
-                                  return_conservative_bins=True,
-                                  return_conservative_leaders=True
-                                  )
-            
-            splits = hierarchy.reachability_splits(h)
-            if highlight=="support":
-                ix = np.zeros(n, dtype=int)
-                ix[splits[:-1]] = np.where(support < 0, 0, np.where(support > 0, 2, 1))
-                colours = np.array(['k', 'c', 'r'], dtype='|S1')[ix]
-                smap = None
-            elif highlight=="nzcoeffs":
-                ix = np.zeros(n, dtype=int)
-                ix[splits[:-1]] = flat_coeffs[n:] > 0
-                colours = np.array(['k', 'r'], dtype="|S1")[ix]
-                smap = None
-            elif highlight=="coeffs":
-                coeffs = np.zeros(n, dtype=float)
-                coeffs[splits[:-1]] = flat_coeffs[n:]
-                smap = plt_cm.ScalarMappable(cmap=self._colourmap)
-                smap.set_array(coeffs)
-                colours = smap.to_rgba(coeffs)
-            elif highlight=="engine":
-                nodes = np.zeros(2*n-1, dtype=int)
-                nodes[is_seed_cluster] = 1
-                nodes[is_low_quality] = 2
-                nodes[conservative_leaders] = 3
-                ix = np.zeros(n, dtype=int)
-                ix[splits[:-1]] = nodes[n:]
-                colours = np.array(['k', 'b', 'c', 'r'], dtype="|S1")[ix]
-                smap = None
-            text = []
-        else:
-            raise ValueError("Parameter value for 'highlight' argument must be one of 'bins', 'support', 'coeffs', 'nzcoeffs', 'ratios'. Got '%s'." % highlight)
+        iloc = dict(zip(o, range(len(o))))
+        (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
+        xlabel = ""
+        xticklabel_rotation = "horizontal"
         
+        
+        # color leaves by maximum ancestor coherence score
+        Z = hierarchy.linkage_from_reachability(o, h)
+        n = Z.shape[0]+1
+        fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
+        (_, 
+         is_noise_cluster,
+         is_seed_cluster,
+         conservative_bins
+         ) = fce.makeClusters(Z,
+                              return_noise=True,
+                              return_seeds=True,
+                              return_conservative_bins=True
+                              )
+                              
+        
+        nodes = np.zeros(2*n-1, dtype=int)
+        nodes[is_seed_cluster] = 1
+        nodes[is_noise_cluster] = 2
+        nodes[conservative_bins] = 3
+        
+        splits = hierarchy.reachability_splits(h)
+        ix = np.zeros(n, dtype=int)
+        ix[splits[:-1]] = nodes[n:]
+        colours = np.array(['k', 'b', 'c', 'r'], dtype="|S1")[ix]
+        smap = None
+        text = []
         
         hplot = BarPlotter(
             height=h,
