@@ -95,7 +95,7 @@ class BinClassifier:
                 if level > o:
                     consensus_tag = t
                     level = o
-        return "{:s}(%{:.0f})".format(consensus_tag, 100.*len(q)/len(indices))
+        return "{:s}({:d}/{:d})".format(consensus_tag, len(q), len(indices))
         
 def greedy_clique_by_elimination(C):
     """Find clique from connectivity matrix by repeatedly removing least connected

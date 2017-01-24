@@ -485,7 +485,7 @@ def assert_num_obs(n, y):
 class FlatClusterEngine:
     """Flat clustering pipeline.
     
-    Subclass should provide `getScores` and `isLowQuality` methods with the
+    Subclass should provide `getScores` and `isNoiseCluster` methods with the
     described interfaces.
     """
     
@@ -559,7 +559,7 @@ class FlatClusterEngine:
         support = scores[n:] - hierarchy.maxscoresbelow(Z, scores, operator.add)
         
         is_noise_cluster = np.asarray(self.isNoiseCluster(Z))
-        is_noise_cluster[n:] = is_noise_cluster[n+flat_ids]
+        #is_noise_cluster[n:] = is_noise_cluster[n+flat_ids]
         
         # NOTE: conservative bins are a minimal set of clusters that have
         # maximum combined quality. The returned conservative bins have below
@@ -606,12 +606,10 @@ class FlatClusterEngine:
             out += (scores,)
         if return_seeds:
             out += (is_seed_cluster,)
-            
-        if (return_conservative_bins or return_conservative_leaders):
-            if return_conservative_bins:
-                out += (conservative_bins,)
-            if return_conservative_leaders:
-                out += (conservative_leaders,)
+        if return_conservative_bins:
+            out += (conservative_bins,)
+        if return_conservative_leaders:
+            out += (conservative_leaders,)
         return out
     
     def getScores(self, Z):
@@ -848,7 +846,8 @@ class MarkerCheckCQE(ClusterQualityEngine):
         if len(indices) <= 2:
             return 0
         
-        W = lambda i,j: 1 if i==j else 1. / np.count_nonzero(self._L[np.ix_(indices[self._M[i, indices]], indices[self._M[j, indices]])])
+        
+        W = lambda i,j: 1 if i==j else 1. / np.count_nonzero(self._L[np.ix_(indices[np.logical_and(self._M[i, indices], self._L[i, indices])], indices[np.logical_and(self._M[j, indices],self._L[j, indices])])])
         
         #weights = 1. / np.logical_and(self._M[np.ix_(indices, indices)], self._L[np.ix_(indices, indices)]).sum(axis=0)
         #W = lambda i,j: 1 if i==j else weights[i] * weights[j]
@@ -984,7 +983,7 @@ class MarkerCheckTreePrinter(TreePrinter):
         self._n = n
         ce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
         self._scores = ce.getScores(self._Z)
-        self._quals = ce.isLowQualityCluster(self._Z)
+        self._is_noise = ce.isNoiseCluster(self._Z)
         weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
         weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=np.add)
         #flat_ids = hierarchy.flatten_nodes(Z)
@@ -999,7 +998,7 @@ class MarkerCheckTreePrinter(TreePrinter):
         return "'%s" % self._profile.contigNames[node_id]
         
     def getNodeLabel(self, node_id):
-        return (":%.2f[%dbp,n=%d]" + ("L" if self._quals[node_id] else "")) % (self._scores[node_id], self._weights[node_id], self._counts[node_id])
+        return (":%.2f[%dbp,n=%d]" + ("N" if self._is_noise[node_id] else "")) % (self._scores[node_id], self._weights[node_id], self._counts[node_id])
 
 
 ###############################################################################

@@ -133,9 +133,8 @@ class PrintHelpAction(argparse.Action):
     
         Plotting
         
-    groopm plot         -> {plot}
     groopm reach        -> {reach}
-    groopm tree         -> {tree}
+    groopm plot         -> {plot}
     
     USE: groopm OPTION -h to see detailed options
 '''.format(
@@ -147,8 +146,7 @@ class PrintHelpAction(argparse.Action):
             markers=markers_command_configure.description,
             import_=import_command_configure.description,
             plot=plot_command_configure.description,
-            reach=reach_command_configure.description,
-            tree=tree_command_configure.description,
+            reach=reach_command_configure.description
         )
 
 #------------------------------------------------------------------------------
@@ -512,29 +510,6 @@ class reach_command_configure:
                 bids=options.bids,
                 prefix=options.prefix)
                    
-                   
-class tree_command_configure:
-    description="Plot cluster hierarchy tree"
-
-    def __init__(self, parser):
-        parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-p', '--prefix', default="TREE", help="prefix to apply to output files")
-        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
-        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
-        parser.set_defaults(run=self)
-
-    def __call__(_self, options):
-        timer = groopm.TimeKeeper()
-        print "*******************************************************************************"
-        print " [[GroopM %s]] Running in tree plotting mode..." % __version__
-        print "*******************************************************************************"
-
-
-        pm = groopm.TreePlotManager(options.dbname,
-                                    folder=None if options.interactive else options.out_folder)
-        pm.plot(timer,
-                prefix=options.prefix)
-                   
 
 #------------------------------------------------------------------------------
 #GroopM command
@@ -617,20 +592,6 @@ def groopm_command_configure(parser):
     # plotting subcommands
     ##################################################
 
-    plot_subparser = subparsers.add_parser(
-        "plot",
-        description=plot_command_configure.description,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    plot_command_configure(plot_subparser)
-    
-    tree_subparser = subparsers.add_parser(
-        "tree",
-        description=tree_command_configure.description,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    tree_command_configure(tree_subparser)
-    
     reach_subparser = subparsers.add_parser(
         "reach",
         description=reach_command_configure.description,
@@ -638,7 +599,15 @@ def groopm_command_configure(parser):
     )
     reach_command_configure(reach_subparser)
     
-            
+    plot_subparser = subparsers.add_parser(
+        "plot",
+        description=plot_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    plot_command_configure(plot_subparser)
+    
+    
+    
 if __name__ == '__main__':
 
     ##################################################

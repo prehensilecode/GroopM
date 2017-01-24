@@ -63,7 +63,7 @@ from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 
 # GroopM imports
-from utils import makeSurePathExists, split_contiguous
+from utils import makeSurePathExists, split_contiguous, group_iterator
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
@@ -105,6 +105,7 @@ class BinPlotManager:
              origin="mediod",
              colorMap="HSV",
              prefix="BIN",
+             surface=False,
              savedDistsPrefix="",
              keepDists=False
             ):
@@ -122,7 +123,9 @@ class BinPlotManager:
         cacher = FileCacher(savedDistsPrefix)
 
         print "    Initialising plotter"
-        fplot = BinDistancePlotter(profile, colourmap=colorMap, cacher=cacher)
+        
+        fplotter = BinDistancePlotter4D if surface else BinDistancePlotter
+        fplot = fplotter(profile, colourmap=colorMap, cacher=cacher)
         print "    %s" % timer.getTimeStamp()
         
         
@@ -163,6 +166,7 @@ class ReachabilityPlotManager:
     def plot(self,
              timer,
              bids=None,
+             label="tag",
              prefix="REACH",
             ):
         
@@ -179,39 +183,10 @@ class ReachabilityPlotManager:
         print "    %s" % timer.getTimeStamp()
         
         fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
-        fplot.plot(fileName=fileName, bids=bids)
+        fplot.plot(fileName=fileName, bids=bids, label=label)
                    
         if self._outDir is not None:
             print "    %s" % timer.getTimeStamp()
-        
-        
-class TreePlotManager:
-    """Plot and highlight contigs from a bin"""
-    def __init__(self, dbFileName, folder=None):
-        self._pm = ProfileManager(dbFileName)
-        self._outDir = os.getcwd() if folder == "" else folder
-        # make the dir if need be
-        if self._outDir is not None:
-            makeSurePathExists(self._outDir)
-            
-    def loadProfile(self, timer):
-        return self._pm.loadData(timer, loadBins=True, loadMarkers=True,
-                loadReachability=True, removeBins=True, bids=[0])
-        
-    def plot(self,
-             timer,
-             prefix="TREE"
-            ):
-        
-        profile = self.loadProfile(timer)
-
-        print "    Initialising plotter"
-        fplot = TreePlotter(profile)
-        print "    %s" % timer.getTimeStamp()
-        
-        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
-        fplot.plot(fileName=fileName)
-        print "    %s" % timer.getTimeStamp()
 
         
 # Basic plotting tools
@@ -369,10 +344,11 @@ class BarAxisPlotter:
                  colours,
                  xticks=[],
                  xticklabels=[],
-                 xticklabel_rotation="horizontal",
                  xlabel="",
                  ylabel="",
                  text=[],
+                 text_alignment="center",
+                 text_rotation="horizontal",
                  colourbar=None):
         self.y = height
         self.colours = colours
@@ -380,8 +356,9 @@ class BarAxisPlotter:
         self.ylabel = ylabel
         self.xticks = xticks
         self.xticklabels = xticklabels
-        self.xticklabel_rotation = xticklabel_rotation
         self.text = text
+        self.text_alignment = text_alignment
+        self.text_rotation = text_rotation
         self.colourbar = colourbar
         
     def __call__(self, ax, fig):
@@ -394,10 +371,13 @@ class BarAxisPlotter:
         ax.set_ylabel(self.ylabel)
         ax.set_xticks(self.xticks)
         ax.set_xticklabels(self.xticklabels,
-                           rotation=self.xticklabel_rotation)
+                           rotation="horizontal")
         ax.tick_params(axis="x", length=2, direction="out", width=1, top='off')
         for (x, y, text) in self.text:
-            ax.text(x, y, text, ha='center', va='bottom')
+            ax.text(x, y, text, va="bottom",
+                                ha=self.text_alignment,
+                                rotation=self.text_rotation,
+                                rotation_mode="anchor")
                            
         if self.colourbar is not None:
             fig.colorbar(self.colourbar, ax=ax)
@@ -413,10 +393,9 @@ class ProfileReachabilityPlotter:
     """
     Bar plot of reachability distances between points in traversal order.
     """
-    def __init__(self, profile, colourmap="Sequential"):
+    def __init__(self, profile):
         self._profile = profile
         self._bc = BinClassifier(self._profile.mapping)
-        self._colourmap = getColorMap(colourmap)
         
     def plot(self,
              bids,
@@ -431,15 +410,14 @@ class ProfileReachabilityPlotter:
         
         # ticks with empty labels for contigs with marker hits
         iloc = dict(zip(o, range(len(o))))
-        (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
+        (xticks, xticklabels) = zip(*[(iloc[i], "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
         xlabel = ""
-        xticklabel_rotation = "horizontal"
             
         # colour contigs by bin
         binIds = self._profile.binIds[o]
-        flag_first = np.concatentate(([True], binIds[1:] != binIds[:-1])) # first of equal value run
+        flag_first = np.concatenate(([True], binIds[1:] != binIds[:-1])) # first of equal value run
         first_indices = np.flatnonzero(flag_first)
-        last_indices = np.concatentate((first_indices[1:], [len(o)]))
+        last_indices = np.concatenate((first_indices[1:], [len(o)]))
         #(first_indices, last_indices) = split_contiguous(binIds)
         is_binned = binIds[flag_first]!=0
         first_binned_indices = first_indices[is_binned]
@@ -455,8 +433,13 @@ class ProfileReachabilityPlotter:
         group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
         if label=="bids":
             group_labels = binIds[first_binned_indices].astype(str)
+            text_alignment = "center"
+            text_rotation = "horizontal"
         elif label=="tag":
-            group_labels = np.array([self._bc.consensusTag(indices) for (_, indices) in group_iterator(binIds[self._profile.mapping.rowIndices])])
+            mapping_bids = binIds[self._profile.mapping.rowIndices]
+            group_labels = np.array([self._bc.consensusTag(np.flatnonzero(mapping_bids==bid)) for bid in binIds[first_binned_indices]])
+            text_alignment = "right"
+            text_rotation = -60
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
     
@@ -464,167 +447,17 @@ class ProfileReachabilityPlotter:
         text = zip(group_centers[k], group_heights[k], group_labels[k])
             
         hplot = BarPlotter(
-            height=h,
-            colours=colours,
+            height=h[1:],
+            colours=colours[1:],
             xlabel=xlabel,
-            ylabel="dendist",
+            ylabel="reachability dist",
             xticks=xticks,
             xticklabels=xticklabels,
-            xticklabel_rotation=xticklabel_rotation,
             text=text,
+            text_alignment=text_alignment,
+            text_rotation=text_rotation
             )
         hplot.plot(fileName)
-        
-        
-class ProfileReachabilityPlotter:
-    def __init__(self, profile, colourmap="Sequential"):
-        self._profile = profile
-        self._bc = BinClassifier(self._profile.mapping)
-        self._colourmap = getColorMap(colourmap)
-        
-    def plot(self,
-             bids,
-             label=None,
-             fileName=""):
-        
-        h = self._profile.reachDists
-        o = self._profile.reachOrder
-        
-        iloc = dict(zip(o, range(len(o))))
-        (xticks, xticklabels) = zip(*[(iloc[i]+0.5, "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
-        xlabel = ""
-        xticklabel_rotation = "horizontal"
-        
-        
-        # color leaves by maximum ancestor coherence score
-        Z = hierarchy.linkage_from_reachability(o, h)
-        n = Z.shape[0]+1
-        fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
-        (_, 
-         is_noise_cluster,
-         is_seed_cluster,
-         conservative_bins
-         ) = fce.makeClusters(Z,
-                              return_noise=True,
-                              return_seeds=True,
-                              return_conservative_bins=True
-                              )
-                              
-        
-        nodes = np.zeros(2*n-1, dtype=int)
-        nodes[is_seed_cluster] = 1
-        nodes[is_noise_cluster] = 2
-        nodes[conservative_bins] = 3
-        
-        splits = hierarchy.reachability_splits(h)
-        ix = np.zeros(n, dtype=int)
-        ix[splits[:-1]] = nodes[n:]
-        colours = np.array(['k', 'b', 'c', 'r'], dtype="|S1")[ix]
-        smap = None
-        text = []
-        
-        hplot = BarPlotter(
-            height=h,
-            colours=colours,
-            xlabel=xlabel,
-            ylabel="dendist",
-            xticks=xticks,
-            xticklabels=xticklabels,
-            xticklabel_rotation=xticklabel_rotation,
-            text=text,
-            colourbar=smap,
-            )
-        hplot.plot(fileName)
-        
-
-class TreePlotter:
-    def __init__(self, profile, colourmap="Sequential"):
-        self._profile = profile
-        self._bc = BinClassifier(self._profile.mapping)
-        self._cqe = MarkerCheckCQE(self._profile)
-        self._colourmap = getColorMap(colourmap)
-        self._Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
-        (_r, self._node_dict) = sp_hierarchy.to_tree(self._Z, rd=True)
-        
-    def plot(self,
-             label="count",
-             colour="engine",
-             fileName=""):
-        
-        n = self._Z.shape[0]+1
-        fce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
-        (bins,
-         leaders,
-         is_low_quality,
-         support,
-         flat_coeffs,
-         is_seed_cluster,
-         conservative_bins,
-         conservative_leaders
-         ) = fce.makeClusters(self._Z,
-                              return_leaders=True,
-                              return_low_quality=True,
-                              return_support=True,
-                              return_coeffs=True,
-                              return_seeds=True,
-                              return_conservative_bins=True,
-                              return_conservative_leaders=True
-                              )
-        
-        rootancestors = hierarchy.ancestors(self._Z, leaders)
-        rootancestors_set = set(rootancestors)
-        if label=="tag":
-            leaf_label_func=lambda k: '' if k in rootancestors_set else self.leaf_label_tag(k)
-            xlabel="lineage"
-        elif label=="count":
-            leaf_label_func=self.leaf_label_count
-            xlabel="count"
-        elif label=="coeff":
-            leaf_label_func=self.leaf_label_coeff
-            xlabel="coeff"
-        else:
-            raise ValueError("Parameter value for argument 'label' must be one of 'tag', 'count', 'coeff'. Got '%s'" % label)
-            
-        if colour=="clusters":
-            colour_set = dict([(k, 'r') for k in range(2*n-1) if k not in rootancestors_set])
-        elif colour=="support":
-            node_support = np.concatenate((flat_coeffs[:n], support[flat_ids]))
-            colour_set = dict([(k, 'r') for k in np.flatnonzero(node_support>0)]+
-                              [(k, 'b') for k in np.flatnonzero(node_support==0)])
-        elif colour=="nzcoeffs":
-            colour_set = dict([(k, 'r') for k in np.flatnonzero(flat_coeffs!=0)])
-        elif colour=="engine":
-            colour_set = dict([(k, 'b') for k in np.flatnonzero(is_seed_cluster)]+
-                              [(k, 'c') for k in np.flatnonzero(is_low_quality)]+
-                              [(k, 'r') for k in conservative_leaders]
-                              )
-        else:
-            raise ValueError("Parameter value for argument 'colour' must be one of 'clusters', 'nzcoeffs', 'support'. Got '%s'" % colour)
-           
-        
-        hplot = DendrogramPlotter(
-            self._Z,
-            link_colour_func=lambda k: colour_set[k] if k in colour_set else 'k',
-            leaf_label_func=leaf_label_func,
-            xlabel=xlabel, ylabel="dendist"
-        )
-        hplot.plot(fileName)
-        
-    def indices(self, k):
-        leaves = self._node_dict[k].pre_order(lambda x: x.get_id())
-        return np.flatnonzero(np.in1d(self._profile.mapping.rowIndices, leaves))
-        
-    def leaf_label_coeff(self, k):
-        coeff = self._cqe.getScore(self.indices(k))
-        return '' if count <= 0 else str(coeff)
-        
-    def leaf_label_count(self, k):
-        count = len(self.indices(k))
-        return '' if count == 0 else str(count)
-        
-    def leaf_label_tag(self, k):
-        indices = self.indices(k)
-        return self._bc.consensusTag(indices)
 
   
 # Bin plotters
@@ -682,6 +515,7 @@ class BinDistancePlotter:
                                xlabel="cov", ylabel="kmer")
         fplot.plot(fileName)
         
+        
 class BinDistancePlotter4D:
     def __init__(self, profile, colourmap='HSV', cacher=None):
         self._profile = profile
@@ -694,6 +528,9 @@ class BinDistancePlotter4D:
                                                 self._profile.kmerSigs,
                                                 self._profile.contigLengths
                                                 )
+        scale_factor = 2. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
+        self._x *= scale_factor
+        self._y *= scale_factor
         
     def plot(self,
              bid,
