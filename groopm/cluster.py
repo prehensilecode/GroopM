@@ -833,8 +833,14 @@ class MarkerCheckCQE(ClusterQualityEngine):
         # Compute the compatible marker group sizes
         gsizes = np.array([np.count_nonzero(row) for row in self._L])
         gweights = np.array([np.unique(markerNames[row], return_counts=True)[1].max() for row in self._L])
-        self._gscalefactors = gweights * 1. / gsizes
-        
+        #self._gscalefactors = gweights * 1. / gsizes
+        self._gscalefactors = 1. / self._getProbs(self._L, self._M)
+        self._gscalefactors_ = 1. / np.array([ (1. / np.maximum(self._M[i, row].sum(), self._M[np.ix_(row, row)].sum(axis=1))).sum() for (i, row) in enumerate(self._L)])
+        assert np.all(self._gscalefactors == self._gscalefactors_)
+    
+    def _getProbs(self, L, M):
+        return np.array([ (1. / np.maximum(M[i, row].sum(), M[np.ix_(row, row)].sum(axis=1))).sum() for (i, row) in enumerate(L)])
+    
     def getLeafData(self):
         """Leaf data is a list of indices of mappings."""
         return dict([(i, data) for (i, data) in self._mapping.iterindices()])
@@ -843,21 +849,15 @@ class MarkerCheckCQE(ClusterQualityEngine):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
         
-        if len(indices) <= 2:
-            return 0
-        
-        
-        W = lambda i,j: 1 if i==j else 1. / np.count_nonzero(self._L[np.ix_(indices[np.logical_and(self._M[i, indices], self._L[i, indices])], indices[np.logical_and(self._M[j, indices],self._L[j, indices])])])
-        
-        #weights = 1. / np.logical_and(self._M[np.ix_(indices, indices)], self._L[np.ix_(indices, indices)]).sum(axis=0)
-        #W = lambda i,j: 1 if i==j else weights[i] * weights[j]
+        probs = self._getProbs(self._L[np.ix_(indices, indices)], self._M[np.ix_(indices, indices)])
+        #probs = np.array([ (1. / np.maximum(self._M[i, indices[row]].sum(), self._M[np.ix_(indices[row], indices[row])].sum(axis=1))).sum() for (i, row) in enumerate(self._L[np.ix_(indices, indices)])])
         
         # weighted item precision
-        prec = np.sum(np.sum([W(i, j) for j in indices[self._L[i, indices]]]) * 1. / len(indices) for i in indices)
+        prec = (probs * 1. / len(indices)).sum()
         #prec = np.sum([weights[i] * (weights[self._L[index, indices]].sum() + 1 - weights[i]) * 1. / len(indices) for (i, index) in enumerate(indices)])
         
         # weighted item completeness / recall
-        recall = np.sum([np.sum([W(i, j) for j in indices[self._L[i, indices]]]) * self._gscalefactors[i] for i in indices])
+        recall = (probs * self._gscalefactors[indices]).sum()
         #recall = np.sum([weights[i] * (weights[self._L[index, indices]].sum() + 1 - weights[i]) * self._gscalefactors[index] for (i, index) in enumerate(indices)])
         
         f = self._alpha * recall + (1 - self._alpha) * prec
@@ -867,8 +867,8 @@ class MarkerCheckCQE(ClusterQualityEngine):
         """Compute modified BCubed completeness and precision scores."""
         indices = np.asarray(indices)
         
-        if len(indices) <= 2:
-            return 0
+        #if len(indices) <= 2:
+        #    return 0
         
         #markerNames = self._mapping.markerNames[indices]
         weights = 1. / np.logical_and(self._M[np.ix_(indices, indices)], self._L[np.ix_(indices, indices)]).sum(axis=0)
