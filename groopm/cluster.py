@@ -792,25 +792,21 @@ class MarkerCheckCQE(ClusterQualityEngine):
     Traditional BCubed metrics assume that extrinsic categories are known 
     for the clustered items. In our case we have two sources of information - 
     mapping taxonomies and mapping markers. Mapping taxonomies can be used to
-    group items that are 'similar enough'. Single copy markers can be used to
-    distinguish when items should be in different bins.
+    find groups of items that act as a particular item's category. Single copy
+    markers can be used to distinguish when items should be in different bins.
     
     With these factors in mind, we have used the following adjusted BCubed 
     metrics:
-        - Items are weighted by 1 over the number of taxonomically similar
-          items in the same cluster from the same marker. 
-        - Precision for an item represents 1 plus the sum of weights of other
-          taxonomically similar cluster items per cluster item, multiplied by the
-          item weight.
-        - Recall for an item represents 1 plus the sum of weights of other
-          taxonomically similar cluster items divided by estimated item genome size
-          and multiplied by the item weight.
-        - Items are considered taxonomically similar if one item's taxonomy is 
-          a prefix of the other.
-        - The estimated genome size for an item is the total number divided by
-          the maximum number of marker copies of taxonomically similar items in
-          the dataset.
-        - Clusters with less than 3 items are not scored.
+        - For an item, other taxonomically similar items are considered to share
+          the item's category.
+        - For an item, a probability of being grouped with another item is 
+          assigned as being 1 over the number of ways to pair two items from
+          the first item's category that share the markers of the input pair. 
+        - Precision for an item represents the average probability of being paired
+          with another item in the same cluster.
+        - Recall for an item represents the relative likelihood of being paired with
+          an item in the same cluster to the expected number of pairings in the
+          unclustered dataset.
           
     These metrics are combined in a naive linear manner using a mixing fraction
     alpha which can be combined additively when assessing multiple clusters.
