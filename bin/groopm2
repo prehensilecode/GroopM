@@ -119,25 +119,26 @@ class PrintHelpAction(argparse.Action):
    
     Typical workflow:
     
-    groopm parse        -> {parse}
-    groopm core         -> {core}
-    groopm extract      -> {extract}
+    {groopm} parse        -> {parse}
+    {groopm} core         -> {core}
+    {groopm} extract      -> {extract}
     
     Extra features:
         
         Import / Export
         
-    groopm dump         -> {dump}
-    groopm markers      -> {markers}
-    groopm import       -> {import_}
+    {groopm} dump         -> {dump}
+    {groopm} markers      -> {markers}
+    {groopm} import       -> {import_}
     
         Plotting
         
-    groopm reach        -> {reach}
-    groopm plot         -> {plot}
+    {groopm} reach        -> {reach}
+    {groopm} plot         -> {plot}
     
     USE: groopm OPTION -h to see detailed options
 '''.format(
+            groopm="groopm2",
             version=__version__,
             parse=parse_command_configure.description,
             core=core_command_configure.description,
