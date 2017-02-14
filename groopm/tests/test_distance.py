@@ -27,6 +27,7 @@ __email__ = "tim.lamberton@gmail.com"
 # system imports
 from nose.tools import assert_true
 import numpy as np
+import numpy.random as np_random
 import scipy.spatial.distance as sp_distance
 import random
 
@@ -40,7 +41,8 @@ from groopm.distance import (mediod,
                              argrank,
                              pairs,
                              condensed_index,
-                             squareform_coords)
+                             squareform_coords,
+                             logratio)
 
 ###############################################################################
 ###############################################################################
@@ -294,7 +296,20 @@ def test_squareform_coords():
                 "compute row and column indices for elements of condensed matrix")
     assert_true(np.all(squareform_i <= squareform_j),
                 "returns upper triangular coordinates")
-                        
+
+
+def test_logratio():
+    
+    m = np_random.rand(20)*random.randint(20, 2000)
+    alr = np.log(m[:-1] / m[-1])
+    assert_true(almost_equal_arrays(alr, logratio(m, mode="additive")),
+                "correctly calculate additive log ratio")
+    clr = np.log(m / np.exp(np.log(m).mean()))
+    assert_true(almost_equal_arrays(clr, logratio(m, mode="centered")),
+                "correctly calculate centered log ratio")
+    ilr = np.array([( 1. / np.sqrt(j*(j+1)) ) * np.log(np.prod(m[:j]) / (m[j]**j)) for j in range(1, len(m))])
+    assert_true(almost_equal_arrays(ilr, logratio(m, mode="isometric")),
+                "correctly calculate isometric log ratio")                    
 
 ###############################################################################
 ###############################################################################

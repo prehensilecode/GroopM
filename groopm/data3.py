@@ -1688,7 +1688,7 @@ class KmerSigEngine:
         self.numMers = len(self.kmerCols)
         
     def calculateGCVector(self):
-        return [float(mer.count('G')+mer.count('C'))/self.kLen for mer in self.kmerCols]
+        return [float(gc)/(gc+at) for (gc, at) in ((mer.count('G')+mer.count('C'), mer.count('A')+mer.count('T')) for mer in self.kmerCols)]
 
     def makeKmerColNames(self, makeLL=False):
         """Work out the range of kmers required based on kmer length

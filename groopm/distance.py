@@ -326,7 +326,20 @@ def validate_y(Y, weights=None, name="Y"):
         weights = np.asanyarray(weights)
         if weights.shape != (size,):
             raise ValueError("weights should have the same shape as %s." % name)
-    return (Y, weights)  
+    return (Y, weights)
+    
+
+def logratio(X, axis=-1, mode="centered"):
+    X = np.asanyarray(X)
+    if mode=="additive":
+        fn = lambda log_x: log_x[:-1] - log_x[-1]
+    elif mode=="centered":
+        fn = lambda log_x: log_x - np.mean(log_x)
+    elif mode=="isometric":
+        n = X.shape[axis]
+        fn = lambda log_x: (np.cumsum(log_x[:-1]) - np.arange(1,n)*log_x[1:]) / np.sqrt(np.arange(1,n)*np.arange(2,n+1))
+    return np.apply_along_axis(fn, axis, np.log(X))
+        
     
 ###############################################################################
 ###############################################################################
