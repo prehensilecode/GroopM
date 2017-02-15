@@ -50,6 +50,7 @@ __email__ = "t.lamberton@uq.edu.au"
 import os
 import sys
 import subprocess
+import json
 from utils import CSVReader
 
 ###############################################################################
@@ -76,9 +77,8 @@ class SingleMMapper:
         otu_file = os.path.join(self.workingDir, 'singlem_otu_table.csv')
         cmd = ' '.join(['singlem pipe --sequences',
                         contig_file,
-                        '--otu_table',
+                        '--archive_otu_table',
                         otu_file,
-                        '--output_extras',
                         self.errorOutput])
         subprocess.check_call(cmd, shell=True)
         
@@ -108,6 +108,22 @@ class SingleMMapper:
         return (con_indices, map_markers, map_taxstrings)
         
     def readOtuTable(self, otu_file):
+        """Parse singleM otu table"""
+        j = json.load(otu_file)
+        
+        fields = j['fields']
+        read_name_col = fields.index('read_names')
+        other_cols = [fields.index('gene')]
+        try:
+            cols += [fields.index('taxonomy')]
+        except KeyError:
+            pass
+        for l in j['otus']:
+            for name in l[read_name_col]:
+                yield (name,)+tuple(l[i] for i in cols)
+            
+        
+    def readOtuTable_(self, otu_file):
         """Parse singleM otu table"""
         reader = CSVReader()
         cols = None
