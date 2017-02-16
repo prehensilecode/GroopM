@@ -58,8 +58,75 @@ def test_mediod():
     assert_true(mediod(distances) == 1,
                 "`mediod` returns index of mediod")
 
-                
+
 def test_argrank():
+    v1 = [5, 3, 4, 8]
+    o1 = [3, 1, 2, 4]
+    print _fractional_rank(v1), o1
+    assert_true(equal_arrays(_fractional_rank(v1),
+                             o1),
+                "returns integer rank of values in one-dimensional array")
+    x1 = np.array(v1)
+    _ifractional_rank(x1)
+    assert_true(equal_arrays(x1, o1),
+                "loads array ranks into input array")
+
+    v2 = [5, 3, 8, 8]
+    o2 = [2, 1, 3.5, 3.5]
+    assert_true(equal_arrays(_fractional_rank(v2),
+                             o2),
+                "returns mean of tied ranks")
+    x2 = np.array(v2, dtype=np.double)
+    _ifractional_rank(x2)
+    assert_true(equal_arrays(x2, o2),
+                "loads array ranks with tied means into input array")
+
+    v3 = np.array([[1, 10, 5, 2], [1, 4, 6, 2], [5, 5, 3, 10]])
+    o3 = np.array([[1, 4, 3, 2], [1, 3, 4, 2], [2.5, 2.5, 1, 4]])
+    assert_true(equal_arrays(argrank(v3, axis=1),
+                             o3),
+                "with `axis=1` passed returns ranks along rows of 2D array")
+    assert_true(equal_arrays(argrank(v3.T, axis=0),
+                             o3.T),
+                "with `axis=0` passed returns ranks along columns of 2D array")
+    
+    v4 = np.asarray([5, 3, 4, 8])
+    w4 = np.asarray([2, 2, 1, 3])
+    v4_dup = np.asarray([5, 3, 4, 8, 5, 3, 8, 8])
+    assert_true(equal_arrays(_fractional_rank(v4, weight_fun=lambda i: w4[i]),
+                             _fractional_rank(v4_dup)[:4]),
+                "returns weighted ranks when weights parameter is passed")
+    x4 = np.array(v4, dtype=np.double)
+    _ifractional_rank(x4, weight_fun=lambda i: w4[i])
+    assert_true(equal_arrays(x4,
+                             _fractional_rank(v4_dup)[:4]),
+                "returns idential ranks to non-mutating methods")
+    
+    v5 = np.array([[1, 10, 5, 2],
+                   [1,  4, 6, 2]])
+    w5 = np.asarray([5, 1, 1, 6])
+    v5_dup = np.array([[1, 10, 5, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+                       [1,  4, 6, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2]])
+    assert_true(equal_arrays(argrank(v5, weight_fun=lambda i: w5[i], axis=1),
+                             argrank(v5_dup, axis=1)[:, :4]),
+                "broadcasts weights vector along rows of 2D array when ranking columns")
+    
+    v6 = np.array([[1, 10, 5, 2],
+                   [1,  4, 6, 2]])
+    w6 = np.asarray([2, 5])
+    v6_dup = np.array([[1, 10, 5, 2],
+                       [1,  4, 6, 2],
+                       [1, 10, 5, 2],
+                       [1,  4, 6, 2],
+                       [1,  4, 6, 2],
+                       [1,  4, 6, 2],
+                       [1,  4, 6, 2]])
+    assert_true(equal_arrays(argrank(v6, weight_fun=lambda i: w6[i], axis=0),
+                             argrank(v6_dup, axis=0)[:2]),
+                "broadcasts weights vector along columns of 2D array when ranking rows")
+                
+                
+def xtest_argrank_():
     v1 = [5, 3, 4, 8]
     o1 = [2, 0, 1, 3]
     assert_true(equal_arrays(_fractional_rank(v1),

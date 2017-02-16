@@ -266,6 +266,8 @@ def argrank_chunk(out_filename, indices_filename, weight_fun=None, chunk_size=No
     Returns an array of ranks in the order specified by the ordering indices file.
     """
     
+    argsort_chunk_mergesort(out_filename, indices_filename, chunk_size=chunk_size, dtype=dtype)
+    
     ibytes = np.dtype(np.int).itemsize
     dbytes = np.dtype(dtype).itemsize
     
@@ -310,8 +312,8 @@ def argrank_chunk(out_filename, indices_filename, weight_fun=None, chunk_size=No
         
         total = rflag[-1]
         if len(rflag) > 1:
-            rflag[1:] = (rflag[1:] + rflag[:-1] - 1) * 0.5
-        rflag[0] = (rflag[0] - 1) * 0.5
+            rflag[1:] = (rflag[1:] + rflag[:-1] + 1) * 0.5
+        rflag[0] = (rflag[0] + 1) * 0.5
         
         # index in array of unique values
         iflag = np.concatenate(([False], flag[:-1])).cumsum()

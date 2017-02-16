@@ -245,20 +245,21 @@ def _fractional_rank(ar, weight_fun=None):
     perm = ar.argsort()
     
     aux = ar[perm] # sorted ar
-    # flag ends of streaks of consecutive equal values (numpy unique tracks
-    # start of streaks)
+    # flag ends of streaks of consecutive equal values
+    # (the code for numpy unique function that this code is based on tracks
+    # start of streaks instead)
     flag = np.concatenate((aux[1:] != aux[:-1], [True]))
     
     if weight_fun is None:
         # ranks of indices at ends of streaks
-        rflag = np.flatnonzero(flag).astype(float)+1
+        rflag = np.flatnonzero(flag).astype(np.double)+1
     else:
         # cumulative weights of sorted values at ends of streaks
-        rflag = weight_fun(perm).cumsum().astype(float)
+        rflag = weight_fun(perm).cumsum().astype(np.double)
         rflag = rflag[flag]
     # calculate an average rank for equal value streaks by averaging streak
     # start and end ranks
-    rflag = np.concatenate((rflag[:1] - 1, rflag[1:] + rflag[:-1] - 1)) * 0.5
+    rflag = np.concatenate((rflag[:1] + 1, rflag[1:] + rflag[:-1] + 1)) * 0.5
     
     # streak index / rank corresponding to sorted original values
     iflag = np.concatenate(([0.], np.cumsum(flag[:-1]))).astype(int)
@@ -305,9 +306,9 @@ def _ifractional_rank(ar, weight_fun=None):
     # start and end ranks
     if len(rflag) > 1:
         rflag[1:] = rflag[1:] + rflag[:-1]
-        rflag[1:] -= 1
+        rflag[1:] += 1
         rflag[1:] *= 0.5
-    rflag[0] = (rflag[0] - 1) * 0.5
+    rflag[0] = (rflag[0] + 1) * 0.5
     
     iflag = np.cumsum(flag[:-1]) # <- copy
     del flag # mem_opt

@@ -144,13 +144,12 @@ class TestStream:
         
         def _test_one_small():
             d1 = np_random.rand(190).astype(np.double)
-            i1 = d1.argsort()
-            d1[i1].tofile(dist_file)
-            i1.tofile(indices_file)
+            d1.tofile(dist_file)
             x1 = argrank_chunk(dist_file, indices_file, chunk_size=40)
             assert_true(equal_arrays(x1, argrank(d1, axis=None)),
                         "returns equal ranks to non-chunked function")
             
+            d1.tofile(dist_file)
             w2 = np_random.rand(190).astype(np.double)
             x2 = argrank_chunk(dist_file, indices_file, weight_fun=lambda i: w2[i], chunk_size=40)
             assert_true(almost_equal_arrays(x2, argrank(d1, weight_fun=lambda i: w2[i], axis=None)),
@@ -163,16 +162,12 @@ class TestStream:
         
         # high mem
         def _test_one_big():
-            numbers = np.arange(2**9*(2**10-1))
-            perm = numbers.copy()
-            np_random.shuffle(perm)
-            d2 = perm
-            i2 = np.empty(len(numbers), dtype=np.int)
-            i2[perm] = numbers
+            d2 = np.arange(2**9*(2**10-1))
+            np_random.shuffle(d2)
             d2.tofile(dist_file)
-            i2.tofile(indices_file)
+            #i2.tofile(indices_file)
             x3 = argrank_chunk(dist_file, indices_file, chunk_size=int(1e5))
-            assert_true(equal_arrays(x3, perm), "computes ranks of a large-ish permutation array")
+            assert_true(equal_arrays(x3, d2+1), "computes ranks of a large-ish permutation array")
             os.remove(dist_file)
             os.remove(indices_file)
         
