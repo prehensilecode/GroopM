@@ -218,7 +218,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
                                kmerSigs,
                                self._profile.contigLengths,
                                silent=silent,
-                               fun=np.log,
+                               fun=fun,
                                )
         
         if not silent:
