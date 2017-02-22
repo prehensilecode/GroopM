@@ -1767,7 +1767,8 @@ class BamParser:
         """Parse multiple bam files and store the results in the main DB"""
         print "Parsing BAM files using %d threads" % threads
 
-        BP = BMBP(BMCT(CT.P_MEAN_TRIMMED, 5, 5))
+        #BP = BMBP(BMCT(CT.P_MEAN_TRIMMED, 5, 5))
+        BP = BMBP(BMCT(CT.COUNT, 5, 5))
         BP.parseBams(bamFiles,
                      doLinks=False,
                      doCovs=True,

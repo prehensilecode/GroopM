@@ -87,7 +87,7 @@ class SingleMMapper:
         map_taxstrings = []
         try:
             with open(otu_file, 'r') as fh:
-                for l in self.readOtuTable(fh):
+                for l in self.readArchiveOtuTable(fh):
                     try:
                         contig_index = cid2Indices[l[0]]
                     except:
@@ -107,20 +107,20 @@ class SingleMMapper:
             
         return (con_indices, map_markers, map_taxstrings)
         
-    def readOtuTable(self, otu_file):
-        """Parse singleM otu table"""
+    def readArchiveOtuTable(self, otu_file):
+        """Parse singleM otu archive table"""
         j = json.load(otu_file)
         
         fields = j['fields']
         read_name_col = fields.index('read_names')
         other_cols = [fields.index('gene')]
         try:
-            cols += [fields.index('taxonomy')]
+            other_cols += [fields.index('taxonomy')]
         except KeyError:
             pass
         for l in j['otus']:
             for name in l[read_name_col]:
-                yield (name,)+tuple(l[i] for i in cols)
+                yield (name,)+tuple(l[i] for i in other_cols)
             
         
     def readOtuTable_(self, otu_file):
@@ -129,11 +129,10 @@ class SingleMMapper:
         cols = None
         for l in reader.readCSV(otu_file, "\t"):
             if cols is None:
-                cols_lookup = dict(zip(l, range(len(l))))
-                cols = [cols_lookup['read_names'], cols_lookup['gene']]
+                cols = [l.index('read_names'), l.index('gene')]
                 try:
-                    cols += [cols_lookup['taxonomy']]
-                except KeyError:
+                    cols += [l.index('taxonomy')]
+                except ValueError:
                     pass
                 continue
             yield tuple(l[i] for i in cols)

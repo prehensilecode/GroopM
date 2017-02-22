@@ -210,7 +210,7 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             de_ = ProfileDistanceEngine()
         
         # add psuedo-counts
-        covProfiles = self._profile.covProfiles + 100. / self._profile.contigLengths[:, None]
+        covProfiles = self._profile.covProfiles + 1
         covProfiles = distance.logratio(covProfiles, axis=1, mode="centered")
         kmerSigs = self._profile.kmerSigs + 1. / (self._profile.contigLengths[:, None] - 3)
         kmerSigs = distance.logratio(kmerSigs, axis=1, mode="centered")
