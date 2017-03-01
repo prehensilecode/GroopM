@@ -167,7 +167,7 @@ class ReachabilityPlotManager:
              timer,
              bids=None,
              label="tag",
-             prefix="REACH",
+             filename="REACH.png",
             ):
         
         profile = self.loadProfile(timer)
@@ -182,7 +182,10 @@ class ReachabilityPlotManager:
         fplot = ProfileReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
         
-        fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s.png" % prefix)
+        if os.path.splitext(filename)[1] != '.png':
+            filename+='.png'
+            
+        fileName = "" if self._outDir is None else os.path.join(self._outDir, filename)
         fplot.plot(fileName=fileName, bids=bids, label=label)
                    
         if self._outDir is not None:
@@ -419,14 +422,20 @@ class ProfileReachabilityPlotter:
         first_indices = np.flatnonzero(flag_first)
         last_indices = np.concatenate((first_indices[1:], [len(o)]))
         #(first_indices, last_indices) = split_contiguous(binIds)
-        is_binned = binIds[flag_first]!=0
-        first_binned_indices = first_indices[is_binned]
-        last_binned_indices = last_indices[is_binned]
+        is_bin = binIds[flag_first]!=0
+        first_binned_indices = first_indices[is_bin]
+        last_binned_indices = last_indices[is_bin]
         
-        # alternate red and black stretches for different bins
-        colours = np.full(len(o), 'c', dtype="|S1")
-        for (i, (s, e)) in enumerate(zip(first_binned_indices, last_binned_indices)):
-            colours[s:e] = 'r' if i%2 else 'k'
+        # alternate colouring of stretches for different bins
+        # red and black for selected bins, greys for unselected, cyan for unbinned
+        colour_ids = np.zeros(len(o), dtype=np.int)
+        is_selected_bin = np.in1d(binIds[first_binned_indices], bids)
+        is_unselected_bin = np.logical_not(is_selected_bin)
+        for (i, (s, e)) in enumerate(zip(first_binned_indices[is_unselected_bin], last_binned_indices[is_unselected_bin])):
+            colour_ids[s:e] = (i%2) + 1
+        for (i, (s, e)) in enumerate(zip(first_binned_indices[is_selected_bin], last_binned_indices[is_selected_bin])):
+            colour_ids[s:e] = (i%2) + 3
+        colours = np.array(['c', '0.5', '0.7', 'k', 'r'])[colour_ids]
         
         # label stretches with bin ids
         group_centers = (first_binned_indices+last_binned_indices)*0.5
@@ -443,8 +452,9 @@ class ProfileReachabilityPlotter:
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
     
-        k = np.in1d(binIds[first_binned_indices], bids)
-        text = zip(group_centers[k], group_heights[k], group_labels[k])
+        text = zip(group_centers[is_selected_bin], group_heights[is_selected_bin], group_labels[is_selected_bin])
+        
+        
             
         hplot = BarPlotter(
             height=h[1:],

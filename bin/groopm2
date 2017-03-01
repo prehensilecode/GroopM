@@ -492,10 +492,9 @@ class reach_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
-        parser.add_argument('-p', '--prefix', default="REACH", help="prefix to apply to output files")
-        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
-        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
+        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to highlight in plot (None for all)")
+        parser.add_argument('-o', '--out_file', default="REACH.png", help="name of save plot")
+        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot")
         parser.set_defaults(run=self)
 
     def __call__(_self, options):
@@ -504,12 +503,12 @@ class reach_command_configure:
         print " [[GroopM %s]] Running in reach plotting mode..." % __version__
         print "*******************************************************************************"
 
-
+        (folder, filename) = os.path.split(options.out_file)
         pm = groopm.ReachabilityPlotManager(options.dbname,
-                                               folder=None if options.interactive else options.out_folder)
+                                            folder=None if options.interactive else folder)
         pm.plot(timer,
                 bids=options.bids,
-                prefix=options.prefix)
+                filename=filename)
                    
 
 #------------------------------------------------------------------------------
