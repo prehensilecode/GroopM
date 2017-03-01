@@ -61,6 +61,7 @@ import tempdir
 # GroopM imports
 from utils import CSVReader, FastaReader
 from map import SingleMMapper, GraftMMapper
+from groopmExceptions import BadTaxonomicStringException
 
 # BamM imports
 try:
@@ -1946,18 +1947,26 @@ class ClassificationEngine:
         return (table, taxons)
         
     def parse_taxstring(self, taxstring):
-        fields = taxstring.split('; ')
-        if fields[0]=="Root":
+        fields = [field.strip() for field in  taxstring.split(';')]
+        if fields[0] =="Root":
             fields = fields[1:]
         ranks = []
-        for (string, prefix) in zip(fields, self.TAGS):
-            try:
-                if not string.startswith(prefix):
-                    raise ValueError("Error parsing field: '%s'. Missing `%s` prefix." % (string, prefix))
-                ranks.append(string[len(prefix):])
-            except ValueError as e:
-                print e, "Skipping remaining fields"
-                break
+        bad_format = []
+        try:
+            for (string, prefix) in zip(fields, self.TAGS):
+                if string=='': break
+                if string.startswith(prefix):
+                    string = string[len(prefix):]
+                else:
+                    for bad_prefix in self.TAGS:
+                        if string.startswith(bad_prefix):
+                            raise BadTaxonomicStringException("Warning: Expected `{0}` prefix but encountered `{1}`. ".format(prefix, bad_prefix))
+                    bad_format.append(prefix)
+                ranks.append(string)
+        except BadTaxonomicStringException as e:
+            print(e, '. Dropping remaining fields.')
+        if len(bad_format) >= 1:
+            print("Warning: Missing prefix(es): `{0}` when parsing taxstring: `{1}`. Defaulting to assigning taxonomic ranks by position.".format('`, `'.join(bad_format), taxstring))
         return ranks
         
     def getDistance(self, a, b):

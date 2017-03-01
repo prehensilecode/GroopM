@@ -210,11 +210,12 @@ class ClassificationClusterEngine(HierarchicalClusterEngine):
             de_ = ProfileDistanceEngine()
         
         # add psuedo-counts
-        covProfiles = self._profile.covProfiles + 100. / self._profile.contigLengths[:, None]
-        covProfiles = distance.logratio(covProfiles, axis=1, mode="centered")
-        kmerSigs = self._profile.kmerSigs + 1. / (self._profile.contigLengths[:, None] - 3)
+        #covProfiles = self._profile.covProfiles + 100. / self._profile.contigLengths[:, None]
+        #covProfiles = distance.logratio(covProfiles, axis=1, mode="centered")
+        #kmerSigs = self._profile.kmerSigs + 1. / (self._profile.contigLengths[:, None] - 3)
+        kmerSigs = self._profile.kmerSigs * (self._profile.contigLengths[:, None] - 3) + 1
         kmerSigs = distance.logratio(kmerSigs, axis=1, mode="centered")
-        stat = de.makeRankStat(covProfiles,
+        stat = de.makeRankStat(self._profile.covProfiles,
                                kmerSigs,
                                self._profile.contigLengths,
                                silent=silent,
@@ -340,12 +341,14 @@ class StreamingProfileDistanceEngine:
     def makeRankStat(self, covProfiles, kmerSigs, contigLengths, silent=False, fun=lambda a: a):
         """Compute norms in {coverage rank space x kmer rank space}
         """
-        fold = lambda a, b: a+fun(b)
         self._calculateRanks(covProfiles, kmerSigs, contigLengths, silent=silent)
+        #return self._cacher.get("cov")*self._cacher.get("kmer")
+        
         dists_file = self._store.getWorkingFile()
         fun(self._cacher.get("cov")).tofile(dists_file)
         tmp_file = self._store.getWorkingFile()
         self._cacher.get("kmer").tofile(tmp_file)
+        fold = lambda a, b: a+fun(b)
         stream.iapply_func_chunk(dists_file, tmp_file, fold, chunk_size=self._size)
         dists = np.fromfile(dists_file, dtype=np.double)
         self._store.cleanupWorkingFiles()

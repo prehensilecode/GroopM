@@ -72,6 +72,11 @@ class DistanceStoreContigNotFoundException(GMProfileException): pass
 class GMARGException(BaseException): pass
 class ExtractModeNotAppropriateException(GMARGException): pass
 
+#------------------------------------------------------------------------------
+# CLASSIFICATION ENGINE
+class GMClassificationException(BaseException): pass
+class BadTaxonomicStringException(GMClassificationException): pass
+
 ###############################################################################
 ###############################################################################
 ###############################################################################

@@ -46,6 +46,26 @@ class TestClassificatonEngine:
         assert_true(equal_arrays(self._ce.parse_taxstring("d__Bacteria; p__Proteobacteria; c__Betaproteobacteria; o__Burkholderiales"),
                                  ["Bacteria", "Proteobacteria", "Betaproteobacteria", "Burkholderiales"]),
                     "returns array of parsed taxonomic ranks defined to order level")
+                    
+        assert_true(equal_arrays(self._ce.parse_taxstring("Root; d__Bacteria; p__Proteobacteria"),
+                                 ["Bacteria", "Proteobacteria"]),
+                    "returned array ignores initial 'Root' rank")
+                    
+        assert_true(equal_arrays(self._ce.parse_taxstring("d__Bacteria; p__Proteobacteria;"),
+                                 ["Bacteria", "Proteobacteria"]),
+                    "returned array ignores trailing semi-colon")
+                    
+        assert_true(equal_arrays(self._ce.parse_taxstring("Root;d__Bacteria;p__Proteobacteria"),
+                                 ["Bacteria", "Proteobacteria"]),
+                    "parses taxonomic string without spaces after semi-colon separator")
+                    
+        assert_true(equal_arrays(self._ce.parse_taxstring("d__Bacteria; c__Betaproteobacteria; o__Burkholderiales"),
+                                 ["Bacteria"]),
+                    "stops parsing when a bad tag is encountered")
+                    
+        assert_true(equal_arrays(self._ce.parse_taxstring("Bacteria; Proteobacteria; Betaproteobacteria; Burkholderiales"),
+                                 ["Bacteria", "Proteobacteria", "Betaproteobacteria", "Burkholderiales"]),
+                    "parses taxonomic string without rank tags")
     
 
     def test_parse(self):
