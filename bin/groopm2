@@ -133,8 +133,8 @@ class PrintHelpAction(argparse.Action):
     
         Plotting
         
-    {groopm} reach        -> {reach}
     {groopm} plot         -> {plot}
+    {groopm} explore      -> {explore}
     
     USE: groopm OPTION -h to see detailed options
 '''.format(
@@ -147,7 +147,7 @@ class PrintHelpAction(argparse.Action):
             markers=markers_command_configure.description,
             import_=import_command_configure.description,
             plot=plot_command_configure.description,
-            reach=reach_command_configure.description
+            explore=explore_command_configure.description
         )
 
 #------------------------------------------------------------------------------
@@ -452,19 +452,22 @@ class import_command_configure:
                                 options.infile,
                                 separator)
 
-class plot_command_configure:
+class explore_command_configure:
     description="Plot contigs in coverage vs kmer distance space"
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot (None for all)")
-        #parser.add_argument('--names', nargs='*', default=None, help="contig ids to plot")
+        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot, or highlight if --origin names is used (default plots all bins)")
+        parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if --origin names is used")
+        parser.add_argument('--origin', default="max_length", choices=["mediod", "max_length", "max_coverage", "names"], help="set how to choose plot origin")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
-        parser.add_argument('-o', '--out_folder', default="", help="save plots in folder")
-        parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot first bin or contig id")
-        parser.add_argument('--origin', default="max_length", choices=["mediod", "max_length", "max_coverage"], help="set how to choose bin centers")
-        parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set colormap")
-        parser.add_argument('--raw_distances', action="store_true", help="plot raw distances")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('-o', '--out_folder', default="", help="save plots in folder")
+        group.add_argument('-i', '--interactive', action="store_true", help="interactive plot first bin or contig id")
+        
+        parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set GC pc colormap")
+        parser.add_argument('--raw_distances', action="store_true", help="use raw distances for plot coordinates")
+        parser.add_argument('--save_names', default="", help="file to save ids of contigs used as plot origins")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('--save_dists', action="store_true", help="save distance files")
         group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
@@ -477,19 +480,21 @@ class plot_command_configure:
         print "*******************************************************************************"
 
 
-        pm = groopm.BinPlotManager(options.dbname,
-                                      folder=None if options.interactive else options.out_folder)
+        pm = groopm.ExplorePlotManager(options.dbname,
+                                       folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
                 bids=options.bids,
+                names=options.names,
                 origin=options.origin,
                 colorMap=options.colormap,
                 prefix=options.prefix,
                 rawDistances=options.raw_distances,
+                saveNamesFile=options.save_names,
                 savedDistsPrefix=options.use_saved_dists,
                 keepDists=options.use_saved_dists!="" or options.save_dists)
                    
                            
-class reach_command_configure:
+class plot_command_configure:
     description="Make cluster reachability plot"
 
     def __init__(self, parser):
@@ -594,19 +599,19 @@ def groopm_command_configure(parser):
     # plotting subcommands
     ##################################################
 
-    reach_subparser = subparsers.add_parser(
-        "reach",
-        description=reach_command_configure.description,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    reach_command_configure(reach_subparser)
-    
     plot_subparser = subparsers.add_parser(
         "plot",
         description=plot_command_configure.description,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     plot_command_configure(plot_subparser)
+    
+    explore_subparser = subparsers.add_parser(
+        "explore",
+        description=explore_command_configure.description,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    explore_command_configure(explore_subparser)
     
     
     

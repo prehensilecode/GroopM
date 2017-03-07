@@ -65,6 +65,7 @@ class ModeNotAppropriateException(GMBinException): pass
 #------------------------------------------------------------------------------
 # PROFILE MANAGER
 class GMProfileException(BaseException): pass
+class ContigNotFoundException(GMProfileException): pass
 class DistanceStoreContigNotFoundException(GMProfileException): pass
 
 #------------------------------------------------------------------------------

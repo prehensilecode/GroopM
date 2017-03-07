@@ -52,7 +52,7 @@ from version import __version__
 from data3 import DataManager
 from cluster import CoreCreator
 from extract import BinExtractor, MarkerExtractor, BinStatsDumper, BinImporter
-from plot import BinPlotManager, ReachabilityPlotManager
+from plot import ExplorePlotManager, ReachabilityPlotManager
 from groopmTimekeeper import TimeKeeper
 import matlibplot_conf
 

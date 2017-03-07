@@ -54,6 +54,7 @@ import os
 # GroopM imports
 from data3 import DataManager, ClassificationEngine
 from utils import group_iterator
+from groopmExceptions import ContigNotFoundException
 import distance
 
 np.seterr(all='raise')
@@ -192,7 +193,11 @@ class _Profile:
     reachDists : ndarray
         `reachDists[i]` is the reachability distance of position `i`.
     """
-    pass
+    
+    def checkContigNames(self, cids):
+        is_not_cid = np.in1d(cids, self.contigNames, invert=True)
+        if np.any(is_not_cid):
+            raise ContigNotFoundException("ERROR: No contigs found with ids {0}".format(",".join(cids)))
     
     
 class ProfileManager:

@@ -105,7 +105,7 @@ class BinManager:
         
     def checkBids(self, bids):
         """Check if bids are valid"""
-        is_not_bid = np.logical_not(np.in1d(bids, self.getBids()))
+        is_not_bid = np.in1d(bids, self.getBids(), invert=True)
         if np.any(is_not_bid):
             raise BinNotFoundException("ERROR: "+",".join([str(bid) for bid in bids[is_not_bid]])+" are not bin ids")
 
