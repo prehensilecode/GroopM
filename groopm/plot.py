@@ -75,7 +75,7 @@ from cluster import (ProfileDistanceEngine,
                     )
 from classification import BinClassifier
 import hierarchy
-from groopmExceptions import ContigNotFoundException
+from data3 import ClassificationEngine
 
 np.seterr(all='raise')
 
@@ -96,7 +96,7 @@ class ExplorePlotManager:
 
     def loadProfile(self, timer):
         return self._pm.loadData(timer,
-                                 loadMarkers=False,
+                                 loadMarkers=True,
                                  loadBins=True,
                                  loadReachability=True)
 
@@ -122,8 +122,6 @@ class ExplorePlotManager:
         if (bids is None or len(bids) == 0):
             if plot_bins:
                 bids = bm.getBids()
-            elif bids is None:
-                bids = []
         else:
             bm.checkBids(bids)
 
@@ -145,33 +143,38 @@ class ExplorePlotManager:
         if save_cids:
             cids = []
             
+        first_plot = True
         if plot_bins:
             for bid in bids:
                 fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
-
+         
+                if fileName=="" and not first_plot and not self.promptOnPlot(bid):
+                    break
+                first_plot = False
+                
                 cid = fplot.getBinRepresentative(bid, mode=origin)
                 fplot.plot(fileName=fileName,
                            contig=cid,
-                           bids=[bid] if names is None else [],
-                           highlight=[] if names is None else names)
+                           highlight_bids=[bid],
+                           highlight_cids=[] if names is None else names)
                 
                 if save_cids:
                     cids.append(cid)
-                           
-                if fileName=="":
-                    break
         else:
             for cid in names:
                 fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%s.png" % (prefix, contig))
+                
+                if fileName=="" and not first_plot and not self.promptOnPlot(cid):
+                    break
+                first_plot = False
+                
                 fplot.plot(fileName=fileName,
                            contig=cid,
-                           bids=bids)
+                           highlight_bids=[] if bids is None else bids)
                 
                 if save_cids:
                     cids.append(cid)
                            
-                if fileName=="":
-                    break
                            
         if save_cids:
             print("Saving plot origins to file: {0}".format(saveNamesFile))
@@ -187,6 +190,28 @@ class ExplorePlotManager:
                 cacher.cleanup()
             except:
                 raise
+                
+    def promptOnPlot(self, label, minimal=False):
+        """Check that the user wants to continue interactive plotting"""
+        input_not_ok = True
+        valid_responses = ['Y', 'N']
+        vrs = ",".join([str.lower(str(x)) for x in valid_responses])
+        while(input_not_ok):
+            if(minimal):
+                option = raw_input(" Continue? ({0}) : ".format(vrs))
+            else:
+                option = raw_input(""" The next plot is {0}
+ Continue to show plots? ({1}) : """.format(label, vrs))
+            if(option.upper() in valid_responses):
+                print "****************************************************************"
+                if(option.upper() == "N"):
+                    print("Operation cancelled")
+                    return False
+                else:
+                    return True
+            else:
+                print("Error, unrecognised choice '{0}'".format(option))
+                minimal=True
 
         
 class ReachabilityPlotManager:
@@ -285,6 +310,8 @@ class FeatureAxisPlotter:
                  sizes,
                  colourmap,
                  edgecolours,
+                 edgecolour_list,
+                 edgecolour_label_map=None,
                  z=None,
                  xlabel="", ylabel="", zlabel=""):
         """
@@ -308,6 +335,8 @@ class FeatureAxisPlotter:
         self.colours = colours
         self.colourmap = colourmap
         self.edgecolours = edgecolours
+        self.edgecolourmap = edgecolourmap
+        self.edgecolour_label_maps = edgecolour_label_map
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.zlabel = zlabel
@@ -321,8 +350,13 @@ class FeatureAxisPlotter:
                         c=self.colours, s=self.sizes,
                         cmap=self.colourmap,
                         vmin=0., vmax=1., marker='.')                        
-        sc.set_edgecolors(self.edgecolours)
+        sc.set_edgecolors(self.edgecolourmap(self.edgecolours))
         sc.set_edgecolors = sc.set_facecolors = lambda *args:None
+        
+        if self.edgecolour_label_map is not None:
+            (edgecolour_labels, edgecolours) = zip(*self.edgecolour_label_map.iteritems())
+            proxies = [matplotlib.lines.Line2D([0], [0], linestyle="none", c=self.colourmap(0.5), markeredgecolour=self.edgecolourmap(color), marker='.') for color in edgecolours]
+            ax.legend(proxies, edgecolour_labels, numpoints=1)
         
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
@@ -515,19 +549,20 @@ class ContigExplorerPlotter:
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
         self._surface = surface
+        self._rawDistances = rawDistances
         self._fun = fun
         
         covProfiles = self._profile.covProfiles
         kmerSigs = self._profile.kmerSigs * (self._profile.contigLengths[:, None] - 3) + 1
         kmerSigs = distance.logratio(kmerSigs, axis=1, mode="centered")
-        if rawDistances:
+        if self._rawDistances:
             def getCoords(i,j):
                 x = np.log(sp_distance.cdist(covProfiles[[i]], covProfiles[[j]], metric="euclidean"))
                 y = sp_distance.cdist(kmerSigs[[i]], kmerSigs[[j]], metric="euclidean")
                 return (x, y)
             self._getCoords = getCoords
-            self._xlabel = "log d_cov"
-            self._ylabel = "d_clr_kmer"
+            self._xlabel = "log(d_cov)"
+            self._ylabel = "d_clr(kmer)"
         else:
             if cacher is None:
                 de = ProfileDistanceEngine()
@@ -538,23 +573,23 @@ class ContigExplorerPlotter:
                                   kmerSigs,
                                   self._profile.contigLengths
                                  )
-            scale_factor = 2. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
+            scale_factor = 200. / (self._profile.contigLengths.sum()**2-(self._profile.contigLengths**2).sum())
             x *= scale_factor
             y *= scale_factor
-            x **= 0.5
-            y **= 0.5
             n = self._profile.numContigs
             
             def getCoords(i, j):
                 condensed_indices = distance.condensed_index(n, i, j)
                 return (x[condensed_indices], y[condensed_indices])
             self._getCoords = getCoords
-            self._xlabel = "sqrt d_rn_cov pce"
-            self._ylabel = "sqrt d_rn_clr_kmer pce"
+            self._xlabel = "percentile(d_cov)"
+            self._ylabel = "percentile(d_clr(kmer))"
             
     def getBinRepresentative(self, bid, mode="max_length"):  
         indices = np.flatnonzero(self._profile.binIds == bid)
         if mode=="mediod":
+            if self._rawDistances:
+                raise ValueError("`mode` argument parameter value `mediod` is not appropriate for ContigExplorerPlotter with `rawDistances` flag set.")
             (i, j) = distance.pairs(len(indices))
             (x, y) = self._getCoords(indices[i], indices[j])
             choice = distance.mediod(self._fun(x) + self._fun(y))
@@ -567,21 +602,35 @@ class ContigExplorerPlotter:
         
         return self._profile.contigNames[indices[choice]]
         
+        
     def plot(self,
              contig,
-             bids=[],
-             highlight=[],
+             highlight_bids=[],
+             highlight_cids=[],
+             highlight_markers=[],
+             highlight_taxonomies=[],
+             filter_max_dist=None,
+             filter_max_coverage=None,
+             filter_min_coverage=None,
+             filter_max_gc=None,
+             filter_min_gc=None,
+             filter_max_length=None,
+             filter_min_length=None,
+             filter_max_reach=None,
+             filter_tree_height=None,
              fileName=""):
         
         n = self._profile.numContigs
         try:
             origin = np.flatnonzero(self._profile.contigNames==contig)[0]
         except IndexError:
-            raise ContigNotFoundException("ERROR: No contig found with id {0}.".format(contig))
-        self._profile.checkContigNames(highlight)
-        bm = BinManager(self._profile)
-        bm.checkBids(bids)
+            raise ContigNotFoundException("ERROR: No contig found in database with id {0}.".format(contig))
         
+        # hard error if highlight bids don't exist
+        bm = BinManager(self._profile)
+        bm.checkBids(highlight_bids)
+        
+        # load distances
         others = np.array([i for i in range(n) if i!=origin])
         x = np.zeros(n, dtype=float)
         y = np.zeros(n, dtype=float)
@@ -590,17 +639,48 @@ class ContigExplorerPlotter:
         c = self._profile.contigGCs
         s = 20*(2**np.log10(self._profile.contigLengths / np.min(self._profile.contigLengths)))
         
-        edgecolours = np.zeros(n, dtype=int)
-        i = 0
-        for bid in bids:
-            if bid != 0:
-                i += 1
-                edgecolours[self._profile.binIds==bid] = i
-        if len(highlight) >= 1:
-            i += 1
-            edgecolours[np.in1d(self._profile.contigNames,highlight)] = i
-        edgecolour_list = np.vstack((plt_colors.colorConverter.to_rgba_array('k'), plt_cm.Set1(np.linspace(0,1,max(i, 5)))))
-        edgecolours = edgecolour_list[edgecolours]
+        # generate using distances mask
+        l = np.ones(n, dtype=bool)
+        if filter_max_dist is not None:
+            if self._rawDistances:
+                raise ValueError("`filter_max_dist` argument parameter value must be `None` for ContigExplorerPlotter with `rawDistances` flag set.")
+            l[self._fun(x)+self._fun(y) > filter_max_dist] = False
+            
+        # colorize edges
+        he = ProfileHighlightEngine(self._profile, mask=l)
+        (highlight_groups, higlight_labels) = he.getHighlighted(bids=highlight_bids,
+                                                                cids=highlight_cids,
+                                                                markers=highlight_markers,
+                                                                taxonomies=highlight_taxonomies,
+                                                                max_coverage=filter_max_coverage,
+                                                                min_coverage=filter_min_coverage,
+                                                                max_gc=filter_max_gc,
+                                                                min_gc=filter_min_gc,
+                                                                max_length=filter_max_length,
+                                                                max_reach=filter_max_reach,
+                                                                max_tree_height=filter_tree_height
+                                                               )
+        
+        ncolours = max(len(highlight_labels)+1, 5)
+        edgecolourmap = plt_colors.LinearSegmentedColormap.from_list('EGDES',
+                np.vstack((plt_colors.colorConverter.to_rgba_array('k'),
+                           plt_cm.Set1(np.linspace(0,1,ncolours))
+                          )))
+        edgecolours = highlight_groups * 1. / ncolours
+        legend_map = dict()
+        for (i, label) in enumerate(highlight_labels, 1):
+            if len(label) > 15:
+                label = label[:12]+'...'
+            legend_map[label] = i * 1. / ncolours
+        
+        # apply visual transformation
+        xlabel = self._xlabel
+        ylabel = self._ylabel
+        if not self._rawDistances:
+            x = np.sqrt(self._fun(x))
+            y = np.sqrt(self._fun(y))
+            xlabel = "sqrt({0})".format(xlabel)
+            ylabel = "sqrt({0})".format(ylabel)
         
         if self._surface:
             z = self.profile.normCoverages.flatten()
@@ -611,7 +691,9 @@ class ContigExplorerPlotter:
                                    sizes=s,
                                    edgecolours=edgecolours,
                                    colourmap=self._colourmap,
-                                   xlabel=self._xlabel, ylabel=self._ylabel, zlabel="cov_norm")            
+                                   edgecolourmap=edgecolourmap,
+                                   edgecolour_legend_map=legend_map,
+                                   xlabel=xlabel, ylabel=ylabel, zlabel="cov_norm")            
         else:
             fplot = FeaturePlotter(x,
                                    y,
@@ -619,11 +701,165 @@ class ContigExplorerPlotter:
                                    sizes=s,
                                    edgecolours=edgecolours,
                                    colourmap=self._colourmap,
-                                   xlabel=self._xlabel, ylabel=self._ylabel)
+                                   edgecolourmap= edgecolourmap,
+                                   edgecolour_legend_map=legend_map,
+                                   xlabel=xlabel, ylabel=ylabel)
         fplot.plot(fileName)
-  
+
+        
+class ProfileHighlightEngine:
+    def __init__(self, profile, mask=None):
+        self._profile = profile
+        self._mask = mask
+       
+    def getHighlighted(self,
+                       bids=None,
+                       cids=None,
+                       markers=None,
+                       taxonomies=None,
+                       max_coverage=None,
+                       min_coverage=None,
+                       max_length=None,
+                       min_length=None,
+                       max_gc=None,
+                       min_gc=None,
+                       max_reach=None,
+                       max_tree_height=None):
+        
+        # verify highlight inputs
+        cids = np.asarray(cids)
+        missing_cids = np.in1d(cids, self._profile.contigNames, invert=True)
+        if np.any(missing_cids):
+            print ("WARNING: No contig(s) in database with id(s) {0}.".format(",".join(cids[missing_cids])))
+        markers = np.asarray(markers)
+        missing_markers = np.in1d(markers, self._profile.mapping.markerNames, invert=True)
+        if np.any(missing_markers):
+            print ("WARNING: No hits in database to marker(s) {0}.".format(",".join(markers[missing_markers])))
+        
+        # generate mask
+        n = self._profile.numContigs
+        l = np.ones(self._profile.numContigs, dtype=bool) if self._mask is None else self._mask
+        if max_reach is not None or max_tree_height is not None:
+            o = self._profile.reachOrder
+            d = self._profile.reachDists
+            try:
+                origin_pos = np.flatnonzero(o == origin)[0]
+            except IndexError:
+                print("WARNING: Plot origin not included in reachability profile.")
+                origin_pos = None
+                
+            if origin_pos is not None:
+                nreached = len(o)
+                if max_reach is not None:
+                    over_reach = d > filter_max_reach
+                    left = origin_pos
+                    while left > 0 and not over_reach[left]:
+                        left -= 1
+                    l[o[:left]] = False
+                    right = origin_pos+1
+                    while right < nreached and not over_reach[right]:
+                        right += 1
+                    l[o[right:]] = False
+        
+                if max_tree_height is not None:
+                    reach_bids = self._profile.binIds[o]
+                    
+                    left = origin_pos
+                    right = origin_pos+1
+                    height = 0
+                    filtered_bins = set([self._profile.binIds[origin]]).difference_update([0])
+                    num_bins = len(filtered_bins)
+                    
+                    while(height < filter_tree_height):
+                        # left subtree
+                        if left > 0 and d[left] < d[right]:
+                            old_left = left
+                            while left > 0 and d[left] < d[right]:
+                                left -= 1
+                            num_old_bins = num_bins
+                            filtered_bins.update(reach_bids[left:old_left]).difference_update([0])
+                            num_bins = len(filtered_bins)
+                            if num_bins > num_old_bins:
+                                height += 1
+                            continue
+                        
+                        if right < nreached and d[right] <= d[left]:
+                            old_right = right
+                            while right < nreached and d[right] <= d[left]:
+                                right += 1
+                            num_old_bins = num_bins
+                            filtered_bins.update(reach_bids[old_right:right]).difference_update([0])
+                            num_bins = len(filtered_bins)
+                            if num_bins > num_old_bins:
+                                height += 1
+                            continue
+                            
+                        break
+                    
+                    old_l = l
+                    l = np.zeros(n, dtype=bool)
+                    for bid in filtered_bins:
+                        l[np.logical_and(self._profile.binIds==bid, old_l)] = True
+                
+        if max_coverage is not None:
+            l[self._profile.normCoverages > max_coverage] = False
+        if min_coverage is not None:
+            l[self._profile.normCoverages < min_coverage] = False
+        if max_gc is not None:
+            l[self._profile.contigGCs > max_gc] = False
+        if min_gc is not None:
+            l[self._profile.contigGCs < min_gc] = False
+        if max_length is not None:
+            l[self._profile.contigLength > max_length] = False
+        if min_length is not None:
+            l[self._profile.contigLength < min_length] = False
+            
+        # highlight groups and labels
+        group = np.zeros(n, dtype=int)
+        group_index = 0
+        group_labels = []
+        
+        for bid in bids:
+            if bid == 0:
+                continue
+                
+            select = np.logical_and(self._profile.binIds==bid, l)
+            if np.any(select):
+                group_index += 1
+                group[select] = group_index
+                group_labels.append("bid {0}".format(bid))
+                
+        if len(cids) >= 1:
+            select = np.logical_and(np.in1d(self._profile.contigNames, cids), l)
+            
+            if np.any(select):
+                group_index += 1
+                group[select] = group_index
+                group_labels.append("cids {0}".format(",".join(cids)))
+                
+        for marker in markers:
+            select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.markerNames==marker]
+            select = np.intersect1d(select_mappings, np.flatnonzero(l))
+            
+            if np.any(select):
+                group_index += 1
+                group[select] = group_index
+                group_labels.append("marker {0}".format(marker))
+        
+        for taxstring in taxonomies:
+            select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.classification.getPrefixed(taxstring)]
+            select = np.intersect1d(select_mappings, np.flatnonzero(l))
+            
+            if np.any(select):
+                group_index += 1
+                group[select] = group_index
+                group_labels.append("taxonomy {0}".format(taxstring))
+                
+        return (group, group_labels)
+        
+        
 # Bin plotters
-class BinDistancePlotter:
+class BinDistancePlotter_:
     def __init__(self, profile, colourmap='HSV', cacher=None, rawDistances=False, origin="max_length", surface=False, fun=lambda a: a):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)

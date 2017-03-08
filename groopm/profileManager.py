@@ -97,6 +97,22 @@ class _Classification:
     def makeDistances(self):
         return sp_distance.pdist(self._table, self._ce.getDistance)
         
+    def getPrefixed(self, taxstring):
+        """Return indices of taxonomies that have the search taxonomy as a prefix"""
+        ranks = self._ce.parse_taxstring(taxstring)
+        taxon_ids = np.flatnonzero(np.in1d(self._taxons, ranks))
+        taxon_dict = dict(zip(self._taxons[taxon_ids], taxon_ids))
+        row = np.zeros(len(self._ce.TAGS), dtype=int)
+        for (j, rank) in enumerate(ranks):
+            try:
+                row[j] = taxon_dict[rank]
+            except KeyError:
+                row[j] = 1 # novel ranks are set to 1's (match no other tags)
+        
+        return np.flatnonzero(np.apply_along_axis(self._ce.isPrefix, 0, self._table, row))
+        
+
+        
         
         
 class _Mappings:
@@ -193,11 +209,6 @@ class _Profile:
     reachDists : ndarray
         `reachDists[i]` is the reachability distance of position `i`.
     """
-    
-    def checkContigNames(self, cids):
-        is_not_cid = np.in1d(cids, self.contigNames, invert=True)
-        if np.any(is_not_cid):
-            raise ContigNotFoundException("ERROR: No contigs found with ids {0}".format(",".join(cids)))
     
     
 class ProfileManager:
