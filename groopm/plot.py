@@ -647,18 +647,21 @@ class ContigExplorerPlotter:
             l[self._fun(x)+self._fun(y) > filter_max_dist] = False
             
         # colorize edges
-        he = ProfileHighlightEngine(self._profile, mask=l)
+        he = ProfileHighlightEngine(self._profile)
+        l = np.logical_and(l, he.getMask(max_coverage=filter_max_coverage,
+                                         min_coverage=filter_min_coverage,
+                                         max_gc=filter_max_gc,
+                                         min_gc=filter_min_gc,
+                                         max_length=filter_max_length,
+                                         min_length=filter_min_length,
+                                         max_reach=filter_max_reach,
+                                         max_tree_height=filter_tree_height,
+                                         origin=origin))
         (highlight_groups, higlight_labels) = he.getHighlighted(bids=highlight_bids,
                                                                 cids=highlight_cids,
                                                                 markers=highlight_markers,
                                                                 taxonomies=highlight_taxonomies,
-                                                                max_coverage=filter_max_coverage,
-                                                                min_coverage=filter_min_coverage,
-                                                                max_gc=filter_max_gc,
-                                                                min_gc=filter_min_gc,
-                                                                max_length=filter_max_length,
-                                                                max_reach=filter_max_reach,
-                                                                max_tree_height=filter_tree_height
+                                                                mask=l
                                                                )
         
         ncolours = max(len(highlight_labels)+1, 5)
@@ -706,40 +709,28 @@ class ContigExplorerPlotter:
                                    xlabel=xlabel, ylabel=ylabel)
         fplot.plot(fileName)
 
-        
+    
 class ProfileHighlightEngine:
-    def __init__(self, profile, mask=None):
+    def __init__(self, profile):
         self._profile = profile
-        self._mask = mask
-       
-    def getHighlighted(self,
-                       bids=None,
-                       cids=None,
-                       markers=None,
-                       taxonomies=None,
-                       max_coverage=None,
-                       min_coverage=None,
-                       max_length=None,
-                       min_length=None,
-                       max_gc=None,
-                       min_gc=None,
-                       max_reach=None,
-                       max_tree_height=None):
         
-        # verify highlight inputs
-        cids = np.asarray(cids)
-        missing_cids = np.in1d(cids, self._profile.contigNames, invert=True)
-        if np.any(missing_cids):
-            print ("WARNING: No contig(s) in database with id(s) {0}.".format(",".join(cids[missing_cids])))
-        markers = np.asarray(markers)
-        missing_markers = np.in1d(markers, self._profile.mapping.markerNames, invert=True)
-        if np.any(missing_markers):
-            print ("WARNING: No hits in database to marker(s) {0}.".format(",".join(markers[missing_markers])))
-        
-        # generate mask
+    def getMask(self,
+                max_coverage=None,
+                min_coverage=None,
+                max_length=None,
+                min_length=None,
+                max_gc=None,
+                min_gc=None,
+                max_reach=None,
+                max_tree_height=None,
+                origin=None):
+                    
         n = self._profile.numContigs
         l = np.ones(self._profile.numContigs, dtype=bool) if self._mask is None else self._mask
         if max_reach is not None or max_tree_height is not None:
+            if origin is None:
+                raise ValueError("Parameter `origin` required if `max_reach` or `max_tree_height` arguments are not None.")
+            
             o = self._profile.reachOrder
             d = self._profile.reachDists
             try:
@@ -814,32 +805,54 @@ class ProfileHighlightEngine:
         if min_length is not None:
             l[self._profile.contigLength < min_length] = False
             
+        return l
+       
+    def getHighlighted(self,
+                       bids=None,
+                       cids=None,
+                       markers=None,
+                       taxonomies=None,
+                       mask=None):
+        
+        # verify highlight inputs
+        cids = np.asarray(cids)
+        missing_cids = np.in1d(cids, self._profile.contigNames, invert=True)
+        if np.any(missing_cids):
+            print ("WARNING: No contig(s) in database with id(s) {0}.".format(",".join(cids[missing_cids])))
+        markers = np.asarray(markers)
+        missing_markers = np.in1d(markers, self._profile.mapping.markerNames, invert=True)
+        if np.any(missing_markers):
+            print ("WARNING: No hits in database to marker(s) {0}.".format(",".join(markers[missing_markers])))
+        
+            
         # highlight groups and labels
         group = np.zeros(n, dtype=int)
         group_index = 0
         group_labels = []
         
+        apply_mask = (lambda sel: sel) if mask is None else (lambda sel: np.logical_and(sel, mask))
         for bid in bids:
             if bid == 0:
                 continue
                 
-            select = np.logical_and(self._profile.binIds==bid, l)
+            select = apply_mask(self._profile.binIds==bid)
             if np.any(select):
                 group_index += 1
                 group[select] = group_index
                 group_labels.append("bid {0}".format(bid))
                 
         if len(cids) >= 1:
-            select = np.logical_and(np.in1d(self._profile.contigNames, cids), l)
+            select = apply_mask(np.in1d(self._profile.contigNames, cids))
             
             if np.any(select):
                 group_index += 1
                 group[select] = group_index
                 group_labels.append("cids {0}".format(",".join(cids)))
                 
+        filter_mask = (lambda sel: np.unique(sel)) if mask is None else (lambda sel: np.intersect1d(sel, np.flatnonzero(mask)))
         for marker in markers:
             select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.markerNames==marker]
-            select = np.intersect1d(select_mappings, np.flatnonzero(l))
+            select = filter_mask(select_mappings)
             
             if np.any(select):
                 group_index += 1
@@ -848,7 +861,7 @@ class ProfileHighlightEngine:
         
         for taxstring in taxonomies:
             select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.classification.getPrefixed(taxstring)]
-            select = np.intersect1d(select_mappings, np.flatnonzero(l))
+            select = filter_mask(select_mappings)
             
             if np.any(select):
                 group_index += 1
