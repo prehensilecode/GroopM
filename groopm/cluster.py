@@ -679,13 +679,15 @@ class MarkerCheckFCE(FlatClusterEngine):
         # defined) or a number of contigs at least minPts (if defined)
         doMinSize = self._minSize is not None
         doMinPts = self._minPts is not None
+        if not doMinSize and not doMinPts:
+            return np.zeros(2*n-1, dtype=bool)
         if doMinSize:
             weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
             weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=operator.add)
             weights[n:] = weights[flat_ids+n]
             is_noise = weights < self._minSize   
         if doMinPts:
-            is_below_minPts = np.concatenate((np.full(self._profile.numContigs, 1 < self._minPts, dtype=bool), Z[flat_ids, 3] < self._minPts))
+            is_below_minPts = np.concatenate((np.full(n, 1 < self._minPts, dtype=bool), Z[flat_ids, 3] < self._minPts))
             if doMinSize:
                 is_noise = np.logical_and(is_noise, is_below_minPts)
             else:
@@ -770,7 +772,7 @@ class ClusterQualityEngine:
         Returns
         -------
         data : dict
-            A dictionary with original observation ids as keys and lists of associated leaf node data as values.
+            A dictionary with leaf ids as keys and lists of associated leaf node data as values.
         """
         pass #subclass to override
         
@@ -865,25 +867,6 @@ class MarkerCheckCQE(ClusterQualityEngine):
         
         f = self._alpha * recall + (1 - self._alpha) * prec
         return f
-        
-    def getScore_(self, indices):
-        """Compute modified BCubed completeness and precision scores."""
-        indices = np.asarray(indices)
-        
-        #if len(indices) <= 2:
-        #    return 0
-        
-        #markerNames = self._mapping.markerNames[indices]
-        weights = 1. / np.logical_and(self._M[np.ix_(indices, indices)], self._L[np.ix_(indices, indices)]).sum(axis=0)
-        
-        # weighted item precision
-        prec = np.sum([weights[i] * (weights[self._L[index, indices]].sum() + 1 - weights[i]) * 1. / len(indices) for (i, index) in enumerate(indices)])
-        
-        # weighted item completeness / recall
-        recall = np.sum([weights[i] * (weights[self._L[index, indices]].sum() + 1 - weights[i]) * self._gscalefactors[index] for (i, index) in enumerate(indices)])
-        
-        f = self._alpha * recall + (1 - self._alpha) * prec
-        return f
 
        
 ###############################################################################
@@ -901,7 +884,7 @@ class _RecursiveTreePrinter:
     
     def __init__(self, Z, indices, leaf_labeller, node_labeller):
         self._Z = np.asarray(Z)
-        self._n = self._Z.shape[0] + 1
+        self._n = sp_hierarchy.num_obs_linkage(self._Z)
         self._flat_ids = hierarchy.flatten_nodes(self._Z)
         self._embed_ids = hierarchy.embed_nodes(self._Z, indices)
         self._indices = indices
@@ -981,12 +964,12 @@ class MarkerCheckTreePrinter(TreePrinter):
     def __init__(self, profile):
         self._profile = profile
         Z = hierarchy.linkage_from_reachability(self._profile.reachOrder, self._profile.reachDists)
-        n = Z.shape[0] + 1
         self._Z = Z
-        self._n = n
+        self._n = sp_hierarchy.num_obs_linkage(self._Z)
         ce = MarkerCheckFCE(self._profile, minPts=20, minSize=1000000)
         self._scores = ce.getScores(self._Z)
         self._is_noise = ce.isNoiseCluster(self._Z)
+        n = self._n
         weights = np.concatenate((self._profile.contigLengths, np.zeros(n-1)))
         weights[n:] = hierarchy.maxscoresbelow(Z, weights, fun=np.add)
         #flat_ids = hierarchy.flatten_nodes(Z)

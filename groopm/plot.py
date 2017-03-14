@@ -59,6 +59,7 @@ import scipy.stats as sp_stats
 import matplotlib.pyplot as plt
 import matplotlib.colors as plt_colors
 import matplotlib.cm as plt_cm
+import matplotlib.lines as plt_lines
 from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 
@@ -76,6 +77,7 @@ from cluster import (ProfileDistanceEngine,
 from classification import BinClassifier
 import hierarchy
 from data3 import ClassificationEngine
+from extract import BinReader
 
 np.seterr(all='raise')
 
@@ -103,27 +105,25 @@ class ExplorePlotManager:
     def plot(self,
              timer,
              bids=None,
-             names=None,
              origin="mediod",
              colorMap="HSV",
              prefix="BIN",
              surface=False,
              rawDistances=False,
-             saveNamesFile="",
+             groupfile="",
+             separator=",",
              savedDistsPrefix="",
              keepDists=False
             ):
             
         profile = self.loadProfile(timer)
-        
-        plot_bins = origin!="names"
 
         bm = BinManager(profile)
-        if (bids is None or len(bids) == 0):
-            if plot_bins:
+        if bids is not None:
+            if len(bids) == 0:
                 bids = bm.getBids()
-        else:
-            bm.checkBids(bids)
+            else:
+                bm.checkBids(bids)
 
         if savedDistsPrefix=="":
             savedDistsPrefix = self._dbFileName+".dists"
@@ -139,47 +139,43 @@ class ExplorePlotManager:
                                      )
         print "    %s" % timer.getTimeStamp()
         
-        save_cids = saveNamesFile!=""
-        if save_cids:
-            cids = []
+        group_list = None
+        if groupfile!="":
+            br = BinReader
+            try:
+                with open(groupfile, "r") as f:
+                    try:
+                        (con_names, con_groups) = br.parse(f, separator)
+                        contig_groups = dict(zip(con_names, con_groups))
+                    except:
+                        print "Error parsing group assignments"
+                        raise
+            except:
+                print "Could not parse group assignment file:",groupfile, sys.exc_info()[0]
+                raise
+            
+            group_list = [contig_groups.get(cid, "") for cid in profile.contigNames]
             
         first_plot = True
-        if plot_bins:
-            for bid in bids:
-                fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
-         
-                if fileName=="" and not first_plot and not self.promptOnPlot(bid):
-                    break
-                first_plot = False
-                
-                cid = fplot.getBinRepresentative(bid, mode=origin)
-                fplot.plot(fileName=fileName,
-                           contig=cid,
-                           highlight_bids=[bid],
-                           highlight_cids=[] if names is None else names)
-                
-                if save_cids:
-                    cids.append(cid)
-        else:
-            for cid in names:
-                fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%s.png" % (prefix, contig))
-                
-                if fileName=="" and not first_plot and not self.promptOnPlot(cid):
-                    break
-                first_plot = False
-                
-                fplot.plot(fileName=fileName,
-                           contig=cid,
-                           highlight_bids=[] if bids is None else bids)
-                
-                if save_cids:
-                    cids.append(cid)
-                           
-                           
-        if save_cids:
-            print("Saving plot origins to file: {0}".format(saveNamesFile))
-            with open(saveNamesFile, 'w') as f:
-                f.write('\n'.join(cids)+"\n")
+        for bid in bids:
+            fileName = "" if self._outDir is None else os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
+     
+            if fileName=="" and not first_plot and not self.promptOnPlot(bid):
+                break
+            first_plot = False
+            
+            cid = fplot.getBinRepresentative(bid, mode=origin)
+            taxstring = fplot.getBinTaxstring(bid)
+            is_in_bin = profile.binIds==bid
+            highlight_groups = [] if group_list is None else np.unique(group_list[is_in_bin])
+            highlight_markers = np.unique(profile.mapping.markerNames[is_in_bin[profile.mapping.rowIndices]])
+            
+            fplot.plot(fileName=fileName,
+                       contig=cid,
+                       highlight_bids=[bid],
+                       highlight_taxstrings=[taxstring],
+                       highlight_groups=highlight_groups,
+                       highlight_markers=highlight_markers)
                     
         if self._outDir is not None:
             print "    %s" % timer.getTimeStamp()
@@ -310,8 +306,8 @@ class FeatureAxisPlotter:
                  sizes,
                  colourmap,
                  edgecolours,
-                 edgecolour_list,
-                 edgecolour_label_map=None,
+                 edgecolourmap,
+                 edgecolour_legend_map=None,
                  z=None,
                  xlabel="", ylabel="", zlabel=""):
         """
@@ -336,7 +332,7 @@ class FeatureAxisPlotter:
         self.colourmap = colourmap
         self.edgecolours = edgecolours
         self.edgecolourmap = edgecolourmap
-        self.edgecolour_label_maps = edgecolour_label_map
+        self.edgecolour_legend_map = edgecolour_legend_map
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.zlabel = zlabel
@@ -353,9 +349,11 @@ class FeatureAxisPlotter:
         sc.set_edgecolors(self.edgecolourmap(self.edgecolours))
         sc.set_edgecolors = sc.set_facecolors = lambda *args:None
         
-        if self.edgecolour_label_map is not None:
-            (edgecolour_labels, edgecolours) = zip(*self.edgecolour_label_map.iteritems())
-            proxies = [matplotlib.lines.Line2D([0], [0], linestyle="none", c=self.colourmap(0.5), markeredgecolour=self.edgecolourmap(color), marker='.') for color in edgecolours]
+        if self.edgecolour_legend_map is not None:
+            (edgecolour_labels, edgecolours) = zip(*self.edgecolour_legend_map.iteritems())
+            proxies = [plt_lines.Line2D([0], [0], linestyle="none", c=self.colourmap(0.4), 
+                                        markersize=2, markeredgecolor=self.edgecolourmap(color),
+                                        marker='.') for color in edgecolours]
             ax.legend(proxies, edgecolour_labels, numpoints=1)
         
         ax.set_xlabel(self.xlabel)
@@ -491,19 +489,14 @@ class ProfileReachabilityPlotter:
         (xticks, xticklabels) = zip(*[(iloc[i], "") for (i,_) in self._profile.mapping.iterindices() if i in iloc])
         xlabel = ""
             
-        # colour contigs by bin
-        binIds = self._profile.binIds[o]
-        flag_first = np.concatenate(([True], binIds[1:] != binIds[:-1])) # first of equal value run
-        first_indices = np.flatnonzero(flag_first)
-        last_indices = np.concatenate((first_indices[1:], [len(o)]))
-        is_bin = binIds[flag_first]!=0
-        first_binned_indices = first_indices[is_bin]
-        last_binned_indices = last_indices[is_bin]
+        # find bin contigs
+        obids = self._profile.binIds[o]
+        (first_binned_indices, last_binned_indices) = split_contiguous(obids, filter_groups=[0])
         
         # alternate colouring of stretches for different bins
         # red and black for selected bins, greys for unselected, cyan for unbinned
         colour_ids = np.zeros(len(o), dtype=np.int)
-        is_selected_bin = np.in1d(binIds[first_binned_indices], bids)
+        is_selected_bin = np.in1d(obids[first_binned_indices], bids)
         is_unselected_bin = np.logical_not(is_selected_bin)
         for (i, (s, e)) in enumerate(zip(first_binned_indices[is_unselected_bin], last_binned_indices[is_unselected_bin])):
             colour_ids[s:e] = (i%2) + 1
@@ -515,12 +508,12 @@ class ProfileReachabilityPlotter:
         group_centers = (first_binned_indices+last_binned_indices)*0.5
         group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
         if label=="bids":
-            group_labels = binIds[first_binned_indices].astype(str)
+            group_labels = obids[first_binned_indices].astype(str)
             text_alignment = "center"
             text_rotation = "horizontal"
         elif label=="tag":
             mapping_bids = binIds[self._profile.mapping.rowIndices]
-            group_labels = np.array([self._bc.consensusTag(np.flatnonzero(mapping_bids==bid)) for bid in binIds[first_binned_indices]])
+            group_labels = np.array([self._bc.consensusTag(np.flatnonzero(mapping_bids==bid)) for bid in obids[first_binned_indices]])
             text_alignment = "right"
             text_rotation = -60
         else:
@@ -528,8 +521,6 @@ class ProfileReachabilityPlotter:
     
         text = zip(group_centers[is_selected_bin], group_heights[is_selected_bin], group_labels[is_selected_bin])
         
-        
-            
         hplot = BarPlotter(
             height=h[1:],
             colours=colours[1:],
@@ -602,13 +593,18 @@ class ContigExplorerPlotter:
         
         return self._profile.contigNames[indices[choice]]
         
+    def getBinTaxstring(self, bid):
+        bc = BinClassifier(self._profile.mapping)
+        indices = np.flatnonzero(self._profile.binIds[self._profile.mapping.rowIndices] == bid)
+        return bc.consensusTaxstring(indices)
+        
         
     def plot(self,
              contig,
              highlight_bids=[],
-             highlight_cids=[],
+             highlight_groups=[],
              highlight_markers=[],
-             highlight_taxonomies=[],
+             highlight_taxstrings=[],
              filter_max_dist=None,
              filter_max_coverage=None,
              filter_min_coverage=None,
@@ -618,6 +614,7 @@ class ContigExplorerPlotter:
              filter_min_length=None,
              filter_max_reach=None,
              filter_tree_height=None,
+             group_list=None,
              fileName=""):
         
         n = self._profile.numContigs
@@ -657,12 +654,13 @@ class ContigExplorerPlotter:
                                          max_reach=filter_max_reach,
                                          max_tree_height=filter_tree_height,
                                          origin=origin))
-        (highlight_groups, higlight_labels) = he.getHighlighted(bids=highlight_bids,
-                                                                cids=highlight_cids,
-                                                                markers=highlight_markers,
-                                                                taxonomies=highlight_taxonomies,
-                                                                mask=l
-                                                               )
+        (highlight_groups, highlight_labels) = he.getHighlighted(bids=highlight_bids,
+                                                                 groups=highlight_groups,
+                                                                 markers=highlight_markers,
+                                                                 taxstrings=highlight_taxstrings,
+                                                                 group_list=group_list,
+                                                                 mask=l
+                                                                )
         
         ncolours = max(len(highlight_labels)+1, 5)
         edgecolourmap = plt_colors.LinearSegmentedColormap.from_list('EGDES',
@@ -709,6 +707,22 @@ class ContigExplorerPlotter:
                                    xlabel=xlabel, ylabel=ylabel)
         fplot.plot(fileName)
 
+        
+def get_bin_tree(o, d, bids):
+    o = np.asarray(o)
+    d = np.asarray(d)
+    
+    # find bin contigs
+    obids = bids[o]
+    (first_binned_indices, last_binned_indices) = split_contiguous(obids, filter_groups=[0])
+    
+    split_obs = np.concat(([0], [np.arange(s, e)[np.argmax(d[s:e])] for (s, e) in zip(last_binned_indices[:-1], first_binned_indices[1:])]))
+    
+    Z = hierarchy.linkage_from_reachability(np.arange(len(split_obs)), d[split_obs])
+    
+    return (Z, split_obs)
+    
+        
     
 class ProfileHighlightEngine:
     def __init__(self, profile):
@@ -726,7 +740,7 @@ class ProfileHighlightEngine:
                 origin=None):
                     
         n = self._profile.numContigs
-        l = np.ones(self._profile.numContigs, dtype=bool) if self._mask is None else self._mask
+        l = np.ones(n, dtype=bool)
         if max_reach is not None or max_tree_height is not None:
             if origin is None:
                 raise ValueError("Parameter `origin` required if `max_reach` or `max_tree_height` arguments are not None.")
@@ -808,17 +822,19 @@ class ProfileHighlightEngine:
         return l
        
     def getHighlighted(self,
-                       bids=None,
-                       cids=None,
-                       markers=None,
-                       taxonomies=None,
+                       bids=[],
+                       markers=[],
+                       taxstrings=[],
+                       groups=[],
+                       group_list=None,
                        mask=None):
         
         # verify highlight inputs
-        cids = np.asarray(cids)
-        missing_cids = np.in1d(cids, self._profile.contigNames, invert=True)
-        if np.any(missing_cids):
-            print ("WARNING: No contig(s) in database with id(s) {0}.".format(",".join(cids[missing_cids])))
+        if group_list is not None:
+            groups = np.asarray(groups)
+            missing_groups = np.in1d(groups, group_list, invert=True)
+            if np.any(missing_groups):
+                print ("WARNING: No contig(s) assigned to group(s) {0}.".format(",".join(groups[missing_groups])))
         markers = np.asarray(markers)
         missing_markers = np.in1d(markers, self._profile.mapping.markerNames, invert=True)
         if np.any(missing_markers):
@@ -826,8 +842,9 @@ class ProfileHighlightEngine:
         
             
         # highlight groups and labels
-        group = np.zeros(n, dtype=int)
-        group_index = 0
+        n = self._profile.numContigs
+        group_indices = np.zeros(n, dtype=int)
+        current_group_index = 0
         group_labels = []
         
         apply_mask = (lambda sel: sel) if mask is None else (lambda sel: np.logical_and(sel, mask))
@@ -835,19 +852,23 @@ class ProfileHighlightEngine:
             if bid == 0:
                 continue
                 
-            select = apply_mask(self._profile.binIds==bid)
+            select = np.logical_and(apply_mask(self._profile.binIds==bid), group_indices==0)
             if np.any(select):
-                group_index += 1
-                group[select] = group_index
+                current_group_index += 1
+                group_indices[select] = current_group_index
                 group_labels.append("bid {0}".format(bid))
-                
-        if len(cids) >= 1:
-            select = apply_mask(np.in1d(self._profile.contigNames, cids))
+        
+        if groups is not None and len(groups) > 0:
+            if group_list is None or len(group_list != n):
+                raise ValueError("ERROR: Expected parameter `group_list` to be an array of length {0}.".format(n))
             
-            if np.any(select):
-                group_index += 1
-                group[select] = group_index
-                group_labels.append("cids {0}".format(",".join(cids)))
+            for group in groups:
+                select = np.logical_and(apply_mask(group_list==group), group_indices==0)
+                
+                if np.any(select):
+                    current_group_index += 1
+                    group_indices[select] = current_group_index
+                    group_labels.append(group)
                 
         filter_mask = (lambda sel: np.unique(sel)) if mask is None else (lambda sel: np.intersect1d(sel, np.flatnonzero(mask)))
         for marker in markers:
@@ -855,20 +876,20 @@ class ProfileHighlightEngine:
             select = filter_mask(select_mappings)
             
             if np.any(select):
-                group_index += 1
-                group[select] = group_index
+                current_group_index += 1
+                group_indices[select] = current_group_index
                 group_labels.append("marker {0}".format(marker))
         
-        for taxstring in taxonomies:
+        for taxstring in taxstrings:
             select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.classification.getPrefixed(taxstring)]
             select = filter_mask(select_mappings)
             
             if np.any(select):
-                group_index += 1
-                group[select] = group_index
+                current_group_index += 1
+                group_indices[select] = current_group_index
                 group_labels.append("taxonomy {0}".format(taxstring))
                 
-        return (group, group_labels)
+        return (group_indices, group_labels)
         
         
 # Bin plotters

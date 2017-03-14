@@ -217,7 +217,7 @@ def linkage_from_reachability(o, d):
     ---------
     o : ndarray
         1-D array. `o[i]` is the index of the original observation reached `i`th
-        in the reachability traversal.
+        in the reachability traversal. Must be a permutation array.
     d : ndarray
         1-D array. `d[i]` is the distance to the `o[i]`th observation in the 
         reachabililty traversal.
@@ -230,6 +230,10 @@ def linkage_from_reachability(o, d):
     """
     o = np.asarray(o)
     d = np.asarray(d)
+    # check if o is a permutation array
+    if np.all(np.argsort(o) != o):
+        raise ValueError("Argument for parameter `o` must be a valid permutation array.")
+        
     n = len(o)
     Z = np.empty((n - 1, 4), dtype=d.dtype)
     

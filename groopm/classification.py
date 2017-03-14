@@ -80,22 +80,39 @@ class BinClassifier:
         if len(indices) == 0:
             return np.array([], dtype=np.intp)
         return greedy_clique_by_elimination(self._mdists[np.ix_(indices, indices)])
+    
+    def _specificTag(self, indices):
+        ret = []
+        level = 7
+        for i in indices:
+            tags = self._classification.tags(i)
+            if len(tags) == 0:
+                continue
+            o = min(len(tags), 7-self._d)
+            if level > o:
+                ret = tags[:o]
+                level = o
+                if level==7-self._d:
+                    break
+        return ret
         
+    def consensusTaxstring(self, indices):
+        indices = np.asarray(indices)
+        if len(indices) == 0:
+            return ""
+        q = indices[self.maxClique(indices)]
+        tags = self._specificTag(q)
+        return "; ".join(tags)
+    
     def consensusTag(self, indices):
         indices = np.asarray(indices)
         if len(indices) == 0:
             return ""
         q = indices[self.maxClique(indices)]
-        consensus_tag = ""
-        level = 7
-        for i in q:
-            tags = [t for t in zip(range(7-self._d), self._classification.tags(i))]
-            if len(tags) > 0:
-                (o, t) = tags[-1]
-                if level > o:
-                    consensus_tag = t
-                    level = o
-        return "{:s}({:d}/{:d})".format(consensus_tag, len(q), len(indices))
+        tags = self._specificTag(q)
+        tag = "" if len(tags)==0 else tags[-1]
+        return "{:s}({:d}/{:d})".format(tag, len(q), len(indices))
+        
         
 def greedy_clique_by_elimination(C):
     """Find clique from connectivity matrix by repeatedly removing least connected

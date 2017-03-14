@@ -457,17 +457,21 @@ class explore_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to plot, or highlight if --origin names is used (default plots all bins)")
-        parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if --origin names is used")
-        parser.add_argument('--origin', default="max_length", choices=["mediod", "max_length", "max_coverage", "names"], help="set how to choose plot origin")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('-a', '--all', action="store_true", help="plot all bins")
+        group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot, or highlight if --origin names is used (default plots all bins)")
+        
+        #parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if ORIGIN is 'names'")
+        parser.add_argument('--origin', default="max_length", choices=["mediod", "max_length", "max_coverage"], help="set how to choose plot origin")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('-o', '--out_folder', default="", help="save plots in folder")
-        group.add_argument('-i', '--interactive', action="store_true", help="interactive plot first bin or contig id")
+        group.add_argument('-i', '--interactive', action="store_true", help="interactive plot of bins or contigs")
         
+        parser.add_argument('--groupfile', default="", help="file with contig id and group id columns to import")
+        parser.add_argument('-s', '--separator', default=",", help="data separator for GROUPFILE")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set GC pc colormap")
         parser.add_argument('--raw_distances', action="store_true", help="use raw distances for plot coordinates")
-        parser.add_argument('--save_names', default="", help="file to save ids of contigs used as plot origins")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('--save_dists', action="store_true", help="save distance files")
         group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
@@ -483,13 +487,14 @@ class explore_command_configure:
         pm = groopm.ExplorePlotManager(options.dbname,
                                        folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
-                bids=options.bids,
-                names=options.names,
+                bids=[] if options.all else options.bids,
+                #names=options.names,
                 origin=options.origin,
                 colorMap=options.colormap,
                 prefix=options.prefix,
+                groupfile=options.groupfile,
+                separator=options.separator,
                 rawDistances=options.raw_distances,
-                saveNamesFile=options.save_names,
                 savedDistsPrefix=options.use_saved_dists,
                 keepDists=options.use_saved_dists!="" or options.save_dists)
                    
