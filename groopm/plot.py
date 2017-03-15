@@ -141,7 +141,7 @@ class ExplorePlotManager:
         
         group_list = None
         if groupfile!="":
-            br = BinReader
+            br = BinReader()
             try:
                 with open(groupfile, "r") as f:
                     try:
@@ -154,7 +154,7 @@ class ExplorePlotManager:
                 print "Could not parse group assignment file:",groupfile, sys.exc_info()[0]
                 raise
             
-            group_list = [contig_groups.get(cid, "") for cid in profile.contigNames]
+            group_list = np.array([contig_groups.get(cid, "") for cid in profile.contigNames])
             
         first_plot = True
         for bid in bids:
@@ -167,15 +167,17 @@ class ExplorePlotManager:
             cid = fplot.getBinRepresentative(bid, mode=origin)
             taxstring = fplot.getBinTaxstring(bid)
             is_in_bin = profile.binIds==bid
-            highlight_groups = [] if group_list is None else np.unique(group_list[is_in_bin])
             highlight_markers = np.unique(profile.mapping.markerNames[is_in_bin[profile.mapping.rowIndices]])
+            highlight_groups = [] if group_list is None else np.unique(group_list[is_in_bin])
             
             fplot.plot(fileName=fileName,
                        contig=cid,
                        highlight_bids=[bid],
                        highlight_taxstrings=[taxstring],
+                       highlight_markers=highlight_markers,
                        highlight_groups=highlight_groups,
-                       highlight_markers=highlight_markers)
+                       group_list=group_list,
+                       highlight_per_marker=False)
                     
         if self._outDir is not None:
             print "    %s" % timer.getTimeStamp()
@@ -306,6 +308,79 @@ class FeatureAxisPlotter:
                  sizes,
                  colourmap,
                  edgecolours,
+                 colourrings,
+                 edgecolourmap,
+                 edgecolour_legend_map=None,
+                 z=None,
+                 xlabel="", ylabel="", zlabel=""):
+        """
+        Parameters
+        ------
+        x: array_like, shape (n,)
+        y: array_like, shape (n,)
+        colours: color or sequence of color
+        sizes: scalar or array_like, shape (n,)
+        colourmap: Colormap
+        edgecolours: color or sequence of color
+        z: array_like, shape (n,), optional
+        xlabel: string, optional
+        ylabel: string, optional
+        zlabel: string, optional
+        """
+        self.x = x
+        self.y = y
+        self.z = z
+        self.sizes = sizes
+        self.colours = colours
+        self.colourmap = colourmap
+        self.edgecolours = edgecolours
+        self.colourrings = colourrings
+        self.edgecolourmap = edgecolourmap
+        self.edgecolour_legend_map = edgecolour_legend_map
+        self.xlabel = xlabel
+        self.ylabel = ylabel
+        self.zlabel = zlabel
+    
+    def __call__(self, ax, fig):
+        
+        coords = (self.x, self.y)
+        if self.z is not None:
+            coords += (self.z,)
+        for i in range(len(self.colourrings),0,-1):
+            (ix, clr) = self.colourrings[i-1]
+            sc = ax.scatter(*[x[ix] for x in coords],
+                            c='w', s=self.sizes[ix]+2*np.pi*np.sqrt(self.sizes[ix])*i*1.7+np.pi*(i*1.7)**2,
+                            cmap=self.edgecolourmap,
+                            #edgecolors=self.edgecolourmap(clr),
+                            marker='.')
+            sc.set_edgecolors(self.edgecolourmap(clr))
+            sc.set_edgecolors = sc.set_facecolors = lambda *args:None
+        sc = ax.scatter(*coords,
+                        c=self.colours, s=self.sizes,
+                        cmap=self.colourmap,
+                        vmin=0., vmax=1., marker='.')                        
+        sc.set_edgecolors(self.edgecolourmap(self.edgecolours))
+        sc.set_edgecolors = sc.set_facecolors = lambda *args:None
+        
+        if self.edgecolour_legend_map is not None:
+            (edgecolour_labels, edgecolours) = zip(*self.edgecolour_legend_map)
+            proxies = [plt_lines.Line2D([0], [0], linestyle="none", c='w',
+                                        markersize=5, markeredgecolor=self.edgecolourmap(color),
+                                        marker='.') for color in edgecolours]
+            ax.legend(proxies, edgecolour_labels, numpoints=1)
+        
+        ax.set_xlabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
+        if len(coords) == 3:
+            ax.set_zlabel(self.zlabel)
+            
+            
+class FeatureAxisPlotter_:
+    def __init__(self, x, y,
+                 colours,
+                 sizes,
+                 colourmap,
+                 edgecolours,
                  edgecolourmap,
                  edgecolour_legend_map=None,
                  z=None,
@@ -350,9 +425,9 @@ class FeatureAxisPlotter:
         sc.set_edgecolors = sc.set_facecolors = lambda *args:None
         
         if self.edgecolour_legend_map is not None:
-            (edgecolour_labels, edgecolours) = zip(*self.edgecolour_legend_map.iteritems())
-            proxies = [plt_lines.Line2D([0], [0], linestyle="none", c=self.colourmap(0.4), 
-                                        markersize=2, markeredgecolor=self.edgecolourmap(color),
+            (edgecolour_labels, edgecolours) = zip(*self.edgecolour_legend_map)
+            proxies = [plt_lines.Line2D([0], [0], linestyle="none", c='w', 
+                                        markersize=5, markeredgecolor=self.edgecolourmap(color),
                                         marker='.') for color in edgecolours]
             ax.legend(proxies, edgecolour_labels, numpoints=1)
         
@@ -605,6 +680,11 @@ class ContigExplorerPlotter:
              highlight_groups=[],
              highlight_markers=[],
              highlight_taxstrings=[],
+             highlight_per_bid=True,
+             highlight_per_group=True,
+             highlight_per_marker=True,
+             highlight_per_taxstring=True,
+             highlight_intersections=False,
              filter_max_dist=None,
              filter_max_coverage=None,
              filter_min_coverage=None,
@@ -659,20 +739,23 @@ class ContigExplorerPlotter:
                                                                  markers=highlight_markers,
                                                                  taxstrings=highlight_taxstrings,
                                                                  group_list=group_list,
+                                                                 highlight_per_bid=highlight_per_bid,
+                                                                 highlight_per_group=highlight_per_group,
+                                                                 highlight_per_marker=highlight_per_marker,
+                                                                 highlight_per_taxstring=highlight_per_taxstring,
+                                                                 highlight_intersections=highlight_intersections,
                                                                  mask=l
                                                                 )
-        
-        ncolours = max(len(highlight_labels)+1, 5)
+        nlabels = len(highlight_labels)
+        ncolours = max(nlabels, 5)
         edgecolourmap = plt_colors.LinearSegmentedColormap.from_list('EGDES',
                 np.vstack((plt_colors.colorConverter.to_rgba_array('k'),
                            plt_cm.Set1(np.linspace(0,1,ncolours))
                           )))
-        edgecolours = highlight_groups * 1. / ncolours
-        legend_map = dict()
-        for (i, label) in enumerate(highlight_labels, 1):
-            if len(label) > 15:
-                label = label[:12]+'...'
-            legend_map[label] = i * 1. / ncolours
+        edgecolours = highlight_groups[:,0] * 1. / ncolours
+        colourrings = [(select, highlight_groups[select,i]*1./ncolours) for (i, select) in ((i, np.flatnonzero(highlight_groups[:,i])) for i in range(1, nlabels)) if len(select)>0]
+        legend_map = zip(["{0:.27}...".format(label) if len(label)>30 else label for label in highlight_labels],
+                         [(i+1) * 1. / ncolours for i in range(nlabels)])
         
         # apply visual transformation
         xlabel = self._xlabel
@@ -701,6 +784,7 @@ class ContigExplorerPlotter:
                                    colours=c,
                                    sizes=s,
                                    edgecolours=edgecolours,
+                                   colourrings=colourrings,
                                    colourmap=self._colourmap,
                                    edgecolourmap= edgecolourmap,
                                    edgecolour_legend_map=legend_map,
@@ -721,7 +805,65 @@ def get_bin_tree(o, d, bids):
     Z = hierarchy.linkage_from_reachability(np.arange(len(split_obs)), d[split_obs])
     
     return (Z, split_obs)
+
     
+class GroupManager:
+    
+    def addGroup(self, indices, label):
+        pass
+        
+    def getGroups(self):
+        pass
+        
+
+class MultiGroupManager(GroupManager):
+    def __init__(self, n, mask=None):
+        self._n = n
+        self._mask = mask
+        self._labels = []
+        self._group_members = []
+        
+    def addGroup(self, indices, label):
+        is_member = np.zeros(self._n, dtype=bool)
+        is_member[indices] = True if self._mask is None else self._mask[indices]
+        if np.any(is_member):
+            self._group_members.append(is_member)
+            self._labels.append(label)
+            
+    def getGroups(self):
+        if len(self._group_members)==0:
+            return (np.zeros(self._n, dtype=int), np.array([]))
+            
+        ngroups = len(self._group_members)
+        group_ids = np.transpose(self._group_members).astype(int) * np.arange(1,ngroups+1)[None,:]
+        group_ids[group_ids==0] = ngroups+1
+        sorted_group_ids = np.sort(group_ids, axis=1)
+        sorted_group_ids[sorted_group_ids==ngroups+1] = 0
+        
+        return (sorted_group_ids, self._labels)
+         
+    def getIntersectionGroups_(self):
+        if len(self._group_members)==0:
+            return (np.zeros(self._n, dtype=int), np.array([]))
+        flipped_group_members = [m for m in self._group_members]
+        flipped_group_members.reverse()
+        order = np.lexsort(flipped_group_members)
+        sorted_group_intersections = np.fliplr(np.array(flipped_group_members).T[order])
+        # flag first unique group intersections
+        flag_first = np.concatenate(([np.any(sorted_group_intersections[0])],
+                                     np.any(sorted_group_intersections[1:]!=sorted_group_intersections[:-1], axis=1)))
+        group_intersection_ids = np.empty(self._n, dtype=int)
+        group_intersection_ids[order] = np.cumsum(flag_first)
+        labels = np.array(self._labels)
+        group_intersection_labels = np.array(["/".join(labels[row]) for row in sorted_group_intersections[flag_first]])
+        
+        
+        # reverse priority of group intersections
+        nzids = group_intersection_ids!=0
+        group_intersection_ids *= -1
+        group_intersection_ids[nzids] += np.count_nonzero(flag_first)+1
+        group_intersection_labels = np.flipud(group_intersection_labels)
+        return (group_intersection_ids[:, None], group_intersection_labels)
         
     
 class ProfileHighlightEngine:
@@ -827,7 +969,12 @@ class ProfileHighlightEngine:
                        taxstrings=[],
                        groups=[],
                        group_list=None,
-                       mask=None):
+                       mask=None,
+                       highlight_per_bid=True,
+                       highlight_per_marker=True,
+                       highlight_per_group=True,
+                       highlight_per_taxstring=True,
+                       highlight_intersections=False):
         
         # verify highlight inputs
         if group_list is not None:
@@ -843,53 +990,50 @@ class ProfileHighlightEngine:
             
         # highlight groups and labels
         n = self._profile.numContigs
-        group_indices = np.zeros(n, dtype=int)
-        current_group_index = 0
-        group_labels = []
-        
-        apply_mask = (lambda sel: sel) if mask is None else (lambda sel: np.logical_and(sel, mask))
-        for bid in bids:
-            if bid == 0:
-                continue
-                
-            select = np.logical_and(apply_mask(self._profile.binIds==bid), group_indices==0)
-            if np.any(select):
-                current_group_index += 1
-                group_indices[select] = current_group_index
-                group_labels.append("bid {0}".format(bid))
-        
+        gm = MultiGroupManager(n, mask=mask)    
+         
         if groups is not None and len(groups) > 0:
-            if group_list is None or len(group_list != n):
+            if group_list is None or len(group_list) != n:
                 raise ValueError("ERROR: Expected parameter `group_list` to be an array of length {0}.".format(n))
             
-            for group in groups:
-                select = np.logical_and(apply_mask(group_list==group), group_indices==0)
+            if highlight_per_group:
+                for group in groups:
+                    if group=="":
+                        continue
+                    gm.addGroup(np.flatnonzero(group_list==group), group)
+            else:
+                negroups = groups[groups!=""]
+                gm.addGroup(np.flatnonzero(np.in1d(group_list, negroups)), "groups")
+             
+        if highlight_per_bid:
+            for bid in bids:
+                if bid == 0:
+                    continue
                 
-                if np.any(select):
-                    current_group_index += 1
-                    group_indices[select] = current_group_index
-                    group_labels.append(group)
-                
-        filter_mask = (lambda sel: np.unique(sel)) if mask is None else (lambda sel: np.intersect1d(sel, np.flatnonzero(mask)))
-        for marker in markers:
-            select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.markerNames==marker]
-            select = filter_mask(select_mappings)
-            
-            if np.any(select):
-                current_group_index += 1
-                group_indices[select] = current_group_index
-                group_labels.append("marker {0}".format(marker))
+                gm.addGroup(np.flatnonzero(self._profile.binIds==bid), "bid {0}".format(bid))
+        else:
+            nzbids = bids[bids!=0]
+            gm.addGroup(np.flatnonzero(np.in1d(self._profile.binIds, nzbids)), "bids")
         
-        for taxstring in taxstrings:
-            select_mappings = self._profile.mapping.rowIndices[self._profile.mapping.classification.getPrefixed(taxstring)]
-            select = filter_mask(select_mappings)
-            
-            if np.any(select):
-                current_group_index += 1
-                group_indices[select] = current_group_index
-                group_labels.append("taxonomy {0}".format(taxstring))
-                
-        return (group_indices, group_labels)
+        if highlight_per_marker:
+            for marker in markers:
+                select_mappings = self._profile.mapping.markerNames==marker
+                gm.addGroup(self._profile.mapping.rowIndices[select_mappings], "scg {0}".format(marker))
+        else:
+            select_mappings = np.in1d(self._profile.mapping.markerNames, markers)
+            gm.addGroup(self._profile.mapping.rowIndices[select_mappings], "scgs")
+        
+        if highlight_per_taxstring:
+            for taxstring in taxstrings:
+                select_mappings = self._profile.mapping.classification.getPrefixed(taxstring)
+                gm.addGroup(self._profile.mapping.rowIndices[select_mappings], "\"{0}\"".format(taxstring))
+        else:
+            select_mappings = np.zeros(n, dtype=bool)
+            for taxstring in taxstrings:
+                select_mappings = np.logical_or(select_mappings, self._profile.mapping.classification.getPrefixed(taxstring))
+            gm.addGroup(self._profile.mapping.rowIndices[select_mappings], "taxons")
+        
+        return gm.getIntersectionGroups() if highlight_intersections else gm.getGroups()
         
         
 # Bin plotters

@@ -484,6 +484,11 @@ class explore_command_configure:
         print "*******************************************************************************"
 
 
+        if options.separator == '\\t':
+            separator = '\t'
+        else:
+            separator = options.separator
+            
         pm = groopm.ExplorePlotManager(options.dbname,
                                        folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
@@ -493,7 +498,7 @@ class explore_command_configure:
                 colorMap=options.colormap,
                 prefix=options.prefix,
                 groupfile=options.groupfile,
-                separator=options.separator,
+                separator=separator,
                 rawDistances=options.raw_distances,
                 savedDistsPrefix=options.use_saved_dists,
                 keepDists=options.use_saved_dists!="" or options.save_dists)
