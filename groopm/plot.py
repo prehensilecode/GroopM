@@ -60,6 +60,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as plt_colors
 import matplotlib.cm as plt_cm
 import matplotlib.lines as plt_lines
+import matplotlib.markers as plt_markers
 from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 
@@ -172,12 +173,11 @@ class ExplorePlotManager:
             
             fplot.plot(fileName=fileName,
                        contig=cid,
-                       highlight_bids=[bid],
+                       bid=bid,
                        highlight_taxstrings=[taxstring],
                        highlight_markers=highlight_markers,
                        highlight_groups=highlight_groups,
-                       group_list=group_list,
-                       highlight_per_marker=False)
+                       group_list=group_list)
                     
         if self._outDir is not None:
             print "    %s" % timer.getTimeStamp()
@@ -303,6 +303,75 @@ class Plotter3D(GenericPlotter):
     
 # Plot types
 class FeatureAxisPlotter:
+    def __init__(self, x, y,
+                 colours,
+                 sizes,
+                 edgecolours,
+                 colourmap,
+                 edgecolourmap,
+                 markers,
+                 legend_data=None,
+                 z=None,
+                 xlabel="", ylabel="", zlabel=""):
+        """
+        Parameters
+        ------
+        x: array_like, shape (n,)
+        y: array_like, shape (n,)
+        colours: color or sequence of color
+        sizes: scalar or array_like, shape (n,)
+        colourmap: Colormap
+        edgecolours: color or sequence of color
+        z: array_like, shape (n,), optional
+        xlabel: string, optional
+        ylabel: string, optional
+        zlabel: string, optional
+        """
+        self.x = x
+        self.y = y
+        self.z = z
+        self.sizes = sizes
+        self.colours = colours
+        self.markers = markers
+        self.colourmap = colourmap
+        self.edgecolours = edgecolours
+        self.edgecolourmap = edgecolourmap
+        self.legend_data = legend_data
+        self.xlabel = xlabel
+        self.ylabel = ylabel
+        self.zlabel = zlabel
+    
+    def __call__(self, ax, fig):
+        
+        coords = (self.x, self.y)
+        if self.z is not None:
+            coords += (self.z,)
+            
+        for (mkr, ix) in self.markers:
+            print mkr
+            sc = ax.plot(*[x[ix] for x in coords],
+                         linestyle="none",
+                         c=self.colours[ix], s=self.sizes[ix],
+                         cmap=self.colourmap,
+                         vmin=0., vmax=1., **mkr)                        
+            sc.set_edgecolors(self.edgecolourmap(self.edgecolours[ix]))
+            sc.set_edgecolors = sc.set_facecolors = lambda *args:None
+        
+        if self.legend_data is not None:
+            (labels, data) = zip(*self.legend_data)
+            line = plt_lines.Line2D([0], [0], linestyle="none", 
+                                    markersize=5, marker="o", fillstyle="bottom")
+            proxies = [plt_lines.Line2D([0], [0], linestyle="none", 
+                                        markersize=5, **dat) for dat in data]
+            ax.legend(proxies, labels, numpoints=1)
+        
+        ax.set_xlabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
+        if len(coords) == 3:
+            ax.set_zlabel(self.zlabel)
+            
+
+class FeatureAxisPlotter__:
     def __init__(self, x, y,
                  colours,
                  sizes,
@@ -673,8 +742,104 @@ class ContigExplorerPlotter:
         indices = np.flatnonzero(self._profile.binIds[self._profile.mapping.rowIndices] == bid)
         return bc.consensusTaxstring(indices)
         
-        
+    
     def plot(self,
+             contig,
+             bid,
+             highlight_groups=[],
+             highlight_markers=[],
+             highlight_taxstrings=[],
+             group_list=None,
+             fileName=""):
+        
+        n = self._profile.numContigs
+        try:
+            origin = np.flatnonzero(self._profile.contigNames==contig)[0]
+        except IndexError:
+            raise ContigNotFoundException("ERROR: No contig found in database with id {0}.".format(contig))
+        
+        # hard error if highlight bids don't exist
+        bm = BinManager(self._profile)
+        bin_indices = bm.getBinIndices([bid])
+        
+        # load distances
+        others = np.array([i for i in range(n) if i!=origin])
+        x = np.zeros(n, dtype=float)
+        y = np.zeros(n, dtype=float)
+        (x[others], y[others]) = self._getCoords(origin, others)
+        
+        s = 20*(2**np.log10(self._profile.contigLengths / np.min(self._profile.contigLengths)))
+        
+        # colorize
+        he = ProfileHighlightEngine(self._profile)
+        (colour_groups, colour_labels) = he.getHighlighted(groups=highlight_groups,
+                                                           group_list=group_list)
+        (marker_groups, marker_labels) = he.getHighlighted(markers=highlight_markers,
+                                                           taxstrings=highlight_taxstrings,
+                                                           highlight_per_marker=False)
+        legend_data = []
+        format_label = lambda label: "{0:.27}...".format(label) if len(label)>30 else label
+        
+        edgecolourmap = plt_colors.LinearSegmentedColormap.from_list('EGDES',
+                np.vstack((plt_colors.colorConverter.to_rgba_array('k'),
+                           plt_cm.Set1(np.linspace(0,1,10))
+                          )))
+        edgenorm = plt_colors.Normalize(vmin=0., vmax=10)
+        edgecolours = edgenorm(self._profile.binIds==bid)
+        legend_data.append((format_label("bid {0}".format(bid)), dict(markeredgecolor = edgecolourmap(edgenorm(1)), c = "w", marker=".")))
+        
+        i = np.linspace(0,1,256)
+        j = np.linspace(0,1,10)
+        colournorm_gc = plt_colors.Normalize(vmin=0., vmax=2.)
+        colournorm_group = plt_colors.Normalize(vmin=-10., vmax=10.)
+        colourmap = plt_colors.LinearSegmentedColormap.from_list('FACES',
+                zip(np.hstack((colournorm_gc(i), colournorm_gc(j+1))),
+                    np.vstack((plt_cm.bone(i), plt_cm.Accent(j)))
+                   ))
+        c = colournorm_gc(self._profile.contigGCs)
+        c[colour_groups[:,0]>0] = colournorm_group(colour_groups[colour_groups[:,0]>0,0])
+        legend_data.extend(zip([format_label(l) for l in colour_labels], [dict(c=colourmap(colournorm_groups[i]), marker=".") for i in range(1, len(colour_labels)+1)]))
+        
+        markerstyles = [dict(marker="o", fillstyle=fillstyle) for fillstyle in ["full", "bottom", "bottom"]]
+        markers = [(mkr, np.flatnonzero(marker_groups[:, 0]==i)) for (i, mkr) in zip(range(len(marker_labels)+1), markerstyles)]
+        legend_data.extend(zip([format_label(l) for l in marker_labels], [dict(c='w', **mkr) for (_, mkr) in zip(range(len(marker_labels)), markerstyles[1:])]))
+        
+        
+        # apply visual transformation
+        xlabel = self._xlabel
+        ylabel = self._ylabel
+        if not self._rawDistances:
+            x = np.sqrt(self._fun(x))
+            y = np.sqrt(self._fun(y))
+            xlabel = "sqrt({0})".format(xlabel)
+            ylabel = "sqrt({0})".format(ylabel)
+        
+        if self._surface:
+            z = self.profile.normCoverages.flatten()
+            fplot = SurfacePlotter(x,
+                                   y,
+                                   z=z,
+                                   colours=c,
+                                   sizes=s,
+                                   edgecolours=edgecolours,
+                                   colourmap=self._colourmap,
+                                   edgecolourmap=edgecolourmap,
+                                   legend_data=legend_data,
+                                   xlabel=xlabel, ylabel=ylabel, zlabel="cov_norm")            
+        else:
+            fplot = FeaturePlotter(x,
+                                   y,
+                                   colours=c,
+                                   sizes=s,
+                                   markers=markers,
+                                   edgecolours=edgecolours,
+                                   colourmap=colourmap,
+                                   edgecolourmap= edgecolourmap,
+                                   legend_data=legend_data,
+                                   xlabel=xlabel, ylabel=ylabel)
+        fplot.plot(fileName)
+    
+    def plot_(self,
              contig,
              highlight_bids=[],
              highlight_groups=[],
@@ -734,6 +899,7 @@ class ContigExplorerPlotter:
                                          max_reach=filter_max_reach,
                                          max_tree_height=filter_tree_height,
                                          origin=origin))
+        
         (highlight_groups, highlight_labels) = he.getHighlighted(bids=highlight_bids,
                                                                  groups=highlight_groups,
                                                                  markers=highlight_markers,
@@ -832,7 +998,7 @@ class MultiGroupManager(GroupManager):
             
     def getGroups(self):
         if len(self._group_members)==0:
-            return (np.zeros(self._n, dtype=int), np.array([]))
+            return (np.zeros((self._n, 1), dtype=int), np.array([]))
             
         ngroups = len(self._group_members)
         group_ids = np.transpose(self._group_members).astype(int) * np.arange(1,ngroups+1)[None,:]
@@ -865,7 +1031,7 @@ class MultiGroupManager(GroupManager):
         group_intersection_labels = np.flipud(group_intersection_labels)
         return (group_intersection_ids[:, None], group_intersection_labels)
         
-    
+        
 class ProfileHighlightEngine:
     def __init__(self, profile):
         self._profile = profile
@@ -1000,12 +1166,14 @@ class ProfileHighlightEngine:
                 for group in groups:
                     if group=="":
                         continue
+                    
                     gm.addGroup(np.flatnonzero(group_list==group), group)
             else:
                 negroups = groups[groups!=""]
                 gm.addGroup(np.flatnonzero(np.in1d(group_list, negroups)), "groups")
              
         if highlight_per_bid:
+            
             for bid in bids:
                 if bid == 0:
                     continue
@@ -1017,6 +1185,7 @@ class ProfileHighlightEngine:
         
         if highlight_per_marker:
             for marker in markers:
+                
                 select_mappings = self._profile.mapping.markerNames==marker
                 gm.addGroup(self._profile.mapping.rowIndices[select_mappings], "scg {0}".format(marker))
         else:
@@ -1025,6 +1194,7 @@ class ProfileHighlightEngine:
         
         if highlight_per_taxstring:
             for taxstring in taxstrings:
+                
                 select_mappings = self._profile.mapping.classification.getPrefixed(taxstring)
                 gm.addGroup(self._profile.mapping.rowIndices[select_mappings], "\"{0}\"".format(taxstring))
         else:
