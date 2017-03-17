@@ -59,6 +59,7 @@ import scipy.stats as sp_stats
 import matplotlib.pyplot as plt
 import matplotlib.colors as plt_colors
 import matplotlib.cm as plt_cm
+import matplotlib.colorbar as plt_colorbar
 import matplotlib.lines as plt_lines
 import matplotlib.markers as plt_markers
 from mpl_toolkits.mplot3d import axes3d, Axes3D
@@ -307,8 +308,6 @@ class FeatureAxisPlotter:
                  colours,
                  sizes,
                  edgecolours,
-                 colourmap,
-                 edgecolourmap,
                  markers,
                  legend_data=None,
                  z=None,
@@ -332,10 +331,8 @@ class FeatureAxisPlotter:
         self.z = z
         self.sizes = sizes
         self.colours = colours
-        self.markers = markers
-        self.colourmap = colourmap
         self.edgecolours = edgecolours
-        self.edgecolourmap = edgecolourmap
+        self.markers = markers
         self.legend_data = legend_data
         self.xlabel = xlabel
         self.ylabel = ylabel
@@ -346,23 +343,20 @@ class FeatureAxisPlotter:
         coords = (self.x, self.y)
         if self.z is not None:
             coords += (self.z,)
-            
-        for (mkr, ix) in self.markers:
-            print mkr
-            sc = ax.plot(*[x[ix] for x in coords],
-                         linestyle="none",
-                         c=self.colours[ix], s=self.sizes[ix],
-                         cmap=self.colourmap,
-                         vmin=0., vmax=1., **mkr)                        
-            sc.set_edgecolors(self.edgecolourmap(self.edgecolours[ix]))
+        
+        marker_sets = [(slice(None), '.')] if self.markers is None else self.markers
+        for (ix, marker) in marker_sets:
+            sc = ax.scatter(*[x[ix] for x in coords],
+                            c=self.colours[ix],
+                            s=self.sizes[ix],
+                            marker=marker)                        
+            sc.set_edgecolors(self.edgecolours[ix])
             sc.set_edgecolors = sc.set_facecolors = lambda *args:None
         
-        if self.legend_data is not None:
+        if self.legend_data is not None and len(self.legend_data)>0:
             (labels, data) = zip(*self.legend_data)
-            line = plt_lines.Line2D([0], [0], linestyle="none", 
-                                    markersize=5, marker="o", fillstyle="bottom")
             proxies = [plt_lines.Line2D([0], [0], linestyle="none", 
-                                        markersize=5, **dat) for dat in data]
+                                        markersize=15, **dat) for dat in data]
             ax.legend(proxies, labels, numpoints=1)
         
         ax.set_xlabel(self.xlabel)
@@ -772,38 +766,38 @@ class ContigExplorerPlotter:
         
         # colorize
         he = ProfileHighlightEngine(self._profile)
-        (colour_groups, colour_labels) = he.getHighlighted(groups=highlight_groups,
+        (edge_groups, edge_labels) = he.getHighlighted(bids=[bid])
+        (marker_groups, marker_labels) = he.getHighlighted(groups=highlight_groups,
                                                            group_list=group_list)
-        (marker_groups, marker_labels) = he.getHighlighted(markers=highlight_markers,
+        (colour_groups, colour_labels) = he.getHighlighted(markers=highlight_markers,
                                                            taxstrings=highlight_taxstrings,
                                                            highlight_per_marker=False)
         legend_data = []
         format_label = lambda label: "{0:.27}...".format(label) if len(label)>30 else label
         
-        edgecolourmap = plt_colors.LinearSegmentedColormap.from_list('EGDES',
-                np.vstack((plt_colors.colorConverter.to_rgba_array('k'),
-                           plt_cm.Set1(np.linspace(0,1,10))
-                          )))
-        edgenorm = plt_colors.Normalize(vmin=0., vmax=10)
-        edgecolours = edgenorm(self._profile.binIds==bid)
-        legend_data.append((format_label("bid {0}".format(bid)), dict(markeredgecolor = edgecolourmap(edgenorm(1)), c = "w", marker=".")))
+        edgecolour_list = ["k", "r", "b", "g", "orange", "darkturquoise", "m"]
+        edgecolourmap = plt_colors.ListedColormap(edgecolour_list)
+        #edgesm = plt_cm.ScalarMappable(plt_colors.Normalize(vmin=0., vmax=10), edgecolourmap)
         
-        i = np.linspace(0,1,256)
-        j = np.linspace(0,1,10)
-        colournorm_gc = plt_colors.Normalize(vmin=0., vmax=2.)
-        colournorm_group = plt_colors.Normalize(vmin=-10., vmax=10.)
-        colourmap = plt_colors.LinearSegmentedColormap.from_list('FACES',
-                zip(np.hstack((colournorm_gc(i), colournorm_gc(j+1))),
-                    np.vstack((plt_cm.bone(i), plt_cm.Accent(j)))
-                   ))
-        c = colournorm_gc(self._profile.contigGCs)
-        c[colour_groups[:,0]>0] = colournorm_group(colour_groups[colour_groups[:,0]>0,0])
-        legend_data.extend(zip([format_label(l) for l in colour_labels], [dict(c=colourmap(colournorm_groups[i]), marker=".") for i in range(1, len(colour_labels)+1)]))
+        edgecolours = edgecolourmap(edge_groups[:,0])
+        legend_data.extend([(format_label(label), dict(markeredgecolor=edgecolourmap(i), c="w", marker=".")) for (i, label) in enumerate(edge_labels, 1)])
+        #legend_data.extend(zip([format_label(label) for label in edge_labels], [dict(markeredgecolor = edgecolourmap(i), c = "w") for i in range(1, len(edge_labels)+1)]))
         
-        markerstyles = [dict(marker="o", fillstyle=fillstyle) for fillstyle in ["full", "bottom", "bottom"]]
-        markers = [(mkr, np.flatnonzero(marker_groups[:, 0]==i)) for (i, mkr) in zip(range(len(marker_labels)+1), markerstyles)]
-        legend_data.extend(zip([format_label(l) for l in marker_labels], [dict(c='w', **mkr) for (_, mkr) in zip(range(len(marker_labels)), markerstyles[1:])]))
+        sm = plt_cm.ScalarMappable(plt_colors.Normalize(vmin=0., vmax=1.), self._colourmap)
+        c = sm.to_rgba(self._profile.contigGCs)
+        is_coloured = colour_groups[:,0]>0
+        colour_list = ['none', 'dimgrey', 'orangered', 'indigo', 'goldenrod']
+        colourmap = plt_colors.ListedColormap(colour_list)
+        c[is_coloured] = colourmap(colour_groups[is_coloured,0])
+        is_coloured_plain_edge = np.logical_and(is_coloured, edge_groups[:,0]==0)
+        edgecolours[is_coloured_plain_edge] = c[is_coloured_plain_edge]
+        legend_data.extend([(format_label(l), dict(c=colourmap(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
+        #legend_data.extend(zip([format_label(l) for l in colour_labels], [dict(c=colourmap(i)) for i in range(1, len(colour_labels)+1)]))
         
+        marker_list = ['o', '^', 's', 'v', 'D']
+        markers = [(marker_groups[:,0]==i, marker_list[i % len(marker_list)]) for i in range(len(marker_labels)+1)]
+        legend_data.extend([(format_label(l), dict(marker=marker_list[i % len(marker_list)], c="w")) for (i, l) in enumerate(marker_labels, 1)])
+        #legend_data.extend(zip([format_label(l) for l in marker_labels], [dict(marker=mkr, c='w') for i in marker_list[1:]]))
         
         # apply visual transformation
         xlabel = self._xlabel
@@ -822,8 +816,6 @@ class ContigExplorerPlotter:
                                    colours=c,
                                    sizes=s,
                                    edgecolours=edgecolours,
-                                   colourmap=self._colourmap,
-                                   edgecolourmap=edgecolourmap,
                                    legend_data=legend_data,
                                    xlabel=xlabel, ylabel=ylabel, zlabel="cov_norm")            
         else:
@@ -831,10 +823,8 @@ class ContigExplorerPlotter:
                                    y,
                                    colours=c,
                                    sizes=s,
-                                   markers=markers,
                                    edgecolours=edgecolours,
-                                   colourmap=colourmap,
-                                   edgecolourmap= edgecolourmap,
+                                   markers=markers,
                                    legend_data=legend_data,
                                    xlabel=xlabel, ylabel=ylabel)
         fplot.plot(fileName)
