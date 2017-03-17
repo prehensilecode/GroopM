@@ -261,7 +261,7 @@ class ProfileManager:
                                 
                 if prof.numContigs == 0:
                     print "    ERROR: No previously clustered contigs. Please run `core` step before proceeding."
-                    return
+                    return prof
             else:
                 # Conditional filter
                 condition = _getConditionString(minLength=minLength, bids=bids, removeBins=removeBins)
@@ -276,7 +276,7 @@ class ProfileManager:
 
                 if prof.numContigs == 0:
                     print "    ERROR: No contigs loaded using condition:", condition
-                    return
+                    return prof
 
             if(not silent):
                 print "    Working with: %d contigs" % prof.numContigs
