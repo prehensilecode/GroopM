@@ -462,7 +462,7 @@ class explore_command_configure:
         group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot, or highlight if --origin names is used (default plots all bins)")
         
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if ORIGIN is 'names'")
-        parser.add_argument('--origin', default="max_length", choices=["mediod", "max_length", "max_coverage"], help="set how to choose plot origin")
+        parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage"], help="set how to choose plot origin")
         parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('-o', '--out_folder', default="", help="save plots in folder")
