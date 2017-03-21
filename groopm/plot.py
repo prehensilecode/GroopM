@@ -62,6 +62,7 @@ import matplotlib.cm as plt_cm
 import matplotlib.colorbar as plt_colorbar
 import matplotlib.lines as plt_lines
 import matplotlib.markers as plt_markers
+import matplotlib.patches as plt_patches
 from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 
@@ -164,13 +165,11 @@ class ExplorePlotManager:
                 fileName = ""
                 
             first_plot = False
-            cid = fplot.getBinRepresentative(bid, mode=origin)
             is_in_bin = profile.binIds==bid
             highlight_markers = np.unique(profile.mapping.markerNames[is_in_bin[profile.mapping.rowIndices]])
             highlight_groups = [] if group_list is None else np.unique(group_list[is_in_bin])
             
             fplot.plot(fileName=fileName,
-                       contig=cid,
                        bid=bid,
                        highlight_markers=highlight_markers,
                        highlight_groups=highlight_groups,
@@ -246,8 +245,11 @@ class ReachabilityPlotManager:
         bm = BinManager(profile)
         if bids is None or len(bids) == 0:
             bids = bm.getBids()
+            show="all"
         else:
             bm.checkBids(bids)
+            show="bids"
+            
             
         print "    Initialising plotter"
         fplot = ProfileReachabilityPlotter(profile)
@@ -258,7 +260,9 @@ class ReachabilityPlotManager:
             
         group_list = None
         if groupfile!="":
+            print "    Parsing group assignments"
             group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
+            print "    %s" % timer.getTimeStamp()
             
         fileName = "" if self._outDir is None else os.path.join(self._outDir, filename)
         is_in_bin = np.in1d(profile.binIds, bids)
@@ -269,6 +273,8 @@ class ReachabilityPlotManager:
                    bids=bids,
                    highlight_markers=highlight_markers,
                    highlight_groups=highlight_groups,
+                   group_list=group_list,
+                   show="bids",
                    label="bid")
                    
         if self._outDir is not None:
@@ -330,6 +336,8 @@ class FeatureAxisPlotter:
                  markers,
                  legend_data=None,
                  z=None,
+                 xticks=None, yticks=None, 
+                 xticklabels=None, yticklabels=None,
                  xlabel="", ylabel="", zlabel=""):
         """
         Parameters
@@ -353,6 +361,10 @@ class FeatureAxisPlotter:
         self.edgecolours = edgecolours
         self.markers = markers
         self.legend_data = legend_data
+        self.xticks = xticks
+        self.xticklabels = xticklabels
+        self.yticks = yticks
+        self.yticklabels = yticklabels
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.zlabel = zlabel
@@ -378,6 +390,14 @@ class FeatureAxisPlotter:
                                         markersize=15, **dat) for dat in data]
             ax.legend(proxies, labels, numpoints=1)
         
+        if self.xticks is not None:
+            ax.set_xticks(self.xticks)
+        if self.xticklabels is not None:
+            ax.set_xticklabels(self.xticklabels)
+        if self.yticks is not None:
+            ax.set_yticks(self.yticks)
+        if self.yticklabels is not None:
+            ax.set_yticklabels(self.yticklabels)
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
         if len(coords) == 3:
@@ -475,13 +495,14 @@ class BarAxisPlotter:
         ax.set_xticklabels(self.xticklabels,
                            rotation="horizontal")
         ax.tick_params(axis="x", length=2, direction="out", width=1, top='off')
-        for (x, y, text) in self.text:
+        for (x, y, text, dat) in self.text:
             ax.text(x, y, text, va="bottom",
                                 ha=self.text_alignment,
                                 rotation=self.text_rotation,
-                                rotation_mode="anchor")
-        for (x, colour, linestyle) in self.vlines:
-            ax.axvline(x, linestyle=linestyle, c=colour)
+                                rotation_mode="anchor",
+                                **dat)
+        for (x, dat) in self.vlines:
+            ax.axvline(x, **dat)
         
         if self.legend_data is not None and len(self.legend_data)>0:
             (labels, color) = zip(*self.legend_data)
@@ -514,77 +535,105 @@ class ProfileReachabilityPlotter:
              highlight_taxstring=[],
              group_list=None,
              label="tag",
+             show="bids",
              fileName=""):
                  
-        n = 0
-        for i in range(self._profile.numContigs):
-            n += self._profile.contigLengths[i]*self._profile.contigLengths[i+1:].sum()
         h = self._profile.reachDists
         o = self._profile.reachOrder
+        n = len(o)
+        
+        # find bin contigs
+        obids = self._profile.binIds[o] 
+        (first_binned_pos, last_binned_pos) = split_contiguous(obids, filter_groups=[0])
+        selected_of_bins = np.flatnonzero(np.in1d(obids[first_binned_pos], bids))
+        
+        # find region containing selected and neighbouring bins
+        first_of_bins = 0
+        last_of_bins = len(first_binned_pos)-1
+        if show=="bids":
+            first_of_bins = max(first_of_bins, selected_of_bins.min()-1)
+            last_of_bins = min(last_of_bins, selected_of_bins.max()+1)
+            oZ = hierarchy.linkage_from_reachability(np.arange(n), h)
+            parent = hierarchy.embed_nodes(oZ, first_binned_pos[[first_of_bins, last_of_bins]])[-1]
+            (_r, nodes) = sp_hierarchy.to_tree(oZ, rd=True)
+            region_pos = nodes[parent].pre_order(lambda x: x.id)
+            #assert np.all(np.diff(np.sort(region_pos))==1)
+            region_start_pos = np.min(region_pos)
+            region_end_pos = np.max(region_pos)+1
+            region_indices = o[region_start_pos:region_end_pos]
+            mask = np.zeros(self._profile.numContigs, dtype=bool)
+            mask[region_indices] = True
+            is_region_bin = np.logical_and(first_binned_pos >= region_start_pos, last_binned_pos <= region_end_pos)
+            first_binned_region = first_binned_pos[is_region_bin] - region_start_pos
+            last_binned_region = last_binned_pos[is_region_bin] - region_start_pos
+        elif show=="all":
+            mask=None
+            region_start_pos = 0
+            region_end_pos = n
+            region_indices = o
+            first_binned_region = first_binned_pos
+            last_binned_region = last_binned_pos
+            selected_of_region_bins = selected_of_bins
+        
+        region_bids = obids[region_start_pos:region_end_pos]
+        selected_of_region_bins = np.flatnonzero(np.in1d(region_bids[first_binned_region], bids))
+        unselected_of_region_bins = np.setdiff1d(np.arange(len(first_binned_region)), selected_of_region_bins)
         
         # ticks with empty labels for contigs with marker hits
         he = ProfileHighlightEngine(self._profile)
-        (tick_groups, tick_labels) = he.getHighlighted(markers=highlight_markers, highlight_per_marker=False)
-        indices = np.flatnonzero(tick_groups[:,0])
-        if len(indices)>0:
-            iloc = dict(zip(o, range(len(o))))
-            (xticks, xticklabels) = zip(*[(iloc[i], "") for i in np.flatnonzero(tick_groups[:,0]) if i in iloc])
-        else:
-            xticks = []
-            xticklabels = []
+        (tick_groups, tick_labels) = he.getHighlighted(markers=highlight_markers, mask=mask, highlight_per_marker=False)
+        xticks = [i for i in np.flatnonzero(tick_groups[region_indices,0])]
+        xticklabels = ["" for _ in xticks]
         xlabel = "contigs in traversal order"
         
         # colouring based on group membership
         colourmap = getColorMap('Highlight2')
-        (group_ids, group_labels) = he.getHighlighted(groups=highlight_groups, group_list=group_list)
-        colours = colourmap(group_ids[:,0])
-        legend_data = [(format_label(label), colourmap(i)) for (label, i) in zip(group_labels, range(1, len(group_labels)+1))]
-        
-            
-        # find bin contigs
-        obids = self._profile.binIds[o]
-        (first_binned_indices, last_binned_indices) = split_contiguous(obids, filter_groups=[0])
+        (group_ids, group_labels) = he.getHighlighted(bids=bids, mask=mask)
+        #(group_ids, group_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
+        colours = colourmap(group_ids[region_indices,0])
+        legend_data = [(format_label(l), colourmap(i)) for (l, i) in zip(group_labels, range(1, len(group_labels)+1))]
         
         
         # alternate colouring of lines for different bins
         # red and black for selected bins, greys for unselected
-        is_selected_bin = np.in1d(obids[first_binned_indices], bids)
-        is_unselected_bin = np.logical_not(is_selected_bin)
-        linecolour_ids = []
-        linestyle_ids = []
-        line_positions = []
-        for (i, (s, e)) in enumerate(zip(first_binned_indices[is_unselected_bin], last_binned_indices[is_unselected_bin])):
-            linecolour_ids.extend([(i%2)+1, (i%2)+1])
-            linestyle_ids.extend([0, 1])
-            line_positions.extend([s+1, e-1])
-        for (i, (s, e)) in enumerate(zip(first_binned_indices[is_selected_bin], last_binned_indices[is_selected_bin])):
-            linecolour_ids.extend([(i%2)+3, (i%2)+3])
-            linestyle_ids.extend([0, 1])
-            line_positions.extend([s+1, e-1])
-        linecolours = np.array(['c', '0.5', '0.7', 'k', 'r'])[linecolour_ids]
-        linestyles = np.array([':', '-'])[linestyle_ids]
-        vlines = zip(line_positions, linecolours, linestyles)
+        num_bins = len(first_binned_region)
+        linecolour_ids = np.empty(num_bins, dtype=int)
+        linecolour_ids[unselected_of_region_bins] = np.arange(len(unselected_of_region_bins)) % 2
+        linecolour_ids[selected_of_region_bins] = (np.arange(len(selected_of_region_bins)) % 2) + 2
+        linecolourmap = plt_colors.ListedColormap(['0.6', '0.7', 'r', 'b'])
+        linecolours = linecolourmap(linecolour_ids)
+        linewidths = np.full(num_bins, 1, dtype=int)
+        linewidths[selected_of_region_bins] = 2
+        linestyles = np.array([':', '-'])
+        vlines = zip(first_binned_region, [dict(c=clr, linewidth=w, linestyle=linestyles[0]) for (clr, w) in zip(linecolours, linewidths)])+zip(last_binned_region-1, [dict(c=clr, linewidth=w, linestyle=linestyles[1]) for (clr, w) in zip(linecolours, linewidths)])
         
         # label stretches with bin ids
-        group_centers = (first_binned_indices+1+last_binned_indices)*0.5
-        #group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_indices, last_binned_indices)])
-        if label=="bids":
-            group_labels = obids[first_binned_indices].astype(str)
+        group_centers = (first_binned_region+last_binned_region-1)*0.5
+        group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_region, last_binned_region)])
+        # group_heights = [h.max()]*len(furst_binned_region)
+        if label=="bid":
+            group_labels = region_bids[first_binned_region].astype(str)
             text_alignment = "center"
             text_rotation = "horizontal"
         elif label=="tag":
             mapping_bids = self._profile.binIds[self._profile.mapping.rowIndices]
-            group_labels = np.array(["?" if tag=="" else tag for tag in (self._bc.consensusTag(np.flatnonzero(mapping_bids==bid)) for bid in obids[first_binned_indices])])
+            group_labels = np.array(["?" if tag=="" else tag for tag in (self._bc.consensusTag(np.flatnonzero(mapping_bids==bid)) for bid in region_bids[first_binned_region])])
             text_alignment = "right"
             text_rotation = -60
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
-    
-        text = zip(group_centers[is_selected_bin], [h.max()]*np.count_nonzero(is_selected_bin), group_labels[is_selected_bin])
+        fontsize = np.full(num_bins, 9, dtype=int)
+        fontsize[selected_of_region_bins] = 12
+        textcolour_id = np.zeros(num_bins, dtype=int)
+        textcolour_id[selected_of_region_bins] = 1
+        textcolourmap = plt_colors.ListedColormap(['0.4', 'k'])
+        textcolours = textcolourmap(textcolour_id)
+        
+        text = zip(group_centers, group_heights, group_labels, [dict(color=clr, fontsize=size) for (clr, size) in zip(textcolours, fontsize)])
         
         hplot = BarPlotter(
-            height=h[1:],
-            colours=colours[1:],
+            height=h[region_start_pos+1:region_end_pos],
+            colours=colours[region_start_pos+1:region_end_pos],
             xlabel=xlabel,
             ylabel="reachability dist",
             xticks=xticks,
@@ -615,8 +664,8 @@ class ContigExplorerPlotter:
                 y = sp_distance.cdist(kmerSigs[[i]], kmerSigs[[j]], metric="euclidean")
                 return (x, y)
             self._getCoords = getCoords
-            self._xlabel = "log(d_cov)"
-            self._ylabel = "d_clr(kmer)"
+            self._xlabel = "log(TMC distance)"
+            self._ylabel = "T-Freq distance"
         else:
             if cacher is None:
                 de = ProfileDistanceEngine()
@@ -636,10 +685,10 @@ class ContigExplorerPlotter:
                 condensed_indices = distance.condensed_index(n, i, j)
                 return (x[condensed_indices], y[condensed_indices])
             self._getCoords = getCoords
-            self._xlabel = "percentile(d_cov)"
-            self._ylabel = "percentile(d_clr(kmer))"
+            self._xlabel = "TMC distance percentile"
+            self._ylabel = "T-Freq distance percentile"
             
-    def getBinRepresentative(self, bid, mode="max_length"):  
+    def _get_origin(self, bid, mode="max_length"):  
         indices = np.flatnonzero(self._profile.binIds == bid)
         if mode=="mediod":
             if self._rawDistances:
@@ -647,25 +696,36 @@ class ContigExplorerPlotter:
             (i, j) = distance.pairs(len(indices))
             (x, y) = self._getCoords(indices[i], indices[j])
             choice = distance.mediod(self._fun(x) + self._fun(y))
+            label = "mediod"
+        elif mode=="max_density":
+            h = self._profile.reachDists
+            o = self._profile.reachOrder
+            indices = np.flatnonzero(np.in1d(o, indices))
+            choice = np.argmax(h[indices])
+            label = "core contig"
+            return (self._profile.contigNames[o[indices[choice]]], label)
         elif mode=="max_coverage":
             choice = np.argmax(self._profile.normCoverages[indices])
+            label = "highest coverage"
         elif mode=="max_length":
             choice = np.argmax(self._profile.contigLengths[indices])
-        elif mode!="mediod":
+            label = "longest"
+        else:
             raise ValueError("Invalid `mode` argument parameter value: `%s`" % mode)
         
-        return self._profile.contigNames[indices[choice]]
+        return (self._profile.contigNames[indices[choice]], label)
         
     
     def plot(self,
-             contig,
              bid,
              highlight_groups=[],
              highlight_markers=[],
              highlight_taxstrings=[],
              group_list=None,
+             origin="mediod",
              fileName=""):
         
+        (contig, origin_label) = self._get_origin(bid, mode=origin)
         n = self._profile.numContigs
         try:
             origin = np.flatnonzero(self._profile.contigNames==contig)[0]
@@ -703,20 +763,22 @@ class ContigExplorerPlotter:
         c[is_coloured] = colourmap(colour_groups[is_coloured,0])
         is_coloured_plain_edge = np.logical_and(is_coloured, edge_groups[:,0]==0)
         edgecolours[is_coloured_plain_edge] = c[is_coloured_plain_edge]
-        legend_data.extend([(format_label(l), dict(c=colourmap(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
+        legend_data.extend([(format_label("{0} present in bin".format(l)), dict(c=colourmap(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
         
         marker_list = ['o', '^', 's', 'v', 'D']
         markers = [(marker_groups[:,0]==i, marker_list[i % len(marker_list)]) for i in range(len(marker_labels)+1)]
         legend_data.extend([(format_label(l), dict(marker=marker_list[i % len(marker_list)], c="w")) for (i, l) in enumerate(marker_labels, 1)])
         
         # apply visual transformation
-        xlabel = self._xlabel
-        ylabel = self._ylabel
+        xlabel = "{0} from bin {1}".format(self._xlabel, origin_label)
+        ylabel = "{0} from bin {1}".format(self._ylabel, origin_label)
         if not self._rawDistances:
             x = np.sqrt(self._fun(x))
             y = np.sqrt(self._fun(y))
-            xlabel = "sqrt({0})".format(xlabel)
-            ylabel = "sqrt({0})".format(ylabel)
+            xticks = np.sqrt(np.linspace(0, 100, 5))
+            xticklabels = np.linspace(0, 100, 5).astype(str)
+            yticks = np.sqrt(np.linspace(0, 100, 5))
+            yticklabels = np.linspace(0, 100, 5).astype(str)
         
         if self._surface:
             z = self.profile.normCoverages.flatten()
@@ -736,6 +798,8 @@ class ContigExplorerPlotter:
                                    edgecolours=edgecolours,
                                    markers=markers,
                                    legend_data=legend_data,
+                                   xticks=xticks, yticks=yticks,
+                                   xticklabels=xticklabels, yticklabels=yticklabels,
                                    xlabel=xlabel, ylabel=ylabel)
         fplot.plot(fileName)
 
@@ -843,10 +907,10 @@ class ProfileHighlightEngine:
                 if bid == 0:
                     continue
                 
-                gm.addGroup(np.flatnonzero(self._profile.binIds==bid), "bid {0}".format(bid))
+                gm.addGroup(np.flatnonzero(self._profile.binIds==bid), "bin {0}".format(bid))
         else:
             nzbids = bids[bids!=0]
-            gm.addGroup(np.flatnonzero(np.in1d(self._profile.binIds, nzbids)), "bids")
+            gm.addGroup(np.flatnonzero(np.in1d(self._profile.binIds, nzbids)), "bins")
         
         if highlight_per_marker:
             for marker in markers:
@@ -891,7 +955,7 @@ class GroupAssignmentParser:
     def parse(self, filename, separator, cids):
         br = BinReader()
         try:
-            with open(groupfile, "r") as f:
+            with open(filename, "r") as f:
                 try:
                     (con_names, con_groups) = br.parse(f, separator)
                     contig_groups = dict(zip(con_names, con_groups))
@@ -899,7 +963,7 @@ class GroupAssignmentParser:
                     print "Error parsing group assignments"
                     raise
         except:
-            print "Could not parse group assignment file:",groupfile, sys.exc_info()[0]
+            print "Could not parse group assignment file:", filename, sys.exc_info()[0]
             raise
             
         return np.array([contig_groups.get(cid, "") for cid in cids])

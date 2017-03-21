@@ -260,7 +260,7 @@ class ProfileManager:
                 prof.reachOrder = np.arange(prof.numContigs)
                                 
                 if prof.numContigs == 0:
-                    print "    ERROR: No previously clustered contigs. Please run `core` step before proceeding."
+                    print "    WARNING: No previously clustered contigs. Please run `core` step before proceeding."
                     return prof
             else:
                 # Conditional filter
@@ -275,7 +275,7 @@ class ProfileManager:
                 prof.reachDists = np.zeros(prof.numContigs, dtype=float)
 
                 if prof.numContigs == 0:
-                    print "    ERROR: No contigs loaded using condition:", condition
+                    print "    WARNING: No contigs loaded using condition:", condition
                     return prof
 
             if(not silent):
