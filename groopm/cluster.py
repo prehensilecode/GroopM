@@ -54,6 +54,7 @@ import scipy.spatial.distance as sp_distance
 import scipy.stats as sp_stats
 import operator
 import os
+import os.path
 import tables
 import sys
 import tempfile
@@ -365,7 +366,7 @@ class Cacher:
     interface outlined below.
     """
     
-    def cleanup(self):
+    def cleanup(self, silent):
         pass
         
     def get(self, key):
@@ -424,6 +425,7 @@ class FileCacher(Cacher):
     def __init__(self, distStorePrefix, keys=['cov', 'kmer']):
         self._prefix = distStorePrefix
         self._stores = dict([(k, self._prefix+"."+k) for k in keys])
+        self._owned = set()
         
     def _cleanupOne(self, filename):
         try:
@@ -439,11 +441,15 @@ class FileCacher(Cacher):
         return vals
         
     def store(self, key, values):
+        if not os.path.isfile(self._stores[key]):
+            self._owned.add(key)
         np.asanyarray(values, dtype=np.double).tofile(self._stores[key])
         
-    def cleanup(self):
-        for (_, store) in self._stores.iteritems():
-            self._cleanupOne(store) 
+    def cleanup(self, silent=False):
+        for key in self._owned:
+            if not silent:
+                print("removing distance store {0}".format(self._stores[key]))
+            self._cleanupOne(self._stores[key]) 
         
         
         

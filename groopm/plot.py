@@ -137,7 +137,8 @@ class ExplorePlotManager:
                                       colourmap=colorMap,
                                       cacher=cacher,
                                       surface=surface,
-                                      rawDistances=rawDistances
+                                      rawDistances=rawDistances,
+                                      origin=origin
                                      )
         print "    %s" % timer.getTimeStamp()
         
@@ -179,7 +180,6 @@ class ExplorePlotManager:
             print "    %s" % timer.getTimeStamp()
         
         if not keepDists:
-            print("nuking stored distances")
             try:
                 cacher.cleanup()
             except:
@@ -338,6 +338,8 @@ class FeatureAxisPlotter:
                  z=None,
                  xticks=None, yticks=None, 
                  xticklabels=None, yticklabels=None,
+                 xlim=None, ylim=None, zlim=None,
+                 xscale=None, yscale=None,
                  xlabel="", ylabel="", zlabel=""):
         """
         Parameters
@@ -363,8 +365,13 @@ class FeatureAxisPlotter:
         self.legend_data = legend_data
         self.xticks = xticks
         self.xticklabels = xticklabels
+        self.xlim = xlim
+        self.xscale = xscale
         self.yticks = yticks
+        self.ylim = ylim
         self.yticklabels = yticklabels
+        self.yscale = yscale
+        self.zlim = zlim
         self.xlabel = xlabel
         self.ylabel = ylabel
         self.zlabel = zlabel
@@ -388,20 +395,34 @@ class FeatureAxisPlotter:
             (labels, data) = zip(*self.legend_data)
             proxies = [plt_lines.Line2D([0], [0], linestyle="none", 
                                         markersize=15, **dat) for dat in data]
-            ax.legend(proxies, labels, numpoints=1)
+            ax.legend(proxies, labels, numpoints=1, loc='lower right', bbox_to_anchor=(1., 0.96))
         
+        #ax.set_xmargin(0.05)
+        #ax.set_ymargin(0.05)
+        ax.autoscale(True, tight=True)
         if self.xticks is not None:
             ax.set_xticks(self.xticks)
         if self.xticklabels is not None:
             ax.set_xticklabels(self.xticklabels)
+        if self.xscale is not None:
+            ax.set_xscale(self.xscale)
         if self.yticks is not None:
             ax.set_yticks(self.yticks)
         if self.yticklabels is not None:
             ax.set_yticklabels(self.yticklabels)
+        if self.yscale is not None:
+            ax.set_yscale(self.yscale)
         ax.set_xlabel(self.xlabel)
+        if self.xlim is not None:
+            ax.set_xlim(self.xlim)
         ax.set_ylabel(self.ylabel)
+        if self.ylim is not None:
+            ax.set_ylim(self.ylim)
+        ax.tick_params(labelsize='11')
         if len(coords) == 3:
             ax.set_zlabel(self.zlabel)
+            if self.zlim is not None:
+                ax.set_zlim(self.zlim)
 
             
 class FeaturePlotter(Plotter2D): 
@@ -460,10 +481,9 @@ class BarAxisPlotter:
     def __init__(self,
                  height,
                  colours,
-                 xticks=[],
-                 xticklabels=[],
-                 xlabel="",
-                 ylabel="",
+                 xticks=[], xticklabels=[],
+                 xlabel="", ylabel="",
+                 xlim=None, ylim=None,
                  text=[],
                  text_alignment="center",
                  text_rotation="horizontal",
@@ -476,6 +496,8 @@ class BarAxisPlotter:
         self.ylabel = ylabel
         self.xticks = xticks
         self.xticklabels = xticklabels
+        self.xlim = xlim
+        self.ylim = ylim
         self.text = text
         self.text_alignment = text_alignment
         self.text_rotation = text_rotation
@@ -491,10 +513,16 @@ class BarAxisPlotter:
                linewidth=0)
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
+        if self.xlim is not None:
+            ax.set_xlim(self.xlim)
+        if self.ylim is not None:
+            ax.set_ylim(self.ylim)
+        ax.autoscale(True, axis='x', tight=True)
         ax.set_xticks(self.xticks)
         ax.set_xticklabels(self.xticklabels,
                            rotation="horizontal")
-        ax.tick_params(axis="x", length=2, direction="out", width=1, top='off')
+        ax.tick_params(axis="x", length=2.5, direction="out", width=1.2, top='off')
+        ax.tick_params(axis="y", labelsize='11')
         for (x, y, text, dat) in self.text:
             ax.text(x, y, text, va="bottom",
                                 ha=self.text_alignment,
@@ -508,7 +536,7 @@ class BarAxisPlotter:
             (labels, color) = zip(*self.legend_data)
             proxies = [plt_patches.Rectangle((0,0), 0, 0, fill=True,
                                              color=clr) for clr in color]
-            ax.legend(proxies, labels, numpoints=1)
+            ax.legend(proxies, labels, numpoints=1, loc='lower right', bbox_to_anchor=(1., 0.96))
                            
         if self.colourbar is not None:
             fig.colorbar(self.colourbar, ax=ax)
@@ -536,6 +564,7 @@ class ProfileReachabilityPlotter:
              group_list=None,
              label="tag",
              show="bids",
+             limit=20,
              fileName=""):
                  
         h = self._profile.reachDists
@@ -551,32 +580,66 @@ class ProfileReachabilityPlotter:
         first_of_bins = 0
         last_of_bins = len(first_binned_pos)-1
         if show=="bids":
-            first_of_bins = max(first_of_bins, selected_of_bins.min()-1)
-            last_of_bins = min(last_of_bins, selected_of_bins.max()+1)
+            min_selected_of_bins = selected_of_bins.min()
+            max_selected_of_bins = selected_of_bins.max()
+            first_of_bins = max(first_of_bins, min_selected_of_bins-1)
+            last_of_bins = min(last_of_bins, max_selected_of_bins+1)
             oZ = hierarchy.linkage_from_reachability(np.arange(n), h)
+            num_obs = sp_hierarchy.num_obs_linkage(oZ)
             parent = hierarchy.embed_nodes(oZ, first_binned_pos[[first_of_bins, last_of_bins]])[-1]
             (_r, nodes) = sp_hierarchy.to_tree(oZ, rd=True)
             region_pos = nodes[parent].pre_order(lambda x: x.id)
-            #assert np.all(np.diff(np.sort(region_pos))==1)
-            region_start_pos = np.min(region_pos)
-            region_end_pos = np.max(region_pos)+1
+            retry = True
+            while retry:
+                retry = False
+                #assert np.all(np.diff(np.sort(region_pos))==1)
+                region_start_pos = np.min(region_pos)
+                region_end_pos = np.max(region_pos)+1
+                
+                is_region_bin = np.logical_and(first_binned_pos >= region_start_pos, last_binned_pos <= region_end_pos)
+                
+                num_bins_left = np.count_nonzero(is_region_bin[:min_selected_of_bins])
+                num_bins_right = np.count_nonzero(is_region_bin[max_selected_of_bins+1:])
+                too_many_bins = num_bins_left+num_bins_right > limit
+                if too_many_bins and parent > num_obs:
+                    left_embed_child = int(oZ[parent - num_obs, 0])
+                    left_region_pos = nodes[left_embed_child].pre_order(lambda x: x.id)
+                    if np.all(np.in1d(first_binned_pos[selected_of_bins], left_region_pos)):
+                        parent = left_embed_child
+                        region_pos = left_region_pos
+                        retry = True
+                        continue
+                    right_embed_child = int(oZ[parent - num_obs, 1])
+                    right_region_pos = nodes[right_embed_child].pre_order(lambda x: x.id)
+                    if np.all(np.in1d(first_binned_pos[selected_of_bins], right_region_pos)):
+                        parent = right_embed_child
+                        region_pos = right_region_pos
+                        retry = True
+                        continue
+                    
+            if region_start_pos > 0:
+                region_start_pos -= 1
+            if region_end_pos < n:
+                region_end_pos += 1
+            region_height = h[region_start_pos:region_end_pos]
             region_indices = o[region_start_pos:region_end_pos]
             mask = np.zeros(self._profile.numContigs, dtype=bool)
             mask[region_indices] = True
-            is_region_bin = np.logical_and(first_binned_pos >= region_start_pos, last_binned_pos <= region_end_pos)
             first_binned_region = first_binned_pos[is_region_bin] - region_start_pos
             last_binned_region = last_binned_pos[is_region_bin] - region_start_pos
+            region_bids = obids[region_start_pos:region_end_pos]
+            selected_of_region_bins = np.flatnonzero(np.in1d(region_bids[first_binned_region], bids))
         elif show=="all":
             mask=None
             region_start_pos = 0
             region_end_pos = n
+            region_height = h
             region_indices = o
             first_binned_region = first_binned_pos
             last_binned_region = last_binned_pos
+            region_bids = obids
             selected_of_region_bins = selected_of_bins
         
-        region_bids = obids[region_start_pos:region_end_pos]
-        selected_of_region_bins = np.flatnonzero(np.in1d(region_bids[first_binned_region], bids))
         unselected_of_region_bins = np.setdiff1d(np.arange(len(first_binned_region)), selected_of_region_bins)
         
         # ticks with empty labels for contigs with marker hits
@@ -588,8 +651,8 @@ class ProfileReachabilityPlotter:
         
         # colouring based on group membership
         colourmap = getColorMap('Highlight2')
-        (group_ids, group_labels) = he.getHighlighted(bids=bids, mask=mask)
-        #(group_ids, group_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
+        #(group_ids, group_labels) = he.getHighlighted(bids=bids, mask=mask)
+        (group_ids, group_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
         colours = colourmap(group_ids[region_indices,0])
         legend_data = [(format_label(l), colourmap(i)) for (l, i) in zip(group_labels, range(1, len(group_labels)+1))]
         
@@ -609,8 +672,8 @@ class ProfileReachabilityPlotter:
         
         # label stretches with bin ids
         group_centers = (first_binned_region+last_binned_region-1)*0.5
-        group_heights = np.array([h[s:e].max() for (s, e) in zip(first_binned_region, last_binned_region)])
-        # group_heights = [h.max()]*len(furst_binned_region)
+        group_heights = np.array([region_height[a:b].max() for (a, b) in ((s+1,e) if s+1<e else (s,e+1) for (s, e) in zip(first_binned_region, last_binned_region))])
+        # group_heights = [region_height.max()]*len(first_binned_region)
         if label=="bid":
             group_labels = region_bids[first_binned_region].astype(str)
             text_alignment = "center"
@@ -622,8 +685,8 @@ class ProfileReachabilityPlotter:
             text_rotation = -60
         else:
             raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
-        fontsize = np.full(num_bins, 9, dtype=int)
-        fontsize[selected_of_region_bins] = 12
+        fontsize = np.full(num_bins, 11, dtype=int)
+        fontsize[selected_of_region_bins] = 14
         textcolour_id = np.zeros(num_bins, dtype=int)
         textcolour_id[selected_of_region_bins] = 1
         textcolourmap = plt_colors.ListedColormap(['0.4', 'k'])
@@ -633,9 +696,9 @@ class ProfileReachabilityPlotter:
         
         hplot = BarPlotter(
             height=h[region_start_pos+1:region_end_pos],
-            colours=colours[region_start_pos+1:region_end_pos],
+            colours=colours[1:],
             xlabel=xlabel,
-            ylabel="reachability dist",
+            ylabel="reachability of closest untraversed contig",
             xticks=xticks,
             xticklabels=xticklabels,
             text=text,
@@ -648,25 +711,25 @@ class ProfileReachabilityPlotter:
 
   
 class ContigExplorerPlotter:
-    def __init__(self, profile, colourmap='HSV', cacher=None, rawDistances=False, surface=False, fun=lambda a: a):
+    def __init__(self,
+                 profile,
+                 colourmap='HSV',
+                 cacher=None,
+                 rawDistances=False,
+                 surface=False,
+                 origin="mediod",
+                 fun=lambda a: a):
         self._profile = profile
         self._colourmap = getColorMap(colourmap)
         self._surface = surface
         self._rawDistances = rawDistances
         self._fun = fun
+        self._origin = origin
         
         covProfiles = self._profile.covProfiles
         kmerSigs = self._profile.kmerSigs * (self._profile.contigLengths[:, None] - 3) + 1
         kmerSigs = distance.logratio(kmerSigs, axis=1, mode="centered")
-        if self._rawDistances:
-            def getCoords(i,j):
-                x = np.log(sp_distance.cdist(covProfiles[[i]], covProfiles[[j]], metric="euclidean"))
-                y = sp_distance.cdist(kmerSigs[[i]], kmerSigs[[j]], metric="euclidean")
-                return (x, y)
-            self._getCoords = getCoords
-            self._xlabel = "log(TMC distance)"
-            self._ylabel = "T-Freq distance"
-        else:
+        if not self._rawDistances or self._origin=="mediod":
             if cacher is None:
                 de = ProfileDistanceEngine()
             else:
@@ -681,20 +744,31 @@ class ContigExplorerPlotter:
             y *= scale_factor
             n = self._profile.numContigs
             
-            def getCoords(i, j):
+            def getRankCoords(i, j):
                 condensed_indices = distance.condensed_index(n, i, j)
                 return (x[condensed_indices], y[condensed_indices])
+            self._getRankCoords = getRankCoords
+        
+        if self._rawDistances:
+            def getCoords(i,j):
+                x = sp_distance.cdist(covProfiles[[i]], covProfiles[[j]], metric="euclidean")
+                y = sp_distance.cdist(kmerSigs[[i]], kmerSigs[[j]], metric="euclidean")
+                return (x, y)
             self._getCoords = getCoords
-            self._xlabel = "TMC distance percentile"
-            self._ylabel = "T-Freq distance percentile"
+            self._xlabel = "TMC distance"
+            self._ylabel = "T-Freq distance"
+        else:
+            self._getCoords = self._getRankCoords
+            self._xlabel = "TMC pairwise distance percentile"
+            self._ylabel = "T-Freq pairwise distance percentile"
             
     def _get_origin(self, bid, mode="max_length"):  
         indices = np.flatnonzero(self._profile.binIds == bid)
         if mode=="mediod":
-            if self._rawDistances:
-                raise ValueError("`mode` argument parameter value `mediod` is not appropriate for ContigExplorerPlotter with `rawDistances` flag set.")
+            #if self._rawDistances:
+            #    raise ValueError("`mode` argument parameter value `mediod` is not appropriate for ContigExplorerPlotter with `rawDistances` flag set.")
             (i, j) = distance.pairs(len(indices))
-            (x, y) = self._getCoords(indices[i], indices[j])
+            (x, y) = self._getRankCoords(indices[i], indices[j])
             choice = distance.mediod(self._fun(x) + self._fun(y))
             label = "mediod"
         elif mode=="max_density":
@@ -722,10 +796,9 @@ class ContigExplorerPlotter:
              highlight_markers=[],
              highlight_taxstrings=[],
              group_list=None,
-             origin="mediod",
              fileName=""):
         
-        (contig, origin_label) = self._get_origin(bid, mode=origin)
+        (contig, origin_label) = self._get_origin(bid, mode=self._origin)
         n = self._profile.numContigs
         try:
             origin = np.flatnonzero(self._profile.contigNames==contig)[0]
@@ -772,13 +845,27 @@ class ContigExplorerPlotter:
         # apply visual transformation
         xlabel = "{0} from bin {1}".format(self._xlabel, origin_label)
         ylabel = "{0} from bin {1}".format(self._ylabel, origin_label)
-        if not self._rawDistances:
+        if self._rawDistances:
+            old_x = x
+            x = x + 50./self._profile.contigLengths
+            xticks = None
+            xticklabels = None
+            xscale = "log"
+            xlim = [10**(np.fix(np.log10(x.min()))-1), 10**(np.fix(np.log10(x.max()))+1)]
+            yticks = None
+            yticklabels = None
+            ylim = None
+        else:
             x = np.sqrt(self._fun(x))
             y = np.sqrt(self._fun(y))
             xticks = np.sqrt(np.linspace(0, 100, 5))
             xticklabels = np.linspace(0, 100, 5).astype(str)
+            xscale = None
+            #xlim = [-0.5, 10.5]
+            xlim = None
             yticks = np.sqrt(np.linspace(0, 100, 5))
             yticklabels = np.linspace(0, 100, 5).astype(str)
+            ylim = None
         
         if self._surface:
             z = self.profile.normCoverages.flatten()
@@ -789,7 +876,11 @@ class ContigExplorerPlotter:
                                    sizes=s,
                                    edgecolours=edgecolours,
                                    legend_data=legend_data,
-                                   xlabel=xlabel, ylabel=ylabel, zlabel="cov_norm")            
+                                   xticks=xticks, yticks=yticks,
+                                   xticklabels=xticklabels, yticklabels=yticklabels,
+                                   xscale=xscale,
+                                   xlim=xlim,
+                                   xlabel=xlabel, ylabel=ylabel, zlabel="absolute TMC")            
         else:
             fplot = FeaturePlotter(x,
                                    y,
@@ -800,6 +891,8 @@ class ContigExplorerPlotter:
                                    legend_data=legend_data,
                                    xticks=xticks, yticks=yticks,
                                    xticklabels=xticklabels, yticklabels=yticklabels,
+                                   xscale=xscale,
+                                   xlim=xlim, ylim=ylim,
                                    xlabel=xlabel, ylabel=ylabel)
         fplot.plot(fileName)
 
