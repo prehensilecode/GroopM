@@ -395,7 +395,8 @@ class FeatureAxisPlotter:
             (labels, data) = zip(*self.legend_data)
             proxies = [plt_lines.Line2D([0], [0], linestyle="none", 
                                         markersize=15, **dat) for dat in data]
-            ax.legend(proxies, labels, numpoints=1, loc='lower right', bbox_to_anchor=(1., 0.96))
+            ax.legend(proxies, labels, numpoints=1, loc='lower right',
+                      bbox_to_anchor=(1., 0.96), ncol=min(len(labels) // 4, 4)+1)
         
         #ax.set_xmargin(0.05)
         #ax.set_ymargin(0.05)
@@ -536,7 +537,9 @@ class BarAxisPlotter:
             (labels, color) = zip(*self.legend_data)
             proxies = [plt_patches.Rectangle((0,0), 0, 0, fill=True,
                                              color=clr) for clr in color]
-            ax.legend(proxies, labels, numpoints=1, loc='lower right', bbox_to_anchor=(1., 0.96))
+            ax.legend(proxies, labels, numpoints=1, loc='lower right',
+                      bbox_to_anchor=(1., 0.96), ncol=min(len(labels) // 4, 4)+1
+                     )
                            
         if self.colourbar is not None:
             fig.colorbar(self.colourbar, ax=ax)
@@ -819,8 +822,8 @@ class ContigExplorerPlotter:
         
         # colorize
         he = ProfileHighlightEngine(self._profile)
-        (edge_groups, edge_labels) = he.getHighlighted(bids=[bid])
-        (marker_groups, marker_labels) = he.getHighlighted(groups=highlight_groups,
+        (marker_groups, marker_labels) = he.getHighlighted(bids=[bid])
+        (edge_groups, edge_labels) = he.getHighlighted(groups=highlight_groups,
                                                            group_list=group_list)
         (colour_groups, colour_labels) = he.getHighlighted(markers=highlight_markers,
                                                            highlight_per_marker=False)
@@ -846,8 +849,7 @@ class ContigExplorerPlotter:
         xlabel = "{0} from bin {1}".format(self._xlabel, origin_label)
         ylabel = "{0} from bin {1}".format(self._ylabel, origin_label)
         if self._rawDistances:
-            old_x = x
-            x = x + 50./self._profile.contigLengths
+            x += 50./self._profile.contigLengths
             xticks = None
             xticklabels = None
             xscale = "log"

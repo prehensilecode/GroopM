@@ -441,7 +441,7 @@ class FileCacher(Cacher):
         return vals
         
     def store(self, key, values):
-        if not os.path.isfile(self._stores[key]):
+        if not os.path.lexists(self._stores[key]):
             self._owned.add(key)
         np.asanyarray(values, dtype=np.double).tofile(self._stores[key])
         
