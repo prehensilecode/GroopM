@@ -127,7 +127,13 @@ class ExplorePlotManager:
             bids = bm.getBids()
         else:
             bm.checkBids(bids)
-
+            
+        group_list = None
+        if groupfile!="":
+            print "    Parsing group assignments"
+            group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
+            print "    %s" % timer.getTimeStamp()
+        
         if savedDistsPrefix=="":
             savedDistsPrefix = self._dbFileName+".dists"
         cacher = FileCacher(savedDistsPrefix)
@@ -142,10 +148,6 @@ class ExplorePlotManager:
                                      )
         print "    %s" % timer.getTimeStamp()
         
-        group_list = None
-        if groupfile!="":
-            group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
-            
         first_plot = True
         queue = []
         for i in range(len(bids)-1,-1,-1):
@@ -250,6 +252,11 @@ class ReachabilityPlotManager:
             bm.checkBids(bids)
             show="bids"
             
+        group_list = None
+        if groupfile!="":
+            print "    Parsing group assignments"
+            group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
+            print "    %s" % timer.getTimeStamp()
             
         print "    Initialising plotter"
         fplot = ProfileReachabilityPlotter(profile)
@@ -258,11 +265,6 @@ class ReachabilityPlotManager:
         if os.path.splitext(filename)[1] != '.png':
             filename+='.png'
             
-        group_list = None
-        if groupfile!="":
-            print "    Parsing group assignments"
-            group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
-            print "    %s" % timer.getTimeStamp()
             
         fileName = "" if self._outDir is None else os.path.join(self._outDir, filename)
         is_in_bin = np.in1d(profile.binIds, bids)
@@ -653,25 +655,41 @@ class ProfileReachabilityPlotter:
         xlabel = "contigs in traversal order"
         
         # colouring based on group membership
-        colourmap = getColorMap('Highlight2')
+        sm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(1, 10), cmap=getColorMap('Highlight1'))
         #(group_ids, group_labels) = he.getHighlighted(bids=bids, mask=mask)
         (group_ids, group_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
-        colours = colourmap(group_ids[region_indices,0])
-        legend_data = [(format_label(l), colourmap(i)) for (l, i) in zip(group_labels, range(1, len(group_labels)+1))]
+        colours = sm.to_rgba(group_ids[region_indices,0])
+        colours[group_ids[region_indices,0]==0] = plt_colors.colorConverter.to_rgba('cyan')
+        legend_data = [(format_label(l), sm.to_rgba(i)) for (l, i) in zip(group_labels, range(1, len(group_labels)+1))]
         
         
         # alternate colouring of lines for different bins
         # red and black for selected bins, greys for unselected
         num_bins = len(first_binned_region)
-        linecolour_ids = np.empty(num_bins, dtype=int)
-        linecolour_ids[unselected_of_region_bins] = np.arange(len(unselected_of_region_bins)) % 2
-        linecolour_ids[selected_of_region_bins] = (np.arange(len(selected_of_region_bins)) % 2) + 2
-        linecolourmap = plt_colors.ListedColormap(['0.6', '0.7', 'r', 'b'])
-        linecolours = linecolourmap(linecolour_ids)
-        linewidths = np.full(num_bins, 1, dtype=int)
-        linewidths[selected_of_region_bins] = 2
-        linestyles = np.array([':', '-'])
-        vlines = zip(first_binned_region, [dict(c=clr, linewidth=w, linestyle=linestyles[0]) for (clr, w) in zip(linecolours, linewidths)])+zip(last_binned_region-1, [dict(c=clr, linewidth=w, linestyle=linestyles[1]) for (clr, w) in zip(linecolours, linewidths)])
+        #linecolour_ids = np.tile([0,1], num_bins)
+        #linecolour_ids[2*selected_of_region_bins] += 2
+        #linecolour_ids[2*selected_of_region_bins+1] += 2
+        
+        #linecolour_ids = np.zeros(num_bins, dtype=int)
+        #linecolour_ids[unselected_of_region_bins] = np.arange(len(unselected_of_region_bins)) % 2
+        #linecolour_ids[selected_of_region_bins] = (np.arange(len(selected_of_region_bins)) % 2) + 2
+        #linecolourmap = plt_colors.ListedColormap(['0.6', '0.7', 'g', 'orange'])
+        linesm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(0, 12), cmap=plt_cm.get_cmap('Paired'))
+        selected_lines = np.zeros(num_bins, dtype=bool)
+        selected_lines[selected_of_region_bins] = True
+        vlines = [tup for tups in (((s, dict(c=linesm.to_rgba(2*i), linewidth=i+1, linestyle=':')), (e, dict(c=linesm.to_rgba(2*i+1), linewidth=i+1, linestyle='-'))) for (i, s, e) in zip(selected_lines, first_binned_region, last_binned_region-1)) for tup in tups]
+        
+        #linecolours = linesm.to_rgba(linecolour_ids)
+        #linewidths = np.full(num_bins, 1, dtype=int)
+        #linewidths[selected_of_region_bins] = 2
+        #linestyles = np.array([':', '-'])
+        #vlines = zip(
+        #           first_binned_region,
+        #           [dict(c=clr, linewidth=w, linestyle=linestyles[0]) for (clr, w) in zip(linecolours, linewidths)]
+        #         )+zip(
+        #           last_binned_region-1,
+        #           [dict(c=clr, linewidth=w, linestyle=linestyles[1]) for (clr, w) in zip(linecolours, linewidths)]
+        #         )
         
         # label stretches with bin ids
         group_centers = (first_binned_region+last_binned_region-1)*0.5
@@ -690,10 +708,9 @@ class ProfileReachabilityPlotter:
             raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
         fontsize = np.full(num_bins, 11, dtype=int)
         fontsize[selected_of_region_bins] = 14
-        textcolour_id = np.zeros(num_bins, dtype=int)
-        textcolour_id[selected_of_region_bins] = 1
-        textcolourmap = plt_colors.ListedColormap(['0.4', 'k'])
-        textcolours = textcolourmap(textcolour_id)
+        textcolour_id = np.ones(num_bins, dtype=int)
+        textcolour_id[selected_of_region_bins] += 2
+        textcolours = linesm.to_rgba(textcolour_id)
         
         text = zip(group_centers, group_heights, group_labels, [dict(color=clr, fontsize=size) for (clr, size) in zip(textcolours, fontsize)])
         
@@ -828,18 +845,19 @@ class ContigExplorerPlotter:
         (colour_groups, colour_labels) = he.getHighlighted(markers=highlight_markers,
                                                            highlight_per_marker=False)
         legend_data = []
-        edgecolourmap = getColorMap('Highlight1')
-        edgecolours = edgecolourmap(edge_groups[:,0])
-        legend_data.extend([(format_label(label), dict(markeredgecolor=edgecolourmap(i), c="w", marker=".")) for (i, label) in enumerate(edge_labels, 1)])
+        edgesm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(1, 10), cmap=getColorMap('Highlight1'))
+        edgecolours = edgesm.to_rgba(edge_groups[:,0])
+        edgecolours[edge_groups[:,0]==0] = plt_colors.colorConverter.to_rgba('k')
+        legend_data.extend([(format_label(label), dict(markeredgecolor=edgesm.to_rgba(i), c="w", marker=".")) for (i, label) in enumerate(edge_labels, 1)])
         
         sm = plt_cm.ScalarMappable(plt_colors.Normalize(vmin=0., vmax=1.), self._colourmap)
         c = sm.to_rgba(self._profile.contigGCs)
+        coloursm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(1,9), cmap=getColorMap('Highlight2'))
         is_coloured = colour_groups[:,0]>0
-        colourmap = getColorMap('Highlight2')
-        c[is_coloured] = colourmap(colour_groups[is_coloured,0])
+        c[is_coloured] = coloursm.to_rgba(colour_groups[is_coloured,0])
         is_coloured_plain_edge = np.logical_and(is_coloured, edge_groups[:,0]==0)
         edgecolours[is_coloured_plain_edge] = c[is_coloured_plain_edge]
-        legend_data.extend([(format_label("{0} present in bin".format(l)), dict(c=colourmap(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
+        legend_data.extend([(format_label("{0} present in bin".format(l)), dict(c=coloursm.to_rgba(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
         
         marker_list = ['o', '^', 's', 'v', 'D']
         markers = [(marker_groups[:,0]==i, marker_list[i % len(marker_list)]) for i in range(len(marker_labels)+1)]
@@ -1074,9 +1092,11 @@ def getColorMap(colorMapStr):
         V = 1.0
         return plt_colors.LinearSegmentedColormap.from_list('GC', [colorsys.hsv_to_rgb((1.0 + np.sin(np.pi * (val/1000.0) - np.pi/2))/2., S, V) for val in xrange(0, 1000)], N=1000)
     elif colorMapStr == 'Highlight1':
-        return plt_colors.ListedColormap(["k", "r", "b", "g", "orange", "darkturquoise", "m"])
+        return plt_cm.get_cmap('Set1')
+        #return plt_colors.ListedColormap(["k", "r", "b", "g", "orange", "darkturquoise", "m"])
     elif colorMapStr == 'Highlight2':
-        return plt_colors.ListedColormap(['cyan', 'dimgrey', 'orangered', 'indigo', 'goldenrod'])
+        return plt_cm.get_cmap('Dark2')
+        #return plt_colors.ListedColormap(['cyan', 'dimgrey', 'orangered', 'indigo', 'goldenrod'])
     elif colorMapStr == 'Accent':
         return plt_cm.get_cmap('Accent')
     elif colorMapStr == 'Blues':
