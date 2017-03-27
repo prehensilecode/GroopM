@@ -176,7 +176,7 @@ class ExplorePlotManager:
         while len(queue) > 0:
             if self._outDir is not None:
                 centre = queue.pop()
-                fileName = os.path.join(self._outDir, "%s_%d.png" % (prefix, centre))
+                fileName = os.path.join(self._outDir, "{0}_{1}.png".format(prefix, centre))
             else:
                 if not first_plot:
                     current = self.promptOnPlot(queue[-1], centre_type=centre_type, validate=validate)
@@ -191,7 +191,7 @@ class ExplorePlotManager:
             is_central = categories==centre
             highlight_markers = np.unique(profile.mapping.markerNames[is_central[profile.mapping.rowIndices]])
             highlight_groups = [] if group_list is None else np.unique(group_list[is_central])
-            highlight_bins = np.unique(profile.binIds[is_central])
+            highlight_bins = np.setdiff1d(np.unique(profile.binIds[is_central]), [0])
             
             fplot.plot(fileName=fileName,
                        centre=centre,
@@ -854,17 +854,8 @@ class ContigExplorerPlotter:
             origin_label = "bin {0} {1}".format(centre, origin_label)
         else:
             origin_label = "{0} {1}".format(format_label(centre), origin_label)
+        
         n = self._profile.numContigs
-        
-        # hard error if highlight bids don't exist
-        bm = BinManager(self._profile)
-        bin_indices = bm.getBinIndices(highlight_bins)
-        
-        # load distances
-        others = np.array([i for i in range(n) if i!=origin])
-        x = np.zeros(n, dtype=float)
-        y = np.zeros(n, dtype=float)
-        (x[others], y[others]) = self._getCoords(origin, others)
         
         # sizes
         s = 20*(2**np.log10(self._profile.contigLengths / np.min(self._profile.contigLengths)))
@@ -896,6 +887,12 @@ class ContigExplorerPlotter:
         marker_list = ['o', '^', 's', 'v', 'D']
         markers = [(marker_groups[:,0]==i, marker_list[i % len(marker_list)]) for i in range(len(marker_labels)+1)]
         legend_data.extend([(format_label(l), dict(marker=marker_list[i % len(marker_list)], c="w")) for (i, l) in enumerate(marker_labels, 1)])
+        
+        # load distances
+        others = np.array([i for i in range(n) if i!=origin])
+        x = np.zeros(n, dtype=float)
+        y = np.zeros(n, dtype=float)
+        (x[others], y[others]) = self._getCoords(origin, others)
         
         # apply visual transformation
         xlabel = "{0} from {1}".format(self._xlabel, origin_label)
@@ -1019,6 +1016,7 @@ class ProfileHighlightEngine:
                        highlight_intersections=False):
         
         # verify highlight inputs
+        BinManager(self._profile).checkBids(bids)
         if group_list is not None:
             groups = np.asarray(groups)
             missing_groups = np.in1d(groups, group_list, invert=True)

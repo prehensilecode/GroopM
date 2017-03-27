@@ -465,7 +465,7 @@ class explore_command_configure:
         
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if ORIGIN is 'names'")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage", "max_density"], help="set how to choose plot origin")
-        parser.add_argument('-p', '--prefix', default="BIN", help="prefix to apply to output files")
+        parser.add_argument('-p', '--prefix', default=None, help="prefix to apply to output files")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         group.add_argument('-i', '--interactive', action="store_true", help="interactive plot of bins or contigs")
@@ -491,15 +491,17 @@ class explore_command_configure:
         else:
             separator = options.separator
             
+        centre_groups = options.all_groups or options.groups is not None
+            
         pm = groopm.ExplorePlotManager(options.dbname,
                                        folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
-                centres=[] if options.all_bins or options.all_groups else options.groups if options.groups is not None else options.bids,
-                centre_type="group" if options.all_groups or options.groups is not None else "bin",
+                centres=[] if options.all_bins or options.all_groups else options.groups if centre_groups is not None else options.bids,
+                centre_type="group" if centre_groups else "bin",
                 #names=options.names,
                 origin=options.origin,
                 colorMap=options.colormap,
-                prefix=options.prefix,
+                prefix="GROUP" if centre_groups else "BIN",
                 groupfile=options.groupfile,
                 separator=separator,
                 rawDistances=options.raw_distances,
