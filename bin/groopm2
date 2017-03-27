@@ -458,8 +458,10 @@ class explore_command_configure:
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
         group = parser.add_mutually_exclusive_group()
-        group.add_argument('-a', '--all', action="store_true", help="plot all bins")
-        group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot, or highlight if --origin names is used (default plots all bins)")
+        group.add_argument('-a', '--all_bins', action="store_true", help="plot all bins (default)")
+        group.add_argument('--all_groups', action="store_true", help="plot all groups")
+        group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot")
+        group.add_argument('-g', '--groups', nargs='*', help="groups to plot")
         
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if ORIGIN is 'names'")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage", "max_density"], help="set how to choose plot origin")
@@ -492,7 +494,8 @@ class explore_command_configure:
         pm = groopm.ExplorePlotManager(options.dbname,
                                        folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
-                bids=[] if options.all else options.bids,
+                centres=[] if options.all_bins or options.all_groups else options.groups if options.groups is not None else options.bids,
+                centre_type="group" if options.all_groups or options.groups is not None else "bin",
                 #names=options.names,
                 origin=options.origin,
                 colorMap=options.colormap,

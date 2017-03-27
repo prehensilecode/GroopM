@@ -68,7 +68,7 @@ from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 # GroopM imports
 from utils import makeSurePathExists, split_contiguous, group_iterator
-from groopmExceptions import BinNotFoundException
+from groopmExceptions import BinNotFoundException, invalidParameter
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
@@ -108,7 +108,8 @@ class ExplorePlotManager:
 
     def plot(self,
              timer,
-             bids=None,
+             centres=None,
+             centre_type="bin",
              origin="mediod",
              colorMap="HSV",
              prefix="BIN",
@@ -121,18 +122,34 @@ class ExplorePlotManager:
             ):
             
         profile = self.loadProfile(timer)
-
+        
+        if centre_type not in ["bin", "group"]:
+            raise invalidParameter("centre_type", centre_type)
+        
         bm = BinManager(profile)
-        if bids is None or len(bids) == 0:
-            bids = bm.getBids()
-        else:
-            bm.checkBids(bids)
+        if centre_type=="bin":
+            if centres is None or len(centres)==0:
+                centres = bm.getBids()
+            else:
+                bm.checkBids(centres)
             
         group_list = None
         if groupfile!="":
             print "    Parsing group assignments"
             group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
             print "    %s" % timer.getTimeStamp()
+            
+        if centre_type=="group":
+            if group_list is None:
+                raise ValueError("`group_list` parameter argument cannot be None if `centre_type` argument parameter is `group`.")
+            
+            if centres is None or len(centres)==0:
+                centres = np.unique(group_list)
+            else:
+                missing_groups = np.in1d(centres, group_list, invert=True)
+                if np.any(missing_groups):
+                    print ("WARNING: No contig(s) assigned to group(s) {0}.".format(",".join(groups[missing_groups])))
+
         
         if savedDistsPrefix=="":
             savedDistsPrefix = self._dbFileName+".dists"
@@ -150,30 +167,36 @@ class ExplorePlotManager:
         
         first_plot = True
         queue = []
-        for i in range(len(bids)-1,-1,-1):
-            queue.append(bids[i])
+        for i in range(len(centres)-1,-1,-1):
+            queue.append(centres[i])
+        
+        categories = profile.binIds if centre_type=="bin" else group_list
+        validate = lambda x: x in categories
             
         while len(queue) > 0:
             if self._outDir is not None:
-                bid = queue.pop()
-                fileName = os.path.join(self._outDir, "%s_%d.png" % (prefix, bid))
+                centre = queue.pop()
+                fileName = os.path.join(self._outDir, "%s_%d.png" % (prefix, centre))
             else:
                 if not first_plot:
-                    cbid = self.promptOnPlot(queue[-1], bm)
-                    if cbid is None:
+                    current = self.promptOnPlot(queue[-1], centre_type=centre_type, validate=validate)
+                    if current is None:
                         break
-                    if cbid!=queue[-1]:
-                        queue.append(cbid)
-                bid = queue.pop()
+                    if current!=queue[-1]:
+                        queue.append(current)
+                centre = queue.pop()
                 fileName = ""
                 
             first_plot = False
-            is_in_bin = profile.binIds==bid
-            highlight_markers = np.unique(profile.mapping.markerNames[is_in_bin[profile.mapping.rowIndices]])
-            highlight_groups = [] if group_list is None else np.unique(group_list[is_in_bin])
+            is_central = categories==centre
+            highlight_markers = np.unique(profile.mapping.markerNames[is_central[profile.mapping.rowIndices]])
+            highlight_groups = [] if group_list is None else np.unique(group_list[is_central])
+            highlight_bins = np.unique(profile.binIds[is_central])
             
             fplot.plot(fileName=fileName,
-                       bid=bid,
+                       centre=centre,
+                       centre_type=centre_type,
+                       highlight_bins=highlight_bins,
                        highlight_markers=highlight_markers,
                        highlight_groups=highlight_groups,
                        group_list=group_list)
@@ -187,20 +210,23 @@ class ExplorePlotManager:
             except:
                 raise
                 
-    def promptOnPlot(self, bid, bm, minimal=False):
+    def promptOnPlot(self, centre, centre_type="bin", validate=lambda _: True, minimal=False):
         """Check that the user wants to continue interactive plotting"""
         input_not_ok = True
         while(input_not_ok):
             if(minimal):
-                option = raw_input(" Enter bin id, or q to quit, or enter to continue:")
+                option = raw_input(" Enter {0} id, or q to quit, or enter to continue:".format(centre_type))
             else:
                 option = raw_input(""" The next plot is {0}
- Enter bin id, or q to quit, or enter to continue:""".format(bid))
+ Enter {1} id, or q to quit, or enter to continue:""".format(centre, centre_type))
             try:
-                bid = int(option)
-                bm.checkBids([bid])
-                print "****************************************************************"
-                return bid
+                centre = int(option)
+                if validate(centre):
+                    print "****************************************************************"
+                    return bid
+                else:
+                    print("Error, no {1} with id '{0}'".format(centre, centre_type))
+                    minimal=True
             except ValueError:
                 if option.upper() in ["Q", ""]:
                     print "****************************************************************"
@@ -212,9 +238,6 @@ class ExplorePlotManager:
                 else:
                     print("Error, unrecognised choice '{0}'".format(option))
                     minimal=True
-            except BinNotFoundException:
-                print("Error, no bin with id '{0}'".format(bid))
-                minimal=True
             
 
         
@@ -782,8 +805,7 @@ class ContigExplorerPlotter:
             self._xlabel = "TMC pairwise distance percentile"
             self._ylabel = "T-Freq pairwise distance percentile"
             
-    def _get_origin(self, bid, mode="max_length"):  
-        indices = np.flatnonzero(self._profile.binIds == bid)
+    def _get_origin(self, indices, mode="max_length"):  
         if mode=="mediod":
             #if self._rawDistances:
             #    raise ValueError("`mode` argument parameter value `mediod` is not appropriate for ContigExplorerPlotter with `rawDistances` flag set.")
@@ -797,7 +819,7 @@ class ContigExplorerPlotter:
             indices = np.flatnonzero(np.in1d(o, indices))
             choice = np.argmax(h[indices])
             label = "core contig"
-            return (self._profile.contigNames[o[indices[choice]]], label)
+            return ([indices[choice]], label)
         elif mode=="max_coverage":
             choice = np.argmax(self._profile.normCoverages[indices])
             label = "highest coverage"
@@ -805,29 +827,38 @@ class ContigExplorerPlotter:
             choice = np.argmax(self._profile.contigLengths[indices])
             label = "longest"
         else:
-            raise ValueError("Invalid `mode` argument parameter value: `%s`" % mode)
+            raise invalidParameterValue('mode', mode)
         
-        return (self._profile.contigNames[indices[choice]], label)
+        return (indices[choice], label)
         
     
     def plot(self,
-             bid,
+             centre,
+             centre_type="bin",
+             highlight_bins=[],
              highlight_groups=[],
              highlight_markers=[],
              highlight_taxstrings=[],
              group_list=None,
              fileName=""):
         
-        (contig, origin_label) = self._get_origin(bid, mode=self._origin)
+        if centre_type=="bin":
+            indices = np.flatnonzero(self._profile.binIds == centre)
+        elif centre_type=="group":
+            indices = np.flatnonzero(group_list == centre)
+        else:
+            raise invalidParameter('centre_type', centre_type)
+            
+        (origin, origin_label) = self._get_origin(indices, mode=self._origin)
+        if centre_type=="bin":
+            origin_label = "bin {0} {1}".format(centre, origin_label)
+        else:
+            origin_label = "{0} {1}".format(format_label(centre), origin_label)
         n = self._profile.numContigs
-        try:
-            origin = np.flatnonzero(self._profile.contigNames==contig)[0]
-        except IndexError:
-            raise ContigNotFoundException("ERROR: No contig found in database with id {0}.".format(contig))
         
         # hard error if highlight bids don't exist
         bm = BinManager(self._profile)
-        bin_indices = bm.getBinIndices([bid])
+        bin_indices = bm.getBinIndices(highlight_bins)
         
         # load distances
         others = np.array([i for i in range(n) if i!=origin])
@@ -835,15 +866,18 @@ class ContigExplorerPlotter:
         y = np.zeros(n, dtype=float)
         (x[others], y[others]) = self._getCoords(origin, others)
         
+        # sizes
         s = 20*(2**np.log10(self._profile.contigLengths / np.min(self._profile.contigLengths)))
         
         # colorize
         he = ProfileHighlightEngine(self._profile)
-        (marker_groups, marker_labels) = he.getHighlighted(bids=[bid])
+        (marker_groups, marker_labels) = he.getHighlighted(bids=highlight_bins)
         (edge_groups, edge_labels) = he.getHighlighted(groups=highlight_groups,
                                                            group_list=group_list)
         (colour_groups, colour_labels) = he.getHighlighted(markers=highlight_markers,
                                                            highlight_per_marker=False)
+        
+        
         legend_data = []
         edgesm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(1, 10), cmap=getColorMap('Highlight1'))
         edgecolours = edgesm.to_rgba(edge_groups[:,0])
@@ -857,15 +891,15 @@ class ContigExplorerPlotter:
         c[is_coloured] = coloursm.to_rgba(colour_groups[is_coloured,0])
         is_coloured_plain_edge = np.logical_and(is_coloured, edge_groups[:,0]==0)
         edgecolours[is_coloured_plain_edge] = c[is_coloured_plain_edge]
-        legend_data.extend([(format_label("{0} present in bin".format(l)), dict(c=coloursm.to_rgba(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
+        legend_data.extend([(format_label("{0} present in {1}".format(l, centre_type)), dict(c=coloursm.to_rgba(i), marker=".")) for (i, l) in enumerate(colour_labels, 1)])
         
         marker_list = ['o', '^', 's', 'v', 'D']
         markers = [(marker_groups[:,0]==i, marker_list[i % len(marker_list)]) for i in range(len(marker_labels)+1)]
         legend_data.extend([(format_label(l), dict(marker=marker_list[i % len(marker_list)], c="w")) for (i, l) in enumerate(marker_labels, 1)])
         
         # apply visual transformation
-        xlabel = "{0} from bin {1}".format(self._xlabel, origin_label)
-        ylabel = "{0} from bin {1}".format(self._ylabel, origin_label)
+        xlabel = "{0} from {1}".format(self._xlabel, origin_label)
+        ylabel = "{0} from {1}".format(self._ylabel, origin_label)
         if self._rawDistances:
             x += 50./self._profile.contigLengths
             xticks = None

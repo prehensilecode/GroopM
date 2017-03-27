@@ -99,6 +99,12 @@ class Tracer:
 
     def flush(self):
         self.oldstream.flush()
+        
+        
+def invalidParameter(label, value):
+    return ValueError("Invalid `{0}` argument parameter value: `{1}`".format(label, value))
+    
+    
 
 ###############################################################################
 ###############################################################################
