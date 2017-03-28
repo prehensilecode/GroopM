@@ -144,7 +144,7 @@ class ExplorePlotManager:
                 raise ValueError("`group_list` parameter argument cannot be None if `centre_type` argument parameter is `group`.")
             
             if centres is None or len(centres)==0:
-                centres = np.unique(group_list)
+                centres = np.setdiff1d(np.unique(group_list), [""])
             else:
                 missing_groups = np.in1d(centres, group_list, invert=True)
                 if np.any(missing_groups):
@@ -190,7 +190,7 @@ class ExplorePlotManager:
             first_plot = False
             is_central = categories==centre
             highlight_markers = np.unique(profile.mapping.markerNames[is_central[profile.mapping.rowIndices]])
-            highlight_groups = [] if group_list is None else np.unique(group_list[is_central])
+            highlight_groups = [] if group_list is None else np.setdiff1d(np.unique(group_list[is_central]), [""])
             highlight_bins = np.setdiff1d(np.unique(profile.binIds[is_central]), [0])
             
             fplot.plot(fileName=fileName,
