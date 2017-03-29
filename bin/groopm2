@@ -465,7 +465,7 @@ class explore_command_configure:
         
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if ORIGIN is 'names'")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage", "max_density"], help="set how to choose plot origin")
-        parser.add_argument('-p', '--prefix', default=None, help="prefix to apply to output files")
+        parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         group.add_argument('-i', '--interactive', action="store_true", help="interactive plot of bins or contigs")
@@ -496,12 +496,12 @@ class explore_command_configure:
         pm = groopm.ExplorePlotManager(options.dbname,
                                        folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
-                centres=[] if options.all_bins or options.all_groups else options.groups if centre_groups is not None else options.bids,
+                centres=[] if options.all_bins or options.all_groups else options.groups if centre_groups else options.bids,
                 centre_type="group" if centre_groups else "bin",
                 #names=options.names,
                 origin=options.origin,
                 colorMap=options.colormap,
-                prefix="GROUP" if centre_groups else "BIN",
+                prefix=options.prefix,
                 groupfile=options.groupfile,
                 separator=separator,
                 rawDistances=options.raw_distances,
@@ -514,11 +514,17 @@ class plot_command_configure:
 
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of database to open")
-        parser.add_argument('-b', '--bids', nargs='*', type=int, default=None, help="bin ids to highlight in plot (None for all)")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('-a', '--all_bins', action="store_true", help="plot all bins (default)")
+        group.add_argument('--all_groups', action="store_true", help="plot all groups")
+        group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot")
+        group.add_argument('-g', '--groups', nargs='*', help="groups to plot")
+        
         parser.add_argument('-o', '--out_file', default="REACH.png", help="name of save plot")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot")
         parser.add_argument('--groupfile', default="", help="file with contig id and group id columns to import")
         parser.add_argument('-s', '--separator', default=",", help="data separator for GROUPFILE")
+        parser.add_argument('--taxonomy', action="store_true", help="show summary of bin taxonomies")
         parser.set_defaults(run=self)
 
     def __call__(_self, options):
@@ -533,12 +539,17 @@ class plot_command_configure:
             separator = '\t'
         else:
             separator = options.separator
+            
+        centre_groups = options.all_groups or options.groups is not None
+            
         pm = groopm.ReachabilityPlotManager(options.dbname,
                                             folder=None if options.interactive else folder)
         pm.plot(timer,
-                bids=options.bids,
+                centres=[] if options.all_bins or options.all_groups else options.groups if centre_groups else options.bids,
+                centre_type="group" if centre_groups else "bin",
                 filename=filename,
                 groupfile=options.groupfile,
+                label="tag" if options.taxonomy else "bid",
                 separator=separator)
                    
 

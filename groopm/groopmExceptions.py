@@ -78,6 +78,11 @@ class ExtractModeNotAppropriateException(GMARGException): pass
 class GMClassificationException(BaseException): pass
 class BadTaxonomicStringException(GMClassificationException): pass
 
+#------------------------------------------------------------------------------
+# PLOT ENGINE
+class GMPlotException(BaseException): pass
+class GroupNotFoundException(GMPlotException): pass
+
 ###############################################################################
 ###############################################################################
 ###############################################################################

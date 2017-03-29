@@ -68,7 +68,7 @@ from mpl_toolkits.mplot3d import axes3d, Axes3D
 
 # GroopM imports
 from utils import makeSurePathExists, split_contiguous, group_iterator
-from groopmExceptions import BinNotFoundException, invalidParameter
+from groopmExceptions import GroupNotFoundException, invalidParameter
 from profileManager import ProfileManager
 from binManager import BinManager
 import distance
@@ -112,7 +112,7 @@ class ExplorePlotManager:
              centre_type="bin",
              origin="mediod",
              colorMap="HSV",
-             prefix="BIN",
+             prefix="",
              surface=False,
              rawDistances=False,
              groupfile="",
@@ -138,18 +138,14 @@ class ExplorePlotManager:
             print "    Parsing group assignments"
             group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
             print "    %s" % timer.getTimeStamp()
+     
             
         if centre_type=="group":
-            if group_list is None:
-                raise ValueError("`group_list` parameter argument cannot be None if `centre_type` argument parameter is `group`.")
-            
+            gv = GroupValidator(group_list)
             if centres is None or len(centres)==0:
-                centres = np.setdiff1d(np.unique(group_list), [""])
+                centres = gv.getGroups()
             else:
-                missing_groups = np.in1d(centres, group_list, invert=True)
-                if np.any(missing_groups):
-                    print ("WARNING: No contig(s) assigned to group(s) {0}.".format(",".join(groups[missing_groups])))
-
+                gv.checkGroups(centres)
         
         if savedDistsPrefix=="":
             savedDistsPrefix = self._dbFileName+".dists"
@@ -176,7 +172,7 @@ class ExplorePlotManager:
         while len(queue) > 0:
             if self._outDir is not None:
                 centre = queue.pop()
-                fileName = os.path.join(self._outDir, "{0}_{1}.png".format(prefix, centre))
+                fileName = os.path.join(self._outDir, "{0}{1}_{2}.png".format(prefix, centre_type.upper(), centre))
             else:
                 if not first_plot:
                     current = self.promptOnPlot(queue[-1], centre_type=centre_type, validate=validate)
@@ -258,22 +254,27 @@ class ReachabilityPlotManager:
         
     def plot(self,
              timer,
-             bids=None,
-             label="tag",
+             centres=None,
+             centre_type="bin",
+             label="bid",
              filename="REACH.png",
              groupfile="",
              separator=""
             ):
         
         profile = self.loadProfile(timer)
+        
+        if centre_type not in ["bin", "group"]:
+            raise invalidParameter("centre_type", centre_type)
 
         bm = BinManager(profile)
-        if bids is None or len(bids) == 0:
-            bids = bm.getBids()
-            show="all"
-        else:
-            bm.checkBids(bids)
-            show="bids"
+        if centre_type=="bin":
+            if centres is None or len(centres) == 0:
+                centres = bm.getBids()
+                show="all"
+            else:
+                bm.checkBids(centres)
+                show="centres"
             
         group_list = None
         if groupfile!="":
@@ -281,6 +282,16 @@ class ReachabilityPlotManager:
             group_list = GroupAssignmentParser().parse(groupfile, separator, profile.contigNames)
             print "    %s" % timer.getTimeStamp()
             
+        if centre_type=="group":
+            gv = GroupValidator(group_list)
+            if centres is None or len(centres)==0:
+                centres = gv.getGroups()
+                show="all"
+            else:
+                gv.checkGroups(centres)
+                show="centres"
+                    
+        
         print "    Initialising plotter"
         fplot = ProfileReachabilityPlotter(profile)
         print "    %s" % timer.getTimeStamp()
@@ -290,17 +301,21 @@ class ReachabilityPlotManager:
             
             
         fileName = "" if self._outDir is None else os.path.join(self._outDir, filename)
-        is_in_bin = np.in1d(profile.binIds, bids)
-        highlight_markers = np.unique(profile.mapping.markerNames[is_in_bin[profile.mapping.rowIndices]])
-        highlight_groups = [] if group_list is None else np.unique(group_list[is_in_bin])
+        categories = profile.binIds if centre_type=="bin" else group_list
+        is_central = np.in1d(categories, centres)
+        highlight_markers = np.unique(profile.mapping.markerNames[is_central[profile.mapping.rowIndices]])
+        highlight_groups = [] if group_list is None else np.setdiff1d(np.unique(group_list[is_central]), [""])
+        highlight_bins = np.setdiff1d(np.unique(profile.binIds[is_central]), [0])
         
         fplot.plot(fileName=fileName,
-                   bids=bids,
+                   centres=centres,
+                   centre_type=centre_type,
+                   highlight_bins=highlight_bins,
                    highlight_markers=highlight_markers,
                    highlight_groups=highlight_groups,
                    group_list=group_list,
-                   show="bids",
-                   label="bid")
+                   show=show,
+                   label=label)
                    
         if self._outDir is not None:
             print "    %s" % timer.getTimeStamp()
@@ -585,13 +600,15 @@ class ProfileReachabilityPlotter:
         self._bc = BinClassifier(self._profile.mapping)
         
     def plot(self,
-             bids,
+             centres,
+             centre_type="bin",
+             highlight_bins=[],
              highlight_groups=[],
              highlight_markers=[],
              highlight_taxstring=[],
              group_list=None,
-             label="tag",
-             show="bids",
+             label="bid",
+             show="centres",
              limit=20,
              fileName=""):
                  
@@ -602,12 +619,19 @@ class ProfileReachabilityPlotter:
         # find bin contigs
         obids = self._profile.binIds[o] 
         (first_binned_pos, last_binned_pos) = split_contiguous(obids, filter_groups=[0])
-        selected_of_bins = np.flatnonzero(np.in1d(obids[first_binned_pos], bids))
+        if centre_type=="bin":
+            categories = obids
+        elif centre_type=="group":
+            categories = group_list[o]
+        else:
+            raise invalidParameter("centre_type", centre_type)
+        is_selected_pos = np.in1d(categories, centres)
+        selected_of_bins = np.flatnonzero(np.in1d(obids[first_binned_pos], obids[is_selected_pos]))
         
-        # find region containing selected and neighbouring bins
+        # find region containing selected bins and neighbourhood up to limit
         first_of_bins = 0
         last_of_bins = len(first_binned_pos)-1
-        if show=="bids":
+        if show=="centres":
             min_selected_of_bins = selected_of_bins.min()
             max_selected_of_bins = selected_of_bins.max()
             first_of_bins = max(first_of_bins, min_selected_of_bins-1)
@@ -656,7 +680,6 @@ class ProfileReachabilityPlotter:
             first_binned_region = first_binned_pos[is_region_bin] - region_start_pos
             last_binned_region = last_binned_pos[is_region_bin] - region_start_pos
             region_bids = obids[region_start_pos:region_end_pos]
-            selected_of_region_bins = np.flatnonzero(np.in1d(region_bids[first_binned_region], bids))
         elif show=="all":
             mask=None
             region_start_pos = 0
@@ -666,9 +689,9 @@ class ProfileReachabilityPlotter:
             first_binned_region = first_binned_pos
             last_binned_region = last_binned_pos
             region_bids = obids
-            selected_of_region_bins = selected_of_bins
-        
-        unselected_of_region_bins = np.setdiff1d(np.arange(len(first_binned_region)), selected_of_region_bins)
+        else:
+            raise invalidParameter("show", show)
+            
         
         # ticks with empty labels for contigs with marker hits
         he = ProfileHighlightEngine(self._profile)
@@ -680,10 +703,11 @@ class ProfileReachabilityPlotter:
         # colouring based on group membership
         sm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(1, 10), cmap=getColorMap('Highlight1'))
         #(group_ids, group_labels) = he.getHighlighted(bids=bids, mask=mask)
-        (group_ids, group_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
-        colours = sm.to_rgba(group_ids[region_indices,0])
-        colours[group_ids[region_indices,0]==0] = plt_colors.colorConverter.to_rgba('cyan')
-        legend_data = [(format_label(l), sm.to_rgba(i)) for (l, i) in zip(group_labels, range(1, len(group_labels)+1))]
+        (colour_ids, colour_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
+        colours = sm.to_rgba(colour_ids[region_indices,0])
+        colours[colour_ids[region_indices,0]==0] = plt_colors.colorConverter.to_rgba('cyan')
+        legend_data = [(format_label(l), sm.to_rgba(i)) for (l, i) in zip(colour_labels, range(1, len(colour_labels)+1))]
+        
         
         
         # alternate colouring of lines for different bins
@@ -698,9 +722,10 @@ class ProfileReachabilityPlotter:
         #linecolour_ids[selected_of_region_bins] = (np.arange(len(selected_of_region_bins)) % 2) + 2
         #linecolourmap = plt_colors.ListedColormap(['0.6', '0.7', 'g', 'orange'])
         linesm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(0, 12), cmap=plt_cm.get_cmap('Paired'))
-        selected_lines = np.zeros(num_bins, dtype=bool)
-        selected_lines[selected_of_region_bins] = True
-        vlines = [tup for tups in (((s, dict(c=linesm.to_rgba(2*i), linewidth=i+1, linestyle=':')), (e, dict(c=linesm.to_rgba(2*i+1), linewidth=i+1, linestyle='-'))) for (i, s, e) in zip(selected_lines, first_binned_region, last_binned_region-1)) for tup in tups]
+        is_selected_line = np.in1d(region_bids[first_binned_region], highlight_bins)
+        left_vlines_gen = ((s, dict(c=linesm.to_rgba(2*i), linewidth=i+1.5, linestyle=':')) for (s,i) in zip(first_binned_region, is_selected_line))
+        right_vlines_gen = ((e, dict(c=linesm.to_rgba(2*i+1), linewidth=i+1, linestyle='-')) for (e, i) in zip(last_binned_region-1, is_selected_line))
+        vlines = [tup for tups in zip(left_vlines_gen, right_vlines_gen) for tup in tups]
         
         #linecolours = linesm.to_rgba(linecolour_ids)
         #linewidths = np.full(num_bins, 1, dtype=int)
@@ -728,11 +753,11 @@ class ProfileReachabilityPlotter:
             text_alignment = "right"
             text_rotation = -60
         else:
-            raise ValueError("Parameter value for 'label' argument must be one of 'bid', 'tag'. Got '%s'." % label)
+            raise invalidParameter("label", label)
         fontsize = np.full(num_bins, 11, dtype=int)
-        fontsize[selected_of_region_bins] = 14
+        fontsize[is_selected_line] = 14
         textcolour_id = np.ones(num_bins, dtype=int)
-        textcolour_id[selected_of_region_bins] += 2
+        textcolour_id[is_selected_line] += 2
         textcolours = linesm.to_rgba(textcolour_id)
         
         text = zip(group_centers, group_heights, group_labels, [dict(color=clr, fontsize=size) for (clr, size) in zip(textcolours, fontsize)])
@@ -1113,6 +1138,22 @@ class GroupAssignmentParser:
             
         return np.array([contig_groups.get(cid, "") for cid in cids])
         
+         
+class GroupValidator:
+    def __init__(self, group_list):
+        if group_list is None:
+            raise ValueError("`group_list` parameter argument cannot be None if `centre_type` argument parameter is `group`.")
+        self._group_list = group_list
+        
+    def getGroups(self):
+        return np.setdiff1d(np.unique(self._group_list), [""])
+        
+    def checkGroups(self, groups):
+        groups = np.asarray(groups)
+        missing_groups = np.in1d(groups, self._group_list, invert=True)
+        if np.any(missing_groups):
+            raise GroupNotFoundException("ERROR: No contig(s) assigned to group(s): {0}".format(",".join(groups[missing_groups])))
+
 
 def format_label(label):
     return "{0}...{1}".format(label[:8], label[-18:]) if len(label)>30 else label
