@@ -522,6 +522,8 @@ class BarAxisPlotter:
     def __init__(self,
                  height,
                  colours,
+                 left=None,
+                 width=None,
                  xticks=[], xticklabels=[],
                  xlabel="", ylabel="",
                  xlim=None, ylim=None,
@@ -532,6 +534,8 @@ class BarAxisPlotter:
                  legend_data=None,
                  colourbar=None):
         self.y = height
+        self.x = left
+        self.w = width
         self.colours = colours
         self.xlabel = xlabel
         self.ylabel = ylabel
@@ -548,10 +552,11 @@ class BarAxisPlotter:
         
     def __call__(self, ax, fig):
         y = self.y
-        x = np.arange(len(y))
-        bc = ax.bar(x, y, width=1,
-               color=self.colours,
-               linewidth=0)
+        x = np.arange(len(y)) if self.x is None else self.x
+        w = 1 if self.w is None else self.w
+        bc = ax.bar(x, y, width=w,
+                    color=self.colours,
+                    linewidth=0)
         ax.set_xlabel(self.xlabel)
         ax.set_ylabel(self.ylabel)
         if self.xlim is not None:
@@ -609,11 +614,12 @@ class ProfileReachabilityPlotter:
              group_list=None,
              label="bid",
              show="centres",
-             limit=20,
+             limit=20000,
              fileName=""):
                  
         h = self._profile.reachDists
         o = self._profile.reachOrder
+        w = self._profile.contigLengths[o]
         n = len(o)
         
         # find bin contigs
@@ -625,20 +631,15 @@ class ProfileReachabilityPlotter:
             categories = group_list[o]
         else:
             raise invalidParameter("centre_type", centre_type)
-        is_selected_pos = np.in1d(categories, centres)
+        is_selected_pos = np.flatnonzero(np.in1d(categories, centres))
         selected_of_bins = np.flatnonzero(np.in1d(obids[first_binned_pos], obids[is_selected_pos]))
+        selected_bin_pos = np.flatnonzero(np.in1d(obids, obids[first_binned_pos[selected_of_bins]]))
         
         # find region containing selected bins and neighbourhood up to limit
-        first_of_bins = 0
-        last_of_bins = len(first_binned_pos)-1
         if show=="centres":
-            min_selected_of_bins = selected_of_bins.min()
-            max_selected_of_bins = selected_of_bins.max()
-            first_of_bins = max(first_of_bins, min_selected_of_bins-1)
-            last_of_bins = min(last_of_bins, max_selected_of_bins+1)
             oZ = hierarchy.linkage_from_reachability(np.arange(n), h)
             num_obs = sp_hierarchy.num_obs_linkage(oZ)
-            parent = hierarchy.embed_nodes(oZ, first_binned_pos[[first_of_bins, last_of_bins]])[-1]
+            parent = hierarchy.embed_nodes(oZ, selected_bin_pos)[-1]
             (_r, nodes) = sp_hierarchy.to_tree(oZ, rd=True)
             region_pos = nodes[parent].pre_order(lambda x: x.id)
             retry = True
@@ -648,22 +649,18 @@ class ProfileReachabilityPlotter:
                 region_start_pos = np.min(region_pos)
                 region_end_pos = np.max(region_pos)+1
                 
-                is_region_bin = np.logical_and(first_binned_pos >= region_start_pos, last_binned_pos <= region_end_pos)
-                
-                num_bins_left = np.count_nonzero(is_region_bin[:min_selected_of_bins])
-                num_bins_right = np.count_nonzero(is_region_bin[max_selected_of_bins+1:])
-                too_many_bins = num_bins_left+num_bins_right > limit
-                if too_many_bins and parent > num_obs:
+                too_big = np.sum(w[region_start_pos:region_end_pos]) > limit
+                if too_big and parent > num_obs:
                     left_embed_child = int(oZ[parent - num_obs, 0])
                     left_region_pos = nodes[left_embed_child].pre_order(lambda x: x.id)
-                    if np.all(np.in1d(first_binned_pos[selected_of_bins], left_region_pos)):
+                    if np.all(np.in1d(selected_bin_pos, left_region_pos)):
                         parent = left_embed_child
                         region_pos = left_region_pos
                         retry = True
                         continue
                     right_embed_child = int(oZ[parent - num_obs, 1])
                     right_region_pos = nodes[right_embed_child].pre_order(lambda x: x.id)
-                    if np.all(np.in1d(first_binned_pos[selected_of_bins], right_region_pos)):
+                    if np.all(np.in1d(selected_bin_pos, right_region_pos)):
                         parent = right_embed_child
                         region_pos = right_region_pos
                         retry = True
@@ -675,8 +672,11 @@ class ProfileReachabilityPlotter:
                 region_end_pos += 1
             region_height = h[region_start_pos:region_end_pos]
             region_indices = o[region_start_pos:region_end_pos]
+            region_w = w[region_start_pos:region_end_pos]
             mask = np.zeros(self._profile.numContigs, dtype=bool)
             mask[region_indices] = True
+            
+            is_region_bin = np.logical_and(first_binned_pos >= region_start_pos, last_binned_pos <= region_end_pos)
             first_binned_region = first_binned_pos[is_region_bin] - region_start_pos
             last_binned_region = last_binned_pos[is_region_bin] - region_start_pos
             region_bids = obids[region_start_pos:region_end_pos]
@@ -686,26 +686,28 @@ class ProfileReachabilityPlotter:
             region_end_pos = n
             region_height = h
             region_indices = o
+            region_w = w
             first_binned_region = first_binned_pos
             last_binned_region = last_binned_pos
             region_bids = obids
         else:
             raise invalidParameter("show", show)
             
+        region_x = np.cumsum(region_w)
         
         # ticks with empty labels for contigs with marker hits
         he = ProfileHighlightEngine(self._profile)
         (tick_groups, tick_labels) = he.getHighlighted(markers=highlight_markers, mask=mask, highlight_per_marker=False)
-        xticks = [i for i in np.flatnonzero(tick_groups[region_indices,0])]
+        xticks = [i for i in region_x[np.flatnonzero(tick_groups[region_indices,0])]]
         xticklabels = ["" for _ in xticks]
-        xlabel = "contigs in traversal order"
+        xlabel = "traversed sequence length"
         
         # colouring based on group membership
         sm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(1, 10), cmap=getColorMap('Highlight1'))
         #(group_ids, group_labels) = he.getHighlighted(bids=bids, mask=mask)
         (colour_ids, colour_labels) = he.getHighlighted(groups=highlight_groups, mask=mask, group_list=group_list)
         colours = sm.to_rgba(colour_ids[region_indices,0])
-        colours[colour_ids[region_indices,0]==0] = plt_colors.colorConverter.to_rgba('cyan')
+        colours[colour_ids[region_indices,0]==0] = plt_colors.colorConverter.to_rgba('c')
         legend_data = [(format_label(l), sm.to_rgba(i)) for (l, i) in zip(colour_labels, range(1, len(colour_labels)+1))]
         
         
@@ -723,8 +725,8 @@ class ProfileReachabilityPlotter:
         #linecolourmap = plt_colors.ListedColormap(['0.6', '0.7', 'g', 'orange'])
         linesm = plt_cm.ScalarMappable(norm=plt_colors.Normalize(0, 12), cmap=plt_cm.get_cmap('Paired'))
         is_selected_line = np.in1d(region_bids[first_binned_region], highlight_bins)
-        left_vlines_gen = ((s, dict(c=linesm.to_rgba(2*i), linewidth=i+1.5, linestyle=':')) for (s,i) in zip(first_binned_region, is_selected_line))
-        right_vlines_gen = ((e, dict(c=linesm.to_rgba(2*i+1), linewidth=i+1, linestyle='-')) for (e, i) in zip(last_binned_region-1, is_selected_line))
+        left_vlines_gen = ((s, dict(c=linesm.to_rgba(2*i), linewidth=i+1.5, linestyle=':')) for (s,i) in zip(region_x[first_binned_region], is_selected_line))
+        right_vlines_gen = ((e, dict(c=linesm.to_rgba(2*i+1), linewidth=i+1, linestyle='-')) for (e, i) in zip(region_x[last_binned_region-1], is_selected_line))
         vlines = [tup for tups in zip(left_vlines_gen, right_vlines_gen) for tup in tups]
         
         #linecolours = linesm.to_rgba(linecolour_ids)
@@ -740,7 +742,7 @@ class ProfileReachabilityPlotter:
         #         )
         
         # label stretches with bin ids
-        group_centers = (first_binned_region+last_binned_region-1)*0.5
+        group_centers = (region_x[first_binned_region]+region_x[last_binned_region-1])*0.5
         group_heights = np.array([region_height[a:b].max() for (a, b) in ((s+1,e) if s+1<e else (s,e+1) for (s, e) in zip(first_binned_region, last_binned_region))])
         # group_heights = [region_height.max()]*len(first_binned_region)
         if label=="bid":
@@ -763,10 +765,12 @@ class ProfileReachabilityPlotter:
         text = zip(group_centers, group_heights, group_labels, [dict(color=clr, fontsize=size) for (clr, size) in zip(textcolours, fontsize)])
         
         hplot = BarPlotter(
-            height=h[region_start_pos+1:region_end_pos],
+            height=region_height[1:],
             colours=colours[1:],
+            left=region_x[:-1],
+            width=region_w[1:],
             xlabel=xlabel,
-            ylabel="reachability of closest untraversed contig",
+            ylabel="dissimilarity with closest previous contig",
             xticks=xticks,
             xticklabels=xticklabels,
             text=text,
