@@ -383,7 +383,7 @@ def test_linkage_from_reachability():
                   [2., 7., 70.0, 5.]])
     
     (o, d) = distance.reachability_order(Y)
-    assert_true(equal_arrays(linkage_from_reachability(d), Z),
+    assert_true(equal_arrays(linkage_from_reachability(o, d), Z),
                 "returns linkage corresponding to reachability ordering")
                         
     
@@ -434,7 +434,7 @@ def test_linkage_from_reachability():
                   [10., 11., 3., 7.]])
                   
     (o, d) = distance.reachability_order(Y)
-    assert_true(equal_arrays(linkage_from_reachability(d)[:, 2],
+    assert_true(equal_arrays(linkage_from_reachability(o, d)[:, 2],
                              Z[:, 2]),
                 "returns linkage with correct heights for a moderately complex "
                 "hierarchy")
