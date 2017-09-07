@@ -5,7 +5,7 @@
 #                                                                             #
 #    Entry point. See groopm/groopm.py for internals                          #
 #                                                                             #
-#    Copyright (C) Michael Imelfort, Tim Lamberton                            #
+#    Copyright (C) Michael Imelfort, Tim Lamberton, Ben Woodcroft             #
 #                                                                             #
 ###############################################################################
 #                                                                             #
@@ -38,9 +38,9 @@
 #                                                                             #
 ###############################################################################
 
-__author__ = "Michael Imelfort, Tim Lamberton"
+__author__ = "Michael Imelfort, Tim Lamberton", "Ben Woodcroft"
 __copyright__ = "Copyright 2012-2015"
-__credits__ = ["Michael Imelfort", "Tim Lamberton"]
+__credits__ = ["Michael Imelfort", "Tim Lamberton", "Ben Woodcroft"]
 __license__ = "GPL3"
 __maintainer__ = "Tim Lamberton"
 __email__ = "t.lamberton@uq.edu.au"
@@ -67,7 +67,7 @@ from groopm import __version__
 
 class CustomHelpFormatter(argparse.HelpFormatter):
     #Some hack by Mike meaning we need to be careful if we ever update argparse.
-    
+
     def _split_lines(self, text, width):
         return text.splitlines()
 
@@ -101,11 +101,11 @@ class PrintHelpAction(argparse.Action):
     '''
     def __init__(self, nargs=0, *args, **kwargs):
         argparse.Action.__init__(self, *args, nargs=nargs, **kwargs)
-        
+
     def __call__(self, parser, *_args):
         self.print_help()
         parser.exit(1)
-       
+
     def print_help(_self):
         print '''\
 
@@ -116,26 +116,26 @@ class PrintHelpAction(argparse.Action):
    -------------------------------------------------------------------------
                                   version: {version}
    -------------------------------------------------------------------------
-   
+
     Typical workflow:
-    
+
     {groopm} parse        -> {parse}
     {groopm} core         -> {core}
     {groopm} extract      -> {extract}
-    
+
     Extra features:
-        
+
         Import / Export
-        
+
     {groopm} dump         -> {dump}
     {groopm} markers      -> {markers}
     {groopm} import       -> {import_}
-    
+
         Plotting
-        
+
     {groopm} plot         -> {plot}
     {groopm} explore      -> {explore}
-    
+
     USE: groopm OPTION -h to see detailed options
 '''.format(
             groopm="groopm2",
@@ -155,27 +155,37 @@ class PrintHelpAction(argparse.Action):
 
 class parse_command_configure:
     description="Parse raw data and save to disk"
-    
+
+    DEFAULT_GRAFTM_PACKAGE_SINGLE_COPY = []
+
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database being created")
         parser.add_argument('reference', help="fasta file containing bam reference sequences")
         parser.add_argument('bamfiles', nargs='+', help="bam files to parse")
         parser.add_argument('-m', '--markerfile', help="file with columns for contig names, marker genes and lineages")
-        parser.add_argument('--singlem', action="store_true", help="use SingleM to find marker genes in reference contigs")
         parser.add_argument('--graftm', action="store_true", help="use GraftM to find marker genes in reference contigs")
-        parser.add_argument('--graftm_package_single_copy', default=[], nargs='+', help="use these GraftM packages to find single-copy marker genes")
+        parser.add_argument(
+            '--graftm_package_single_copy',
+            default=self.DEFAULT_GRAFTM_PACKAGE_SINGLE_COPY,
+            nargs='+',
+            help="use these GraftM packages to find single-copy marker genes. Requires --graftm.")
         parser.add_argument('-t', '--threads', type=int, default=1, help="number of threads to use during BAM parsing")
         parser.add_argument('-f', '--force', action="store_true", default=False, help="overwrite existing DB file without prompting")
         parser.add_argument('-c', '--cutoff', type=int, default=500, help="cutoff contig size during parsing")
         parser.set_defaults(run=self)
-        
+
     def __call__(_self, options):
+        if not options.graftm and\
+           options.graftm_package_single_copy != parse_command_configure.DEFAULT_GRAFTM_PACKAGE_SINGLE_COPY:
+            print "If --graftm_package_single_copy is defined, then --graftm must be set."
+            sys.exit(1)
+
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
         print " [[GroopM %s]] Running in data parsing mode..." % __version__
         print "*******************************************************************************"
         dm = groopm.DataManager()
-                
+
         success = dm.createDB(
             timer,
             options.bamfiles,
@@ -197,13 +207,13 @@ def readable_int(s):
         for (i, suffix) in enumerate("KMGTPEZY"):
             if s.endswith(suffix):
                 return int(s[:-len(suffix)])*1000**(i+1)
-        raise        
-            
+        raise
+
 class core_command_configure:
     description = "Load saved data and make bin cores"
-    
+
     DEFAULT_SIZE = 1000000
-    
+
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-c', '--cutoff', type=int, default=1500, help="cutoff contig size for core creation")
@@ -214,7 +224,7 @@ class core_command_configure:
         group.add_argument('--save_dists', action="store_true", help="save distance files")
         group.add_argument('--use_saved_dists', default="", help="prefix of saved distance files")
         parser.set_defaults(run=self)
-    
+
     def __call__(self, options):
         timer = groopm.TimeKeeper()
         print "*******************************************************************************"
@@ -230,11 +240,11 @@ class core_command_configure:
                savedDistsPrefix=options.use_saved_dists,
                keepDists=options.use_saved_dists!="" or options.save_dists,
                force=options.force)
-        
-        
+
+
 class extract_command_configure:
     description = "Extract contigs or reads based on bin affiliations"
-    
+
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('data', nargs='+', help="data file(s) to extract from, bam or fasta")
@@ -302,10 +312,10 @@ class extract_command_configure:
         else:
             raise ExtractModeNotAppropriateException("mode: "+ options.mode + " is unknown")
 
-                        
+
 class markers_command_configure:
     description="Print summary of binned contig marker information to text file"
-    
+
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-b', '--bids', nargs='+', type=int, default=None, help="bin ids to use (None for all)")
@@ -328,14 +338,14 @@ class markers_command_configure:
         mx.extractMappingInfo(timer,
                               bids=bids,
                               prefix=options.prefix)
-            
+
 
 class dump_command_configure:
     description="Write database to text file"
-    
+
     DUMP_FIELDS = ['names', 'sizes', 'gc', 'bins', 'coverage', 'ncoverage', 'mers']
     DUMP_MARKER_FIELDS = ['contigs', 'markers', 'taxstrings']
-    
+
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-f', '--fields', default="names,bins", help="fields to extract: Build a comma separated list from [%s] (or [%s] with --markers) or just use 'all'" % (", ".join(self.DUMP_FIELDS), ", ".join(self.DUMP_MARKER_FIELDS)))
@@ -381,13 +391,13 @@ class dump_command_configure:
                         options.outfile,
                         separator,
                         not options.no_headers)
-                    
+
 
 class binstat_command_configure:
     description="Write bin stats to text file"
-    
+
     DUMP_FIELDS = ['bins', 'points', 'sizes', 'lengths', 'gc', 'coverage', 'tags']
-    
+
     def __init__(self, parser):
         parser.add_argument('dbname', help="name of the database to open")
         parser.add_argument('-f', '--fields', default="bins,points,sizes,tags", help="fields to extract: Build a comma separated list from [names, mers, gc, coverage, tcoverage, ncoverage, lengths, bins] or just use 'all'")
@@ -462,14 +472,14 @@ class explore_command_configure:
         group.add_argument('--all_groups', action="store_true", help="plot all groups")
         group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot")
         group.add_argument('-g', '--groups', nargs='*', help="groups to plot")
-        
+
         #parser.add_argument('--names', nargs='*', default=None, help="contig ids to highlight when plotting bins, or to plot if ORIGIN is 'names'")
         parser.add_argument('--origin', default="mediod", choices=["mediod", "max_length", "max_coverage", "max_density"], help="set how to choose plot origin")
         parser.add_argument('-p', '--prefix', default="", help="prefix to apply to output files")
         group = parser.add_mutually_exclusive_group()
         group.add_argument('-o', '--out_folder', default="", help="save plots in folder")
         group.add_argument('-i', '--interactive', action="store_true", help="interactive plot of bins or contigs")
-        
+
         parser.add_argument('--groupfile', default="", help="file with contig id and group id columns to import")
         parser.add_argument('-s', '--separator', default=",", help="data separator for GROUPFILE")
         parser.add_argument('--colormap', default="HSV", choices=["HSV", "Accent", "Blues", "Spectral", "Grayscale", "Discrete", "DiscretePaired"], help="set GC pc colormap")
@@ -490,9 +500,9 @@ class explore_command_configure:
             separator = '\t'
         else:
             separator = options.separator
-            
+
         centre_groups = options.all_groups or options.groups is not None
-            
+
         pm = groopm.ExplorePlotManager(options.dbname,
                                        folder=None if options.interactive else options.out_folder)
         pm.plot(timer,
@@ -507,8 +517,8 @@ class explore_command_configure:
                 rawDistances=options.raw_distances,
                 savedDistsPrefix=options.use_saved_dists,
                 keepDists=options.use_saved_dists!="" or options.save_dists)
-                   
-                           
+
+
 class plot_command_configure:
     description="Make cluster reachability plot"
 
@@ -519,7 +529,7 @@ class plot_command_configure:
         group.add_argument('--all_groups', action="store_true", help="plot all groups")
         group.add_argument('-b', '--bids', nargs='*', type=int, help="bin ids to plot")
         group.add_argument('-g', '--groups', nargs='*', help="groups to plot")
-        
+
         parser.add_argument('-o', '--out_file', default="REACH.png", help="name of save plot")
         parser.add_argument('-i', '--interactive', action="store_true", help="interatcive plot")
         parser.add_argument('--groupfile', default="", help="file with contig id and group id columns to import")
@@ -534,14 +544,14 @@ class plot_command_configure:
         print "*******************************************************************************"
 
         (folder, filename) = os.path.split(options.out_file)
-        
+
         if options.separator == '\\t':
             separator = '\t'
         else:
             separator = options.separator
-            
+
         centre_groups = options.all_groups or options.groups is not None
-            
+
         pm = groopm.ReachabilityPlotManager(options.dbname,
                                             folder=None if options.interactive else folder)
         pm.plot(timer,
@@ -551,7 +561,7 @@ class plot_command_configure:
                 groupfile=options.groupfile,
                 label="tag" if options.taxonomy else "bid",
                 separator=separator)
-                   
+
 
 #------------------------------------------------------------------------------
 #GroopM command
@@ -560,11 +570,11 @@ def groopm_command_configure(parser):
     parser.add_argument('-h', '--help', action=PrintHelpAction)
     parser.add_argument('-v', '--version', action="version",
         version="GroopM: version %s %s %s" % (__version__, __copyright__, __author__))
-        
+
     ##################################################
     # workflow subcommands
     ##################################################
-    
+
     subparsers = parser.add_subparsers()
     parse_subparser = subparsers.add_parser(
         "parse",
@@ -579,7 +589,7 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     core_command_configure(core_subparser)
-    
+
     extract_subparser = subparsers.add_parser(
         "extract",
         description=extract_command_configure.description,
@@ -607,21 +617,21 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     dump_command_configure(dump_subparser)
-    
+
     binstat_subparser = subparsers.add_parser(
         "binstat",
         description=binstat_command_configure.description,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     binstat_command_configure(binstat_subparser)
-    
+
     markers_subparser = subparsers.add_parser(
         "markers",
         description=markers_command_configure.description,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     markers_command_configure(markers_subparser)
-    
+
     import_subparser = subparsers.add_parser(
         "import",
         description=import_command_configure.description,
@@ -640,16 +650,16 @@ def groopm_command_configure(parser):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     plot_command_configure(plot_subparser)
-    
+
     explore_subparser = subparsers.add_parser(
         "explore",
         description=explore_command_configure.description,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     explore_command_configure(explore_subparser)
-    
-    
-    
+
+
+
 if __name__ == '__main__':
 
     ##################################################
@@ -658,7 +668,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(add_help=False)
     groopm_command_configure(parser)
-    
+
     args = parser.parse_args()
 
     #-------------------------------------------------
@@ -686,4 +696,3 @@ if __name__ == '__main__':
 ###############################################################################
 ###############################################################################
 ###############################################################################
-

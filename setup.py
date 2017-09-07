@@ -1,4 +1,5 @@
-from distutils.core import setup
+from setuptools import setup
+
 from Cython.Build import cythonize
 import numpy as np
 
@@ -19,6 +20,8 @@ setup(
         "matplotlib >= 1.3.0",
         "tables >= 3.2.0"
     ],
+    setup_requires=['nose>=1.0'],
+    test_suite='nose.collector',
     include_dirs = [np.get_include()],
     ext_modules = cythonize("groopm/stream_ext.pyx"), 
 )
