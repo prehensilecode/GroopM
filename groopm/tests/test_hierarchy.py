@@ -37,7 +37,6 @@ from groopm.hierarchy import (maxscoresbelow,
                               flatten_nodes,
                               embed_nodes,
                               linkage_from_reachability,
-                              permute_obs,
                               ancestors,
                              )
 
@@ -384,7 +383,7 @@ def test_linkage_from_reachability():
                   [2., 7., 70.0, 5.]])
     
     (o, d) = distance.reachability_order(Y)
-    assert_true(equal_arrays(linkage_from_reachability(d), permute_obs(Z, o)),
+    assert_true(equal_arrays(linkage_from_reachability(d), Z),
                 "returns linkage corresponding to reachability ordering")
                         
     
