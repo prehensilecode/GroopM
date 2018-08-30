@@ -1,4 +1,5 @@
-from distutils.core import setup
+#!/usr/bin/env python2
+from setuptools import setup
 from Cython.Build import cythonize
 import numpy as np
 
