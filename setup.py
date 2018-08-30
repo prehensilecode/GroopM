@@ -18,7 +18,8 @@ setup(
         "numpy >= 1.9.0",
         "scipy >= 0.17.0",
         "matplotlib >= 1.3.0",
-        "tables >= 3.2.0"
+        "tables >= 3.2.0",
+        "tempdir",
     ],
     include_dirs = [np.get_include()],
     ext_modules = cythonize("groopm/stream_ext.pyx"), 
