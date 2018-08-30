@@ -226,11 +226,11 @@ class GMDataManager:
 
         # create the db
         try:
-            with tables.openFile(dbFileName, mode = "w", title = "GroopM") as h5file:
+            with tables.open_file(dbFileName, mode = "w", title = "GroopM") as h5file:
                 # Create groups under "/" (root) for storing profile information and metadata
-                profile_group = h5file.createGroup("/", 'profile', 'Assembly profiles')
-                meta_group = h5file.createGroup("/", 'meta', 'Associated metadata')
-                links_group = h5file.createGroup("/", 'links', 'Paired read link information')
+                profile_group = h5file.create_group("/", 'profile', 'Assembly profiles')
+                meta_group = h5file.create_group("/", 'meta', 'Associated metadata')
+                links_group = h5file.create_group("/", 'links', 'Paired read link information')
                 #------------------------
                 # parse contigs
                 #
@@ -307,7 +307,7 @@ class GMDataManager:
                 for mer in kse.kmerCols:
                      db_desc.append((mer, float))
                 try:
-                    h5file.createTable(profile_group,
+                    h5file.create_table(profile_group,
                                        'kms',
                                        np.array(con_ksigs, dtype=db_desc),
                                        title='Kmer signatures',
@@ -351,7 +351,7 @@ class GMDataManager:
                     db_desc.append((scn, float))
 
                 try:
-                    h5file.createTable(profile_group,
+                    h5file.create_table(profile_group,
                                        'coverage',
                                        np.array(cov_profiles, dtype=db_desc),
                                        title="Bam based coverage",
@@ -363,7 +363,7 @@ class GMDataManager:
                 # normalised coverages
                 db_desc = [('normCov', float)]
                 try:
-                    h5file.createTable(profile_group,
+                    h5file.create_table(profile_group,
                                        'normCoverage',
                                        np.array(CT.normCoverages , dtype=db_desc),
                                        title="Normalised coverage",
@@ -399,7 +399,7 @@ class GMDataManager:
                            ('linkType', int),
                            ('gap', int)]
                 try:
-                    h5file.createTable(links_group,
+                    h5file.create_table(links_group,
                                        'links',
                                        np.array(rowwise_links, dtype=db_desc),
                                        title="ContigLinks",
@@ -519,7 +519,7 @@ class GMDataManager:
         conParser = ContigParser()
 
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
                 # Add GC
                 contigFile = raw_input('\nPlease specify fasta file containing the bam reference sequences: ')
                 with open(contigFile, "r") as f:
@@ -546,7 +546,7 @@ class GMDataManager:
                 con_gcs = con_gcs[good_indices]
                 bin_ids = bin_ids[good_indices]
 
-                mg = h5file.getNode('/', name='meta')
+                mg = h5file.get_node('/', name='meta')
                 self.setBinAssignments((h5file, mg),
                                image=zip(con_names,
                                          bin_ids,
@@ -587,7 +587,7 @@ class GMDataManager:
 
         # read existing data in 'bins' table
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 ret_dict = {}
                 all_rows = h5file.root.meta.bins.read()
                 for row in all_rows:
@@ -608,16 +608,16 @@ class GMDataManager:
         bd = np.array(data, dtype=db_desc)
 
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
-                mg = h5file.getNode('/', name='meta')
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
+                mg = h5file.get_node('/', name='meta')
 
                 try:
-                    h5file.removeNode(mg, 'tmp_bins')
+                    h5file.remove_node(mg, 'tmp_bins')
                 except:
                     pass
 
                 try:
-                    h5file.createTable(mg,
+                    h5file.create_table(mg,
                                        'tmp_bins',
                                        bd,
                                        title="Bin information",
@@ -626,7 +626,7 @@ class GMDataManager:
                     print "Error creating META table:", exc_info()[0]
                     raise
 
-                h5file.renameNode(mg, 'bins', 'tmp_bins', overwrite=True)
+                h5file.rename_node(mg, 'bins', 'tmp_bins', overwrite=True)
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -663,9 +663,9 @@ class GMDataManager:
 
         # now CT stores the transformed coverages and other important information
         # we will write this to the database
-        with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
-            meta_group = h5file.getNode('/', name='meta')
-            profile_group = h5file.getNode('/', name='profile')
+        with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
+            meta_group = h5file.get_node('/', name='meta')
+            profile_group = h5file.get_node('/', name='profile')
 
             # raw coverages - we may have reordered rows, so we should fix this now!
             db_desc = []
@@ -673,12 +673,12 @@ class GMDataManager:
                 db_desc.append((scn, float))
 
             try:
-                h5file.removeNode(mg, 'tmp_coverages')
+                h5file.remove_node(mg, 'tmp_coverages')
             except:
                 pass
 
             try:
-                h5file.createTable(profile_group,
+                h5file.create_table(profile_group,
                                    'tmp_coverages',
                                    np.array(CT.covProfiles, dtype=db_desc),
                                    title="Bam based coverage",
@@ -687,13 +687,13 @@ class GMDataManager:
                 print "Error creating coverage table:", exc_info()[0]
                 raise
 
-            h5file.renameNode(profile_group, 'coverage', 'tmp_coverages', overwrite=True)
+            h5file.rename_node(profile_group, 'coverage', 'tmp_coverages', overwrite=True)
 
 
             # normalised coverages
             db_desc = [('normCov', float)]
             try:
-                h5file.createTable(profile_group,
+                h5file.create_table(profile_group,
                                    'normCoverage',
                                    np.array(CT.normCoverages , dtype=db_desc),
                                    title="Normalised coverage",
@@ -714,7 +714,7 @@ class GMDataManager:
                     self.isComplete(dbFileName),
                     self.getGMDBFormat(dbFileName))
 
-        with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
+        with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
             self.setMeta(h5file, meta_data, overwrite=True)
 
         # update the formatVersion field and we're done
@@ -729,8 +729,8 @@ class GMDataManager:
         """Restore the links hash for a given set of indices"""
         full_record = []
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
-                full_record = [list(x) for x in h5file.root.links.links.readWhere("contig1 >= 0")]
+            with tables.open_file(dbFileName, mode='r') as h5file:
+                full_record = [list(x) for x in h5file.root.links.links.read_where("contig1 >= 0")]
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -762,7 +762,7 @@ class GMDataManager:
         if('' == condition):
             condition = "cid != ''" # no condition breaks everything!
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 return np.array([x.nrow for x in h5file.root.meta.contigs.where(condition)])
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -771,7 +771,7 @@ class GMDataManager:
     def getCoverageProfiles(self, dbFileName, condition='', indices=np.array([])):
         """Load coverage profiles"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([list(h5file.root.profile.coverage[x]) for x in indices])
                 else:
@@ -785,7 +785,7 @@ class GMDataManager:
     def getTransformedCoverageProfiles(self, dbFileName, condition='', indices=np.array([])):
         """Load transformed coverage profiles"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([list(h5file.root.profile.transCoverage[x]) for x in indices])
                 else:
@@ -799,7 +799,7 @@ class GMDataManager:
     def getNormalisedCoverageProfiles(self, dbFileName, condition='', indices=np.array([])):
         """Load normalised coverage profiles"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([list(h5file.root.profile.normCoverage[x]) for x in indices])
                 else:
@@ -834,7 +834,7 @@ class GMDataManager:
         h5file = storage[0]
         meta_group = storage[1]
 
-        h5file.createTable(meta_group,
+        h5file.create_table(meta_group,
                            'bins',
                            bd,
                            title="Bin information",
@@ -853,16 +853,16 @@ class GMDataManager:
         bd = np.array(updates, dtype=db_desc)
 
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
-                mg = h5file.getNode('/', name='meta')
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
+                mg = h5file.get_node('/', name='meta')
                 # nuke any previous failed attempts
                 try:
-                    h5file.removeNode(mg, 'tmp_bins')
+                    h5file.remove_node(mg, 'tmp_bins')
                 except:
                     pass
 
                 try:
-                    h5file.createTable(mg,
+                    h5file.create_table(mg,
                                        'tmp_bins',
                                        bd,
                                        title="Bin information",
@@ -872,7 +872,7 @@ class GMDataManager:
                     raise
 
                 # rename the tmp table to overwrite
-                h5file.renameNode(mg, 'bins', 'tmp_bins', overwrite=True)
+                h5file.rename_node(mg, 'bins', 'tmp_bins', overwrite=True)
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -884,7 +884,7 @@ class GMDataManager:
         { bid : [numMembers, isLikelyChimeric] }
         """
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 ret_dict = {}
                 all_rows = h5file.root.meta.bins.read()
                 for row in all_rows:
@@ -899,13 +899,13 @@ class GMDataManager:
     def getBins(self, dbFileName, condition='', indices=np.array([])):
         """Load per-contig bins"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([h5file.root.meta.contigs[x][1] for x in indices]).ravel()
                 else:
                     if('' == condition):
                         condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[1] for x in h5file.root.meta.contigs.readWhere(condition)]).ravel()
+                    return np.array([list(x)[1] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -950,11 +950,11 @@ class GMDataManager:
                              dtype=db_desc)
 
             try:
-                h5file = tables.openFile(dbFileName, mode='a')
+                h5file = tables.open_file(dbFileName, mode='a')
             except:
                 print "Error opening DB:",dbFileName, exc_info()[0]
                 raise
-            meta_group = h5file.getNode('/', name='meta')
+            meta_group = h5file.get_node('/', name='meta')
             closeh5 = True
 
         elif image is not None:
@@ -970,12 +970,12 @@ class GMDataManager:
         # now we write the data
         try:
             # get rid of any failed attempts
-            h5file.removeNode(meta_group, 'tmp_contigs')
+            h5file.remove_node(meta_group, 'tmp_contigs')
         except:
             pass
 
         try:
-            h5file.createTable(meta_group,
+            h5file.create_table(meta_group,
                                'tmp_contigs',
                                image,
                                title="Contig information",
@@ -985,20 +985,20 @@ class GMDataManager:
             raise
 
         # rename the tmp table to overwrite
-        h5file.renameNode(meta_group, 'contigs', 'tmp_contigs', overwrite=True)
+        h5file.rename_node(meta_group, 'contigs', 'tmp_contigs', overwrite=True)
         if closeh5:
             h5file.close()
 
     def getContigNames(self, dbFileName, condition='', indices=np.array([])):
         """Load contig names"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([h5file.root.meta.contigs[x][0] for x in indices]).ravel()
                 else:
                     if('' == condition):
                         condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[0] for x in h5file.root.meta.contigs.readWhere(condition)]).ravel()
+                    return np.array([list(x)[0] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -1006,13 +1006,13 @@ class GMDataManager:
     def getContigLengths(self, dbFileName, condition='', indices=np.array([])):
         """Load contig lengths"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([h5file.root.meta.contigs[x][2] for x in indices]).ravel()
                 else:
                     if('' == condition):
                         condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[2] for x in h5file.root.meta.contigs.readWhere(condition)]).ravel()
+                    return np.array([list(x)[2] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -1020,13 +1020,13 @@ class GMDataManager:
     def getContigGCs(self, dbFileName, condition='', indices=np.array([])):
         """Load contig gcs"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([h5file.root.meta.contigs[x][3] for x in indices]).ravel()
                 else:
                     if('' == condition):
                         condition = "cid != ''" # no condition breaks everything!
-                    return np.array([list(x)[3] for x in h5file.root.meta.contigs.readWhere(condition)]).ravel()
+                    return np.array([list(x)[3] for x in h5file.root.meta.contigs.read_where(condition)]).ravel()
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
             raise
@@ -1034,7 +1034,7 @@ class GMDataManager:
     def getKmerSigs(self, dbFileName, condition='', indices=np.array([])):
         """Load kmer sigs"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([list(h5file.root.profile.kms[x]) for x in indices])
                 else:
@@ -1048,7 +1048,7 @@ class GMDataManager:
     def getKmerPCAs(self, dbFileName, condition='', indices=np.array([])):
         """Load kmer sig PCAs"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 if(np.size(indices) != 0):
                     return np.array([list(h5file.root.profile.kpca[x]) for x in indices])
                 else:
@@ -1065,7 +1065,7 @@ class GMDataManager:
     def getKmerVarPC(self, dbFileName, condition='', indices=np.array([])):
         """Load variance of kmer sig PCAs"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 return np.array(list(h5file.root.meta.kpca_variance[0]))
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -1074,7 +1074,7 @@ class GMDataManager:
     def getTransformedCoverageCorners(self, dbFileName):
         """Load transformed coverage corners"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 return np.array([list(x) for x in h5file.root.meta.transCoverageCorners.read()])
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -1098,20 +1098,20 @@ class GMDataManager:
         md = np.array([metaData], dtype=db_desc)
 
         # get hold of the group
-        mg = h5file.getNode('/', name='meta')
+        mg = h5file.get_node('/', name='meta')
 
         if overwrite:
             t_name = 'tmp_meta'
             # nuke any previous failed attempts
             try:
-                h5file.removeNode(mg, 'tmp_meta')
+                h5file.remove_node(mg, 'tmp_meta')
             except:
                 pass
         else:
             t_name = 'meta'
 
         try:
-            h5file.createTable(mg,
+            h5file.create_table(mg,
                                t_name,
                                md,
                                "Descriptive data",
@@ -1122,12 +1122,12 @@ class GMDataManager:
 
         if overwrite:
             # rename the tmp table to overwrite
-            h5file.renameNode(mg, 'meta', 'tmp_meta', overwrite=True)
+            h5file.rename_node(mg, 'meta', 'tmp_meta', overwrite=True)
 
     def getMetaField(self, dbFileName, fieldName):
         """return the value of fieldName in the metadata tables"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 # theres only one value
                 return h5file.root.meta.meta.read()[fieldName][0]
         except:
@@ -1148,7 +1148,7 @@ class GMDataManager:
                     self.isComplete(dbFileName),
                     version)
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
                 self.setMeta(h5file, meta_data, overwrite=True)
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -1158,7 +1158,7 @@ class GMDataManager:
         """return the format version of this GM file"""
         # this guy needs to be a bit different to the other meta methods
         # becuase earlier versions of GM didn't include a format parameter
-        with tables.openFile(dbFileName, mode='r') as h5file:
+        with tables.open_file(dbFileName, mode='r') as h5file:
             # theres only one value
             try:
                 this_DB_version = h5file.root.meta.meta.read()['formatVersion'][0]
@@ -1201,7 +1201,7 @@ class GMDataManager:
                     self.isComplete(dbFileName),
                     self.getGMDBFormat(dbFileName))
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
                 self.setMeta(h5file, meta_data, overwrite=True)
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -1221,7 +1221,7 @@ class GMDataManager:
     def isClustered(self, dbFileName):
         """Has this data set been clustered?"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 return h5file.root.meta.meta.read()['clustered']
         except:
             print "Error opening database:", dbFileName, exc_info()[0]
@@ -1241,7 +1241,7 @@ class GMDataManager:
                     self.isComplete(dbFileName),
                     self.getGMDBFormat(dbFileName))
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
                 self.setMeta(h5file, meta_data, overwrite=True)
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
@@ -1250,7 +1250,7 @@ class GMDataManager:
     def isComplete(self, dbFileName):
         """Has this data set been *completely* clustered?"""
         try:
-            with tables.openFile(dbFileName, mode='r') as h5file:
+            with tables.open_file(dbFileName, mode='r') as h5file:
                 return h5file.root.meta.meta.read()['complete']
         except:
             print "Error opening database:", dbFileName, exc_info()[0]
@@ -1270,7 +1270,7 @@ class GMDataManager:
                     state,
                     self.getGMDBFormat(dbFileName))
         try:
-            with tables.openFile(dbFileName, mode='a', rootUEP="/") as h5file:
+            with tables.open_file(dbFileName, mode='a', root_uep="/") as h5file:
                 self.setMeta(h5file, meta_data, overwrite=True)
         except:
             print "Error opening DB:",dbFileName, exc_info()[0]
